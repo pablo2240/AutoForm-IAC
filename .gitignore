@@ -1,0 +1,26 @@
+# Entorno
+.env
+.env.local
+venv/
+.venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos generados
+*.xlsx
+*.pdf
+*.tmp
+*.log
+output/
+uploads/
+
+# IDE / SO
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Streamlit
+.streamlit/
