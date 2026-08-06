@@ -278,31 +278,29 @@ def _consultar_llm_requests(
         mensajes.append({"role": "system", "content": sistema})
     mensajes.append({"role": "user", "content": prompt_usuario})
 
-    # Modelos candidatos en OpenRouter. El orden importa:
-    # 1. LLM_MODEL del .env (si está configurado y NO es ling-3.0-flash)
-    # 2. Modelos Google Gemini — respetan json_mode sin emitir razonamiento inline
-    # 3. Fallbacks de alta calidad con buen cumplimiento de instrucciones
-    # EXCLUIDO: ling-3.0-flash — emite chain-of-thought en el cuerpo de la respuesta,
-    #           lo que produce texto de análisis en lugar de JSON puro.
-    modelo_principal = (
-        LLM_MODEL
-        if (LLM_MODEL and "/" in LLM_MODEL and "ling" not in LLM_MODEL)
-        else "google/gemini-2.0-flash-lite-preview-02-05:free"
-    )
-    modelos_candidatos = [
-        modelo_principal,
-        "google/gemini-2.0-flash-lite-preview-02-05:free",
-        "google/gemini-flash-1.5-8b:free",
-        "meta-llama/llama-3.3-70b-instruct:free",
-        "qwen/qwen-2.5-72b-instruct:free",
+    # Cascade de modelos en OpenRouter.
+    # - "openrouter/free": router automático de OR que elige el mejor gratuito disponible en tiempo real.
+    #   Es la opción más resiliente porque nunca da 404 por modelo retirado.
+    # - Los siguientes son modelos Gemini gratuitos conocidos por respetar json_mode
+    #   sin emitir razonamiento inline.
+    # EXCLUIDO: ling-3.0-flash, qwen/qwen-2.5-72b-instruct — emiten chain-of-thought
+    #           o dejaron de ser gratuitos.
+    modelo_env = LLM_MODEL if (LLM_MODEL and "/" in LLM_MODEL and "ling" not in LLM_MODEL) else None
+    modelos_candidatos_raw = [
+        modelo_env,                                           # 1. Config del .env (si aplica)
+        "openrouter/auto",                                    # 2. Router automático de OR (siempre gratuito)
+        "google/gemini-2.0-flash-lite-preview-02-05:free",   # 3. Gemini lite — rápido, json_mode ok
+        "google/gemini-flash-1.5-8b:free",                   # 4. Gemini Flash 1.5 8B
+        "meta-llama/llama-3.1-8b-instruct:free",             # 5. LLaMA 3.1 8B (rápido y estable)
+        "mistralai/mistral-7b-instruct:free",                # 6. Mistral 7B (cumple instrucciones bien)
     ]
-    # Eliminar duplicados preservando el orden
-    modelos_unicos = []
-    for m in modelos_candidatos:
-        if m not in modelos_unicos:
+    # Quitar Nones y duplicados preservando el orden
+    modelos_unicos: List[str] = []
+    for m in modelos_candidatos_raw:
+        if m and m not in modelos_unicos:
             modelos_unicos.append(m)
 
-    ultimo_error: Exception = RuntimeError("Error desconocido en OpenRouter.")
+    ultimo_error: Exception = RuntimeError("Todos los modelos de OpenRouter fallaron.")
 
     for modelo in modelos_unicos:
         cuerpo: Dict[str, Any] = {
@@ -310,10 +308,12 @@ def _consultar_llm_requests(
             "messages": mensajes,
             "max_tokens": 30000,
         }
-        if json_mode and "ling-3.0-flash" not in modelo:
+        # json_mode solo en modelos que lo soportan (excluir thinking models y auto)
+        if json_mode and not any(x in modelo for x in ("ling", "auto")):
             cuerpo["response_format"] = {"type": "json_object"}
 
         MAX_REINTENTOS = 2
+        modelo_fallido = False
         for intento in range(1, MAX_REINTENTOS + 1):
             try:
                 respuesta = requests.post(
@@ -328,40 +328,52 @@ def _consultar_llm_requests(
                     timeout=timeout,
                 )
             except (requests.Timeout, requests.ConnectionError) as exc:
-                ultimo_error = RuntimeError(f"Error de red en OpenRouter con {modelo} (intento {intento}): {exc}")
+                ultimo_error = RuntimeError(f"Error de red con {modelo} (intento {intento}): {exc}")
                 if intento < MAX_REINTENTOS:
                     time.sleep(1)
                     continue
-                break  # Probar siguiente modelo
+                modelo_fallido = True
+                break
+
+            # 404/403: modelo no disponible → saltar sin reintentar
+            if respuesta.status_code in (404, 403):
+                print(f"[AutoForm AI] Modelo {modelo} no disponible ({respuesta.status_code}). Probando siguiente...")
+                ultimo_error = RuntimeError(f"Modelo {modelo} no disponible en OpenRouter ({respuesta.status_code}).")
+                modelo_fallido = True
+                break
 
             if respuesta.status_code >= 500:
                 ultimo_error = RuntimeError(f"OpenRouter {modelo} devolvió status {respuesta.status_code}.")
                 if intento < MAX_REINTENTOS:
                     time.sleep(1)
                     continue
-                break  # Probar siguiente modelo
+                modelo_fallido = True
+                break
 
             try:
                 respuesta.raise_for_status()
             except requests.HTTPError as exc:
                 ultimo_error = RuntimeError(f"Error HTTP OpenRouter {modelo}: {respuesta.status_code} {respuesta.text}")
-                break  # Probar siguiente modelo
+                modelo_fallido = True
+                break
 
             datos = respuesta.json()
             if not datos or "error" in datos:
                 error_msg = datos.get("error", {}).get("message", str(datos)) if isinstance(datos, dict) else str(datos)
                 ultimo_error = RuntimeError(f"Error en respuesta OpenRouter {modelo}: {error_msg}")
-                break  # Probar siguiente modelo
+                modelo_fallido = True
+                break
 
             choices = datos.get("choices", [])
             if not choices:
                 ultimo_error = RuntimeError(f"Payload sin choices en OpenRouter {modelo}: {datos}")
+                modelo_fallido = True
                 break
 
             choice_obj = choices[0]
             message_obj = choice_obj.get("message", {}) if isinstance(choice_obj, dict) else {}
-            
-            # Extraer contenido probando claves estándar de diferentes modelos de OpenRouter
+
+            # Extraer contenido soportando diferentes esquemas de modelos de OpenRouter
             contenido = None
             if isinstance(message_obj, dict):
                 contenido = message_obj.get("content") or message_obj.get("reasoning") or message_obj.get("text")
@@ -371,10 +383,15 @@ def _consultar_llm_requests(
             if contenido and str(contenido).strip():
                 return str(contenido).strip()
 
-            ultimo_error = RuntimeError(f"El modelo {modelo} devolvió contenido vacío en OpenRouter.")
-            # Si el contenido vino vacío, intentar con el siguiente modelo candidatas
+            ultimo_error = RuntimeError(f"El modelo {modelo} devolvió contenido vacío.")
+            modelo_fallido = True
+            break
+
+        if modelo_fallido:
+            continue  # Siguiente modelo del cascade
 
     raise ultimo_error
+
 
 
 def consultar_llm(
