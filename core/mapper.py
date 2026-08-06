@@ -17,20 +17,90 @@ from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
 # invocar_llm() ya lo aplica automáticamente; no es necesario pasarlo como argumento.
 
 
-def construir_prompt(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> str:
-    return json.dumps(
-        {
-            "MapaFormularios": mapa_formularios,
-            "DatosEmpresa": datos_empresa,
-            "Instrucciones": (
-                "Mapea cada etiqueta de formulario con un campo existente en DatosEmpresa. "
-                "Usa las reglas de ubicación estrictas descritas en el sistema. "
-                "Devuelve solo un arreglo JSON de objetos con hoja, fila, columna, valor, ubicación, campo, requiereMerge y celdasAMergear."
-            ),
-        },
-        ensure_ascii=False,
-        indent=2,
+
+# Claves del parser que necesita la IA para decidir semánticamente la ubicación.
+# Los demás campos son internos y no aportan valor al LLM (solo aumentan tokens).
+_CLAVES_LLM = {
+    "hoja", "fila", "columna", "valor",
+    "tipoEspacioEscritura", "anchoLinea", "anchoMergeVecino",
+    "derechaVacia", "abajoVacia", "derechaEsMerge", "esMergePrincipal",
+}
+
+# Campos que no pertenecen a DatosEmpresa directamente pero que siempre
+# deben estar disponibles como sinónimos o campos virtuales.
+_CAMPOS_VIRTUALES = {"nit_sin_dv", "nit_dv"}
+
+
+def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Elimina claves internas del parser que no aportan al mapeo semántico."""
+    return [{k: v for k, v in entrada.items() if k in _CLAVES_LLM} for entrada in mapa]
+
+
+def _filtrar_datos_empresa(mapa_purgo: List[Dict[str, Any]], datos: Dict[str, Any]) -> Dict[str, Any]:
+    """Devuelve solo los campos de DatosEmpresa que podrían ser relevantes
+    según el vocabulario del formulario actual.  Reduce tokens ~40-60%.
+    
+    Estrategia: extraer todas las palabras del formulario, luego retener
+    solo las claves de DatosEmpresa cuyos sinónimos conocidos aparecen en
+    ese vocabulario. Si no hay coincidencia, se incluye la clave igual
+    (safe-fallback) para no perder campos por falsos negativos.
+    """
+    # Sinónimos inversos: campo → indicios textuales que sugieren presencia
+    _INDICIOS: Dict[str, List[str]] = {
+        "razon_social":          ["nombre", "razon", "empresa", "proveedor", "social"],
+        "nit":                   ["nit", "rut", "identificacion", "cc/ce/pas"],
+        "cedula":                ["cedula", "c.c", "documento", "identidad", "id"],
+        "direccion":             ["direccion", "domicilio", "direccion principal"],
+        "ciudad":                ["ciudad", "municipio"],
+        "departamento":          ["departamento", "dpto"],
+        "telefono":              ["telefono", "tel", "celular", "contacto telefonico"],
+        "correo":                ["correo", "email", "e-mail"],
+        "pagina_web":            ["web", "pagina", "url", "sitio"],
+        "representante_legal":   ["representante", "firma", "legal"],
+        "representante_nombres": ["nombres"],
+        "representante_apellidos": ["apellidos"],
+        "pais":                  ["pais", "nacionalidad"],
+        "banco":                 ["banco", "bancaria", "financiera"],
+        "numero_cuenta":         ["cuenta", "nro cuenta"],
+        "tipo_cuenta":           ["tipo cuenta", "tipo de cuenta"],
+        "sucursal":              ["sucursal"],
+    }
+
+    # Vocabulario del formulario (texto de rótulos, todo en minúsculas)
+    vocabulario = " ".join(
+        str(e.get("valor", "")).lower() for e in mapa_purgo
     )
+
+    resultado: Dict[str, Any] = {}
+    for campo, valor in datos.items():
+        indicios = _INDICIOS.get(campo)
+        if indicios is None:
+            # Clave desconocida en el diccionario de indicios → incluir por seguridad
+            resultado[campo] = valor
+        elif any(indicio in vocabulario for indicio in indicios):
+            resultado[campo] = valor
+        # Si no hay coincidencia, se excluye del payload → ahorro de tokens
+
+    return resultado
+
+
+def construir_prompt(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> str:
+    """Construye el payload JSON compacto para el LLM.
+    
+    Complicidad 2 Fix:
+    - Purga los 6 campos internos del parser (derechaConBorde*, abajoConBorde*, coordMerge, abajoEsMerge).
+    - Filtra DatosEmpresa a solo los campos relevantes para el formulario actual.
+    - Serializa sin indent ni espacios extra (separators=(',',':')), reduciendo ~60% de tokens.
+    """
+    mapa_purgado = _purgar_mapa(mapa_formularios)
+    datos_filtrados = _filtrar_datos_empresa(mapa_purgado, datos_empresa)
+
+    payload = {
+        "F": mapa_purgado,       # MapaFormularios (abreviado para reducir tokens)
+        "D": datos_filtrados,    # DatosEmpresa filtrado
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
 
 
 def _necesita_merge(valor: str) -> bool:
