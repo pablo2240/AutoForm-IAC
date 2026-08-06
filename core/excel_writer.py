@@ -170,15 +170,33 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
 
         rango_combinado = None
         if requiere_merge and celdas_a_mergear > 1 and ubicacion == "derecha" and rango_preexistente is None:
-            # Si la celda destino es simple y requiere merge, creamos el rango combinado
-            columna_final = columna_destino + celdas_a_mergear - 1
-            rango_combinado = (fila_destino, columna_destino, fila_destino, columna_final)
-            ws.merge_cells(
-                start_row=fila_destino,
-                start_column=columna_destino,
-                end_row=fila_destino,
-                end_column=columna_final,
-            )
+            # Límite máximo para no salirse de la hoja de Excel
+            max_col_hoja = max(ws.max_column or 1, columna_destino)
+            columna_final = min(columna_destino + celdas_a_mergear - 1, max_col_hoja)
+
+            if columna_final > columna_destino:
+                # Validar estrictamente que las celdas intermedias estén vacías y no invadan rótulos o merges
+                celdas_libres = True
+                for c in range(columna_destino + 1, columna_final + 1):
+                    if _celda_en_merge(ws, fila_destino, c) is not None:
+                        celdas_libres = False
+                        break
+                    val_c = ws.cell(row=fila_destino, column=c).value
+                    if val_c is not None and str(val_c).strip() != "":
+                        celdas_libres = False
+                        break
+
+                if celdas_libres:
+                    rango_combinado = (fila_destino, columna_destino, fila_destino, columna_final)
+                    try:
+                        ws.merge_cells(
+                            start_row=fila_destino,
+                            start_column=columna_destino,
+                            end_row=fila_destino,
+                            end_column=columna_final,
+                        )
+                    except Exception:
+                        rango_combinado = None
 
         celda_destino = _obtener_celda_escribible(ws, fila_destino, columna_destino)
         celda_origen = _obtener_celda_escribible(ws, fila_origen, columna_origen)

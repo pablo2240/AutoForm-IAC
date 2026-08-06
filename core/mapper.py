@@ -285,16 +285,27 @@ def _procesar_resultado_llm(respuesta: str) -> List[Dict[str, Any]]:
         raise RuntimeError(f"El LLM debe retornar un arreglo JSON: {resultado}")
 
     elementos_validos: List[Dict[str, Any]] = []
+    celdas_vistas = set()
+    campos_vistos = set()
+
     for item in resultado:
         try:
             elemento = _validar_item(item)
-            if elemento["campo"] == "":
+            campo = elemento.get("campo", "")
+            if not campo:
                 continue
-            if elemento["requiereMerge"] is False and _necesita_merge(
-                elemento["valor"], elemento["campo"]
-            ):
-                elemento["requiereMerge"] = True
-                elemento["celdasAMergear"] = max(3, elemento["celdasAMergear"])
+
+            clave_celda = (elemento["hoja"], elemento["fila"], elemento["columna"])
+            if clave_celda in celdas_vistas:
+                continue
+
+            # Prevenir la duplicación de asignaciones del mismo campo en el mismo formulario
+            if campo in campos_vistos:
+                print(f"[AutoForm AI Warning] Omitiendo asignación duplicada del campo '{campo}' en celda {clave_celda}.")
+                continue
+
+            celdas_vistas.add(clave_celda)
+            campos_vistos.add(campo)
             elementos_validos.append(elemento)
         except (ValueError, TypeError, KeyError) as e:
             print(f"[AutoForm AI Warning] Omitiendo fila de mapeo inválida: {e}. Elemento: {item}")
@@ -353,18 +364,24 @@ def _fusionar_mapeos(
     mapeos_iniciales: List[Dict[str, Any]],
     mapeos_complementarios: List[Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
-    """Combina los mapeos de la llamada principal y la llamada de cobertura sin colisiones de celdas."""
+    """Combina los mapeos de la llamada principal y la llamada de cobertura sin colisiones de celdas ni campos duplicados."""
     celdas_existentes = {
         (item["hoja"], item["fila"], item["columna"])
         for item in mapeos_iniciales
+    }
+    campos_existentes = {
+        item["campo"] for item in mapeos_iniciales if item.get("campo")
     }
     resultado_final = list(mapeos_iniciales)
 
     for item in mapeos_complementarios:
         clave_celda = (item["hoja"], item["fila"], item["columna"])
-        if clave_celda not in celdas_existentes:
+        campo = item.get("campo", "")
+        if clave_celda not in celdas_existentes and campo not in campos_existentes:
             resultado_final.append(item)
             celdas_existentes.add(clave_celda)
+            if campo:
+                campos_existentes.add(campo)
 
     return resultado_final
 
