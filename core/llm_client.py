@@ -83,6 +83,7 @@ Significado de los campos de contexto visual en cada rotulo:
 - `anchoLinea`: columnas consecutivas con borde inferior (linea de captura). >1 = espacio para valor largo.
 - `anchoMergeVecino`: ancho en columnas del merge vecino derecho. 1 = sin merge.
 - `esMergePrincipal`: True si el propio rotulo es un merge. La columna de escritura ya fue corregida; no requiere ajuste.
+- `esCasillaVerificacion`: True si la celda es un recuadro 1x1 de opcion (checkbox). Si la opcion aplica segun DatosEmpresa, debes responder asignando valor "X".
 
 ---
 

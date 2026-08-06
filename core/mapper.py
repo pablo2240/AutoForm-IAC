@@ -24,6 +24,7 @@ _CLAVES_LLM = {
     "hoja", "fila", "columna", "valor",
     "tipoEspacioEscritura", "anchoLinea", "anchoMergeVecino",
     "derechaVacia", "abajoVacia", "derechaEsMerge", "esMergePrincipal",
+    "esCasillaVerificacion",
 }
 
 # Campos que no pertenecen a DatosEmpresa directamente pero que siempre

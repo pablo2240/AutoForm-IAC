@@ -158,6 +158,43 @@ def _calcular_ancho_linea_captura(
     return max(1, ancho)
 
 
+import re
+
+_PATRON_OPCION_CASILLA = re.compile(
+    r"^\s*(S[ÍI]|NO|C\.?C\.?|C\.?E\.?|PASAPORTE|NIT|OTRO|AUTORRETENEDOR|GRAN CONTRIBUYENTE|MEDIANA|PEQUEÑA|GRAN EMPRESA|IMPORTADOR|EXPORTADOR|FABRICANTE|DISTRIBUIDOR)\b",
+    re.IGNORECASE,
+)
+
+
+def _es_casilla_verificacion(
+    vacia: bool,
+    es_merge: bool,
+    bordes: Dict[str, bool],
+    ancho_linea: int,
+    texto_rotulo: str = "",
+) -> bool:
+    """Determina si una celda de destino actúa como casilla de verificación (checkbox 1x1).
+
+    Criterio Híbrido:
+      - Condición Física: celda vacía, no es merge, ancho <= 1, lados_con_borde >= 3.
+      - Condición Semántica: el rótulo vecino es corto (<= 20 chars) o coincide
+        con patrones de opción explícitos (SÍ, NO, CC, CE, etc.).
+    """
+    if not vacia or es_merge or ancho_linea > 1:
+        return False
+
+    lados_con_borde = sum(1 for v in bordes.values() if v)
+    if lados_con_borde < 3:
+        return False
+
+    if texto_rotulo:
+        texto_limpio = str(texto_rotulo).strip()
+        if len(texto_limpio) <= 20 or _PATRON_OPCION_CASILLA.search(texto_limpio):
+            return True
+
+    return False
+
+
 def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
     """Recorre todas las hojas y extrae el mapa visual/espacial de los rótulos con texto.
 
@@ -259,6 +296,13 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                     ancho_merge_vecino = 1
                 # ────────────────────────────────────────────────────────────
 
+                # ── Detección Híbrida de Casillas de Verificación (Checkbox 1x1) ──
+                es_casilla = _es_casilla_verificacion(
+                    derecha_vacia, derecha_es_merge, bordes_derecha, ancho_linea, texto
+                ) or _es_casilla_verificacion(
+                    abajo_vacia, abajo_es_merge, bordes_abajo, 1, texto
+                )
+
                 formulario.append(
                     {
                         "hoja": hoja.title,
@@ -278,6 +322,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "anchoMergeVecino": ancho_merge_vecino,
                         "esMergePrincipal": es_merge_principal,
                         "coordMerge":       coord_merge,
+                        "esCasillaVerificacion": es_casilla,
                     }
                 )
     return formulario
