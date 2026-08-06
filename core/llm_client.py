@@ -90,10 +90,19 @@ Adicionalmente, cuentas con dos campos virtuales especiales para el NIT en Colom
 
 No inventes nuevos campos ni hagas inferencias cuando exista duda. Si no hay certeza o el campo no existe en DatosEmpresa, omite el rótulo.
 
-Sección y Jerarquía de Rótulos (Evitar Confusiones):
+- EXCLUSIÓN DE REPRESENTANTE LEGAL SUPLENTE: Si el formulario incluye campos titulados especificamente como "Representante Legal Suplente", "Nombre representante suplente", "Cédula suplente", "Correo suplente", NUNCA dupliques allí la información del Representante Principal. Como no hay un suplente configurado en DatosEmpresa, todos los campos de Suplente deben OMITIRSE por completo (permanecer 100% vacíos).
+- CASILLAS DE TIPO DE IDENTIFICACIÓN (CC / CE / PAS / OTRO): En encabezados de tabla donde "Tipo de identificación" viene desglosado en columnas de opciones visuales (ej: [ CC | CE | PAS | OTRO ]), NUNCA escribas el número de documento dentro de la columna de opciones. Asigna una 'X' a la casilla de la opción respectiva ("CC") y asigna el número de documento (`nit` o `cedula`) a la columna "Número de identificación".
+- PERSONA DE CONTACTO EXTERNA / VERIFICACIÓN: Rótulos como "Nombre y Cargo persona contacto", "Correo electrónico persona contacto", "Contacto comercial" solicitan datos de un tercero o persona de verificación externa. NUNCA asignes los datos generales de la empresa ni del representante legal principal a estos campos. OMITIR por completo.
+- SECCIÓN PEP (PERSONAS EXPUESTAS POLÍTICAMENTE / PEP EXTRANJERAS / PEP ORGANISMOS INTERNACIONALES):
+  1. Si hay preguntas de opción ("¿Goza de reconocimiento público?", "¿Administra recursos públicos?", "¿Ocupa un cargo público?", "¿PEP Extranjera?"), marca siempre la opción "NO" (o selecciona la casilla de "NO").
+  2. NUNCA mapees al representante legal ni a los accionistas en la tabla de detalle PEP (encabezados como "Nombres y Apellidos", "Tipo ID", "Número ID", "Entidad Pública", "Cargo en la Entidad", "Fecha vinculación" bajo la sección PEP). Esa tabla de detalle debe permanecer 100% VACÍA ya que la empresa NO posee personal en condición de PEP.
+- PÁRRAFOS DE DECLARACIÓN E INLINE PLACEHOLDERS: Si una celda contiene un texto largo o párrafo de declaración (ej: "Yo, ______________________ identificado con el documento de identidad: ______________________ expedido en: ______________________"), mapea CADA campo solicitado (`representante_legal`, `cedula`, `ciudad`) proponiendo `ubicacion: "misma"` en esa misma celda. El sistema reemplazará secuencialmente cada marcador `____`.
+- EXCLUSIÓN DE REFERENCIAS COMERCIALES / TERCEROS: NUNCA asignes los datos de nuestra empresa (`razon_social`, `direccion`, `telefono`, `correo`) a la sección "REFERENCIAS COMERCIALES", "REFERENCIAS BANCARIAS DE TERCEROS", "CLIENTES PRINCIPALES" o "PROVEEDORES TERCEROS". Esas secciones solicitan datos de empresas externas que NO están en DatosEmpresa; por tanto, deben OMITIRSE (no mapear nada allí).
+- ÓRGANOS DE ADMINISTRACIÓN / JUNTA DIRECTIVA: En secciones tituladas "ÓRGANOS DE ADMINISTRACIÓN", "JUNTA DIRECTIVA" o "REPRESENTANTES LEGALES", mapea `representante_nombres` a NOMBRES, `representante_apellidos` a APELLIDOS, y `cedula` a Número / TIPO ID en la primera fila de datos de la tabla (`ubicacion: "abajo"`).
+- NOTAS CONDICIONALES E INSTRUCCIONES: Frases como "Si en la composición accionaria existiera alguna empresa...", "Si el espacio no es suficiente...", "Adjuntar relación..." son notas informativas, NO campos de entrada. OMITIR por completo.
 - Observa los títulos de sección en los vecinos. Si un rótulo es "Teléfono" o "Email" bajo la sección de "Representante Legal", mapea los campos `telefono` y `correo` a esas celdas (ya que pertenecen al representante legal).
 - En secciones de tablas como "COMPOSICIÓN ACCIONARIA/BENEFICIARIOS FINALES", asigna `razon_social` (o `representante_legal`) a "Nombre/Razón Social" y `nit` (o `cedula`) a "Identificación/TIPO ID" en la primera fila de la tabla.
-- En secciones de información bancaria o financiera ("INFORMACIÓN BANCARIA", "REFERENCIAS BANCARIAS", etc.), asigna `banco`, `numero_cuenta`, `tipo_cuenta` y `sucursal` a sus respectivos rótulos.
+- En secciones de información bancaria o financiera ("INFORMACIÓN BANCARIA", "REFERENCIAS BANCARIAS PROPIAS", etc.), asigna `banco`, `numero_cuenta`, `tipo_cuenta` y `sucursal` a sus respectivos rótulos.
 - Si el formulario tiene casillas de opción o checkboxes (ej: "[ ] Gran Contribuyente", "[ ] Auto-retenedor", o casillas de "SI / NO"), puedes asociar el rótulo respectivo a un campo booleano de DatosEmpresa. Si el valor es verdadero (True), el sistema escribirá automáticamente una 'X' en la casilla vacía.
 
 Puedes mapear campos de cualquier sección o tabla (incluyendo referencias comerciales, bancarias, junta directiva, accionistas, contactos, etc.) siempre y cuando la información correspondiente exista dentro del objeto DatosEmpresa. No dejes de mapear tablas si el formulario tiene rótulos para ellas y posees los datos de la empresa para rellenarlos.
@@ -108,6 +117,9 @@ Reglas de mapeo de campos en secciones válidas:
 - telefono: TEL, TELÉFONO, TELEFONOS, CELULAR, CONTACTO TELEFONICO.
 - correo: CORREO, CORREO ELECTRONICO, EMAIL, E-MAIL.
 - pagina_web: PAGINA WEB, PÁGINA WEB, WEB, SITIO WEB, URL.
+- representante_legal: REPRESENTANTE LEGAL, NOMBRE DEL REPRESENTANTE, FIRMA DEL REPRESENTANTE.
+- representante_nombres: NOMBRES (si está separado de apellidos en la sección de representante/junta).
+- representante_apellidos: APELLIDOS (si está separado de nombres en la sección de representante/junta).
 - pais: PAIS, PAÍS, NACIONALIDAD.
 - banco: BANCO, ENTIDAD BANCARIA, ENTIDAD FINANCIERA, NOMBRE DEL BANCO.
 - numero_cuenta: NÚMERO DE CUENTA, NO. CUENTA, NUMERO DE CUENTA, CUENTA NO., NRO CUENTA.

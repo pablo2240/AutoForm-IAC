@@ -29,12 +29,16 @@ Cada entrada del MapaFormularios incluye los siguientes campos de contexto visua
 - `coordMerge`: coordenadas del rango del merge de la etiqueta (ej: "A1:C1"). Vacío si la etiqueta es una celda simple.
 
 Reglas estrictas de ubicación (en orden de prioridad):
-1. Si tipoEspacioEscritura es "subrayado" o "cuadro" en la derecha → usa "derecha".
-2. Si tipoEspacioEscritura es "merge" en la derecha → usa "derecha".
-3. Si la derecha está "ocupado" pero abajo es "subrayado", "cuadro" o "merge" → usa "abajo".
-4. Si derechaVacia es True (y no hay mejor clasificación) → usa "derecha".
-5. Si derechaVacia es False y abajoVacia es True → usa "abajo".
-6. Si ambas direcciones están "ocupado" → OMITIR el campo para no sobreescribir etiquetas.
+1. EXCLUSIÓN SUPLENTE: Si el campo pertenece al "Representante Legal Suplente" (y no hay un suplente diferente en DatosEmpresa), OMITIR por completo (no duplicar el Principal).
+2. TIPO DE ID [ CC | CE | PAS ]: En casillas de opciones de tipo de documento, asigna una 'X' a la casilla de la opción respectiva ("CC"). NUNCA escribas el número de cédula/NIT dentro de las casillas de opciones.
+3. PERSONA CONTACTO EXTERNA: Rótulos como "Nombre y Cargo persona contacto", "Correo persona contacto" corresponden a terceros. OMITIR (no llenar con datos del representante principal ni de la empresa).
+4. SECCIÓN PEP: En preguntas PEP ("Goza de reconocimiento...", "Administra recursos...", "PEP Extranjera"), responder "NO". La sub-tabla de detalle PEP ("Nombres y Apellidos", "Entidad Pública", "Cargo", "Fecha vinculación") debe OMITIRSE por completo (no mapear al representante legal ni a nadie en esa sub-tabla).
+5. TABLAS / ENCABEZADOS EN FILA: Si la fila actual contiene varios encabezados de tabla seguidos (ej: [Nombre/Razón Social | ID | % Participación]), la ubicación de escritura es SIEMPRE "abajo" (en la fila de datos inmediatamente inferior). NUNCA uses "derecha" sobre un encabezado vecino.
+6. Si tipoEspacioEscritura es "subrayado", "cuadro" o "merge" en la derecha y no es un encabezado de tabla → usa "derecha".
+7. Si la derecha está "ocupado" (por otro texto o título) pero abajo está libre → usa "abajo".
+8. Si derechaVacia es True (y no hay otro título a la derecha) → usa "derecha".
+9. Si derechaVacia es False y abajoVacia es True → usa "abajo".
+10. Si ambas direcciones están "ocupado" → OMITIR el campo para no sobreescribir etiquetas.
 
 Además, agrega para cada elemento los campos:
 - requiereMerge: True si tipoEspacioEscritura es "subrayado" o "merge" Y (anchoLinea > 1 O anchoMergeVecino > 1).
@@ -104,9 +108,9 @@ def _validar_item(item: Dict[str, Any]) -> Dict[str, Any]:
         }
 
     ubicacion = str(item.get("ubicacion", "")).lower().strip()
-    if ubicacion not in {"derecha", "abajo"}:
+    if ubicacion not in {"derecha", "abajo", "misma"}:
         raise ValueError(
-            f"Ubicación inválida en el resultado del LLM: {ubicacion!r}. Solo se admite 'derecha' o 'abajo'."
+            f"Ubicación inválida en el resultado del LLM: {ubicacion!r}. Solo se admite 'derecha', 'abajo' o 'misma'."
         )
 
     requiere_merge = bool(item.get("requiereMerge", False))

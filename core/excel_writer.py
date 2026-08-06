@@ -103,7 +103,10 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
         ubicacion = str(item.get("ubicacion", "")).lower()
         rango_origen_merge = _celda_en_merge(ws, fila_origen, columna_origen)
 
-        if ubicacion == "derecha":
+        if ubicacion == "misma":
+            fila_destino = fila_origen
+            columna_destino = columna_origen
+        elif ubicacion == "derecha":
             fila_destino = fila_origen
             if rango_origen_merge is not None:
                 columna_destino = rango_origen_merge.max_col + 1
