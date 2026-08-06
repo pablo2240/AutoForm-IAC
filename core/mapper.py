@@ -10,58 +10,11 @@ import json
 import re
 from typing import Any, Dict, List
 
-from core.llm_client import invocar_llm
+from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
 
-
-SYSTEM_PROMPT = """Eres un experto en mapeo de formularios Excel. Recibes un arreglo llamado MapaFormularios y un objeto DatosEmpresa. Para cada rótulo de formulario, debes determinar el campo canónico más cercano de DatosEmpresa y proponer la ubicación exacta de escritura.
-
-Cada entrada del MapaFormularios incluye los siguientes campos de contexto visual:
-- `tipoEspacioEscritura`: clasifica visualmente el espacio disponible en la celda vecina:
-    - "subrayado" → celda vacía con borde inferior (línea de captura _____). Escribe a la DERECHA o ABAJO dependiendo de dónde esté ese subrayado.
-    - "cuadro"    → celda vacía con bordes completos (caja de tabla). Prioridad alta para escritura.
-    - "merge"     → celda pertenece a un rango combinado (espacio amplio). Escribe SIEMPRE a la derecha o abajo según corresponda.
-    - "vacio"     → celda vacía sin bordes. Puede usarse si no hay mejor opción.
-    - "ocupado"   → celda ya tiene contenido. NUNCA escribas en esta dirección.
-- `anchoLinea`: número de columnas consecutivas que forman la línea de captura a la derecha del rótulo.
-    Si anchoLinea > 1, hay múltiples celdas con borde inferior para un solo valor.
-- `anchoMergeVecino`: si el vecino derecho es un rango combinado (merge) preexistente en la plantilla, este valor es su ancho físico total en columnas (ej: C3:H3 → anchoMergeVecino=6). Si no hay merge, vale 1.
-- `esMergePrincipal`: True si la etiqueta (rótulo) misma ocupa un rango combinado en la plantilla (ej: la celda «NOMBRE/RAZÓN SOCIAL» abarca las columnas A1:C1). Cuando es True, la columna de escritura ya fue corregida automáticamente por el parser para apuntar después del merge. No requiere ajuste adicional de tu parte.
-- `coordMerge`: coordenadas del rango del merge de la etiqueta (ej: "A1:C1"). Vacío si la etiqueta es una celda simple.
-
-Reglas estrictas de ubicación (en orden de prioridad):
-1. EXCLUSIÓN SUPLENTE: Si el campo pertenece al "Representante Legal Suplente" (y no hay un suplente diferente en DatosEmpresa), OMITIR por completo (no duplicar el Principal).
-2. TIPO DE ID [ CC | CE | PAS ]: En casillas de opciones de tipo de documento, asigna una 'X' a la casilla de la opción respectiva ("CC"). NUNCA escribas el número de cédula/NIT dentro de las casillas de opciones.
-3. PERSONA CONTACTO EXTERNA: Rótulos como "Nombre y Cargo persona contacto", "Correo persona contacto" corresponden a terceros. OMITIR (no llenar con datos del representante principal ni de la empresa).
-4. SECCIÓN PEP: En preguntas PEP ("Goza de reconocimiento...", "Administra recursos...", "PEP Extranjera"), responder "NO". La sub-tabla de detalle PEP ("Nombres y Apellidos", "Entidad Pública", "Cargo", "Fecha vinculación") debe OMITIRSE por completo (no mapear al representante legal ni a nadie en esa sub-tabla).
-5. TABLAS / ENCABEZADOS EN FILA: Si la fila actual contiene varios encabezados de tabla seguidos (ej: [Nombre/Razón Social | ID | % Participación]), la ubicación de escritura es SIEMPRE "abajo" (en la fila de datos inmediatamente inferior). NUNCA uses "derecha" sobre un encabezado vecino.
-6. Si tipoEspacioEscritura es "subrayado", "cuadro" o "merge" en la derecha y no es un encabezado de tabla → usa "derecha".
-7. Si la derecha está "ocupado" (por otro texto o título) pero abajo está libre → usa "abajo".
-8. Si derechaVacia es True (y no hay otro título a la derecha) → usa "derecha".
-9. Si derechaVacia es False y abajoVacia es True → usa "abajo".
-10. Si ambas direcciones están "ocupado" → OMITIR el campo para no sobreescribir etiquetas.
-
-Además, agrega para cada elemento los campos:
-- requiereMerge: True si tipoEspacioEscritura es "subrayado" o "merge" Y (anchoLinea > 1 O anchoMergeVecino > 1).
-- celdasAMergear: prioridad de valores en este orden:
-    1. Si derechaEsMerge es True → usar `anchoMergeVecino` (dimensión física exacta del merge de la plantilla).
-    2. Si anchoLinea > 1 → usar `anchoLinea` (línea de captura con celdas simples).
-    3. Si requiereMerge es True y ambos valen 1 → usar 3 como mínimo por defecto.
-
-Responde únicamente con JSON válido. Devuelve un arreglo de objetos o bien envuélvelo en un objeto JSON bajo la clave "mappings" (ejemplo: {"mappings": [...]}).
-Cada objeto del listado debe tener este formato:
-{
-  "hoja": "Hoja1",
-  "fila": 1,
-  "columna": 1,
-  "valor": "Razón Social",
-  "ubicacion": "derecha",
-  "campo": "razon_social",
-  "requiereMerge": false,
-  "celdasAMergear": 1
-}
-
-Solo incluye objetos que tienen ubicacion "derecha" o "abajo".
-"""
+# Complicidad 1 Fix: Se eliminó el SYSTEM_PROMPT local redundante.
+# El prompt del sistema está consolidado en core.llm_client.STRICT_SYSTEM_PROMPT.
+# invocar_llm() ya lo aplica automáticamente; no es necesario pasarlo como argumento.
 
 
 def construir_prompt(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> str:
@@ -172,7 +125,7 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
         raise ValueError("El mapa de formularios debe ser una lista de objetos.")
 
     prompt = construir_prompt(mapa_formularios, datos_empresa)
-    respuesta = invocar_llm(prompt, sistema=SYSTEM_PROMPT)
+    respuesta = invocar_llm(prompt)  # Complicidad 1 Fix: prompt consolidado aplicado automáticamente
 
     if not respuesta or not isinstance(respuesta, str):
         raise RuntimeError("La respuesta del LLM no es un texto válido.")
