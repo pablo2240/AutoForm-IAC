@@ -276,88 +276,90 @@ def _consultar_llm_requests(
         mensajes.append({"role": "system", "content": sistema})
     mensajes.append({"role": "user", "content": prompt_usuario})
 
-    modelo_openrouter = LLM_MODEL or "inclusionai/ling-3.0-flash:free"
-    if "/" not in modelo_openrouter:
-        modelo_openrouter = "inclusionai/ling-3.0-flash:free"
+    # Lista de modelos candidate en OpenRouter para fallback automático si uno devuelve vacío o falla
+    modelo_principal = LLM_MODEL if (LLM_MODEL and "/" in LLM_MODEL) else "inclusionai/ling-3.0-flash:free"
+    modelos_candidatos = [
+        modelo_principal,
+        "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "meta-llama/llama-3.3-70b-instruct:free",
+        "qwen/qwen-2.5-72b-instruct:free",
+    ]
+    # Eliminar duplicados preservando el orden
+    modelos_unicos = []
+    for m in modelos_candidatos:
+        if m not in modelos_unicos:
+            modelos_unicos.append(m)
 
-    cuerpo: Dict[str, Any] = {
-        "model": modelo_openrouter,
-        "messages": mensajes,
-    }
-    # ling-3.0-flash no acepta la clave response_format en el JSON del payload (devuelve 400)
-    if json_mode and "ling-3.0-flash" not in modelo_openrouter:
-        cuerpo["response_format"] = {"type": "json_object"}
+    ultimo_error: Exception = RuntimeError("Error desconocido en OpenRouter.")
 
-    MAX_REINTENTOS = 3
-    ultimo_error: Exception = RuntimeError("Error desconocido")
+    for modelo in modelos_unicos:
+        cuerpo: Dict[str, Any] = {
+            "model": modelo,
+            "messages": mensajes,
+        }
+        if json_mode and "ling-3.0-flash" not in modelo:
+            cuerpo["response_format"] = {"type": "json_object"}
 
-    for intento in range(1, MAX_REINTENTOS + 1):
-        try:
-            respuesta = requests.post(
-                OPENROUTER_API_URL,
-                headers={
-                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "http://localhost:8501",
-                    "X-Title": "AutoForm AI",
-                },
-                json=cuerpo,
-                timeout=timeout,
-            )
-        except requests.Timeout as exc:
-            ultimo_error = RuntimeError(
-                f"OpenRouter no respondió en {timeout}s (intento {intento}/{MAX_REINTENTOS})."
-            )
-            if intento < MAX_REINTENTOS:
-                time.sleep(2 ** (intento - 1))
-                continue
-            raise ultimo_error from exc
-        except requests.ConnectionError as exc:
-            ultimo_error = RuntimeError(
-                f"No se pudo conectar a OpenRouter (intento {intento}/{MAX_REINTENTOS})."
-            )
-            if intento < MAX_REINTENTOS:
-                time.sleep(2 ** (intento - 1))
-                continue
-            raise ultimo_error from exc
-
-        if respuesta.status_code >= 500:
-            ultimo_error = RuntimeError(
-                f"OpenRouter devolvio {respuesta.status_code} (intento {intento}/{MAX_REINTENTOS})."
-            )
-            if intento < MAX_REINTENTOS:
-                time.sleep(2 ** (intento - 1))
-                continue
-            raise ultimo_error
-
-        try:
-            respuesta.raise_for_status()
-        except requests.HTTPError as exc:
-            raise RuntimeError(
-                f"Error al invocar OpenRouter/LLM: {respuesta.status_code} {respuesta.text}"
-            ) from exc
-
-        datos = respuesta.json()
-        if not datos:
-            raise RuntimeError("Respuesta vacía de OpenRouter.")
-
-        if "error" in datos:
-            error_msg = datos["error"].get("message", str(datos["error"]))
-            if "522" in error_msg or "502" in error_msg or "503" in error_msg or "timeout" in error_msg.lower():
-                ultimo_error = RuntimeError(f"Error de OpenRouter: {error_msg} (intento {intento}/{MAX_REINTENTOS})")
+        MAX_REINTENTOS = 2
+        for intento in range(1, MAX_REINTENTOS + 1):
+            try:
+                respuesta = requests.post(
+                    OPENROUTER_API_URL,
+                    headers={
+                        "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                        "Content-Type": "application/json",
+                        "HTTP-Referer": "http://localhost:8501",
+                        "X-Title": "AutoForm AI",
+                    },
+                    json=cuerpo,
+                    timeout=timeout,
+                )
+            except (requests.Timeout, requests.ConnectionError) as exc:
+                ultimo_error = RuntimeError(f"Error de red en OpenRouter con {modelo} (intento {intento}): {exc}")
                 if intento < MAX_REINTENTOS:
-                    time.sleep(2 ** (intento - 1))
+                    time.sleep(1)
                     continue
-            raise RuntimeError(f"Error de OpenRouter: {error_msg}")
+                break  # Probar siguiente modelo
 
-        if "choices" not in datos or not datos["choices"]:
-            raise RuntimeError(f"Respuesta inválida de OpenRouter. Payload: {datos}")
+            if respuesta.status_code >= 500:
+                ultimo_error = RuntimeError(f"OpenRouter {modelo} devolvió status {respuesta.status_code}.")
+                if intento < MAX_REINTENTOS:
+                    time.sleep(1)
+                    continue
+                break  # Probar siguiente modelo
 
-        contenido = datos["choices"][0].get("message", {}).get("content")
-        if contenido is None:
-            raise RuntimeError("La respuesta del LLM no incluye contenido.")
+            try:
+                respuesta.raise_for_status()
+            except requests.HTTPError as exc:
+                ultimo_error = RuntimeError(f"Error HTTP OpenRouter {modelo}: {respuesta.status_code} {respuesta.text}")
+                break  # Probar siguiente modelo
 
-        return contenido
+            datos = respuesta.json()
+            if not datos or "error" in datos:
+                error_msg = datos.get("error", {}).get("message", str(datos)) if isinstance(datos, dict) else str(datos)
+                ultimo_error = RuntimeError(f"Error en respuesta OpenRouter {modelo}: {error_msg}")
+                break  # Probar siguiente modelo
+
+            choices = datos.get("choices", [])
+            if not choices:
+                ultimo_error = RuntimeError(f"Payload sin choices en OpenRouter {modelo}: {datos}")
+                break
+
+            choice_obj = choices[0]
+            message_obj = choice_obj.get("message", {}) if isinstance(choice_obj, dict) else {}
+            
+            # Extraer contenido probando claves estándar de diferentes modelos de OpenRouter
+            contenido = None
+            if isinstance(message_obj, dict):
+                contenido = message_obj.get("content") or message_obj.get("reasoning") or message_obj.get("text")
+            if not contenido and isinstance(choice_obj, dict):
+                contenido = choice_obj.get("text")
+
+            if contenido and str(contenido).strip():
+                return str(contenido).strip()
+
+            ultimo_error = RuntimeError(f"El modelo {modelo} devolvió contenido vacío en OpenRouter.")
+            # Si el contenido vino vacío, intentar con el siguiente modelo candidatas
 
     raise ultimo_error
 
