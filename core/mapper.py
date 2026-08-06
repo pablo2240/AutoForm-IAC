@@ -103,11 +103,41 @@ def construir_prompt(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict
 
 
 
-def _necesita_merge(valor: str) -> bool:
-    texto = str(valor or "")
-    if "_" in texto:
+# Campos canónicos que siempre requieren espacio amplio (merge o línea larga).
+# Se evalúan contra elemento["campo"] (clave canónica) para la heurística de merge.
+_CAMPOS_REQUIEREN_MERGE = {
+    "razon_social", "direccion", "representante_legal",
+    "representante_nombres", "representante_apellidos",
+    "correo", "pagina_web", "objeto_social", "actividad_economica",
+}
+
+# Indicios textuales en la etiqueta del formulario que sugieren campo extenso.
+_PATRON_ETIQUETA_MERGE = re.compile(
+    r"firma|\bdirecci[oó]n\b|\bdomicilio\b|\brazon\b|social|nombre\s+completo"
+    r"|tel[eé]fono|correo|email|p[aá]gina\s*web|objeto|actividad",
+    flags=re.IGNORECASE,
+)
+
+
+def _necesita_merge(etiqueta: str, campo: str) -> bool:
+    """Complicidad 3 Fix: evalúa la ETIQUETA del formulario y la CLAVE CANÓNICA
+    del campo, NO el valor que se va a escribir.
+
+    Args:
+        etiqueta: Texto del rótulo original del formulario (elemento["valor"]).
+        campo:    Clave canónica asignada por la IA (elemento["campo"]).
+
+    Returns:
+        True si el campo necesita un espacio de escritura amplio (merge).
+    """
+    # 1. La clave canónica está en el conjunto de campos que requieren merge
+    if campo in _CAMPOS_REQUIEREN_MERGE:
         return True
-    if re.search(r"firma|firma\b|línea|linea|debajo|dirección|direccion|tel[eé]fono|correo|email|raz[oó]n social", texto, flags=re.IGNORECASE):
+    # 2. El rótulo del formulario tiene indicios de campo extenso
+    if _PATRON_ETIQUETA_MERGE.search(str(etiqueta or "")):
+        return True
+    # 3. La etiqueta contiene guiones de relleno (línea de captura larga inline)
+    if "_" in str(etiqueta or ""):
         return True
     return False
 
@@ -236,7 +266,11 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
             elemento = _validar_item(item)
             if elemento["campo"] == "":
                 continue
-            if elemento["requiereMerge"] is False and _necesita_merge(elemento["valor"]):
+            # Complicidad 3 Fix: heurística sobre etiqueta del formulario y campo
+            # canónico, NO sobre el valor a escribir.
+            if elemento["requiereMerge"] is False and _necesita_merge(
+                elemento["valor"], elemento["campo"]
+            ):
                 elemento["requiereMerge"] = True
                 elemento["celdasAMergear"] = max(3, elemento["celdasAMergear"])
             plano_final.append(elemento)
