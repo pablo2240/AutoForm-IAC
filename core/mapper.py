@@ -216,6 +216,19 @@ def _extraer_json(texto: str) -> Any:
         except json.JSONDecodeError:
             pass
 
+    # 4. Recuperación de arreglos JSON truncados (si el LLM fue cortado a mitad de la respuesta)
+    try:
+        pos_ultimo_objeto = texto_limpio.rfind("}")
+        if pos_ultimo_objeto != -1:
+            texto_recortado = texto_limpio[:pos_ultimo_objeto + 1].strip()
+            if not texto_recortado.endswith("]"):
+                texto_recortado += "\n]"
+            pos_inicio_array = texto_recortado.find("[")
+            if pos_inicio_array != -1:
+                return json.loads(texto_recortado[pos_inicio_array:])
+    except json.JSONDecodeError:
+        pass
+
     # Si todo falla, lanzamos una excepción limpia
     raise ValueError("No se encontró una estructura JSON válida en el texto de respuesta.")
 

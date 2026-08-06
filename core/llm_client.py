@@ -189,6 +189,7 @@ def _consultar_gemini_studio(
                 config_kwargs["system_instruction"] = sistema
             if json_mode:
                 config_kwargs["response_mime_type"] = "application/json"
+            config_kwargs["max_output_tokens"] = 8192
 
             config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
@@ -220,16 +221,17 @@ def _consultar_gemini_studio(
                 "role": "user",
                 "parts": [{"text": prompt_usuario}]
             }
-        ]
+        ],
+        "generationConfig": {
+            "maxOutputTokens": 8192
+        }
     }
     if sistema:
         cuerpo["systemInstruction"] = {
             "parts": [{"text": sistema}]
         }
     if json_mode:
-        cuerpo["generationConfig"] = {
-            "responseMimeType": "application/json"
-        }
+        cuerpo["generationConfig"]["responseMimeType"] = "application/json"
 
     headers = {"Content-Type": "application/json"}
     MAX_REINTENTOS = 3
@@ -296,6 +298,7 @@ def _consultar_llm_requests(
         cuerpo: Dict[str, Any] = {
             "model": modelo,
             "messages": mensajes,
+            "max_tokens": 8192,
         }
         if json_mode and "ling-3.0-flash" not in modelo:
             cuerpo["response_format"] = {"type": "json_object"}
