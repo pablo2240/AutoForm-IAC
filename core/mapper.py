@@ -187,49 +187,70 @@ def _validar_item(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _extraer_json(texto: str) -> Any:
-    """Intenta extraer y parsear un objeto o arreglo JSON de una cadena de texto,
-    incluso si contiene texto introductorio, explicaciones o bloques de markdown.
+    """Extrae y parsea JSON de la respuesta del LLM.
+
+    Estrategia de 6 pasos ordenados de mayor a menor certeza.
+    Paso clave (5): búsqueda inversa desde el último '[' o '{',
+    necesaria para modelos de razonamiento que emiten análisis
+    en texto plano ANTES del JSON final.
     """
     texto_limpio = texto.strip()
 
-    # 1. Intento de parseo directo del texto completo
+    # 1. Parseo directo del texto completo
     try:
         return json.loads(texto_limpio)
     except json.JSONDecodeError:
         pass
 
-    # 2. Buscar bloques de código markdown ```json ... ``` o ``` ... ```
+    # 2. Bloques de código markdown ```json ... ``` o ``` ... ```
     bloque_markdown = re.search(r'```(?:json)?\s*(.*?)\s*```', texto, re.DOTALL | re.IGNORECASE)
     if bloque_markdown:
-        contenido_bloque = bloque_markdown.group(1).strip()
         try:
-            return json.loads(contenido_bloque)
+            return json.loads(bloque_markdown.group(1).strip())
         except json.JSONDecodeError:
             pass
 
-    # 3. Buscar la primera ocurrencia de '{' o '[' y la última de '}' o ']'
-    coincidencia = re.search(r'(\{.*\}|\[.*\])', texto, re.DOTALL)
-    if coincidencia:
-        cuerpo_json = coincidencia.group(1).strip()
+    # 3. Primera '{' hasta última '}' o primera '[' hasta última ']'
+    for patron in (r'(\[.*\])', r'(\{.*\})'):
+        m = re.search(patron, texto, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+
+    # 4. Búsqueda INVERSA desde el último '[' — clave para modelos de razonamiento.
+    # Estos modelos emiten 1000+ líneas de análisis y colocan el JSON AL FINAL.
+    ultimo_corchete = texto_limpio.rfind('[')
+    if ultimo_corchete != -1:
+        fragmento = texto_limpio[ultimo_corchete:]
+        # 4a. Fragmento tal cual
         try:
-            return json.loads(cuerpo_json)
+            return json.loads(fragmento)
         except json.JSONDecodeError:
             pass
+        # 4b. Reparar si está truncado: cerrar el último objeto y el array
+        pos_ultimo_obj = fragmento.rfind('}')
+        if pos_ultimo_obj != -1:
+            fragmento_reparado = fragmento[:pos_ultimo_obj + 1].rstrip().rstrip(',') + '\n]'
+            try:
+                return json.loads(fragmento_reparado)
+            except json.JSONDecodeError:
+                pass
 
-    # 4. Recuperación de arreglos JSON truncados (si el LLM fue cortado a mitad de la respuesta)
+    # 5. Reparación genérica de array truncado (busca primer '[' en todo el texto)
     try:
-        pos_ultimo_objeto = texto_limpio.rfind("}")
-        if pos_ultimo_objeto != -1:
-            texto_recortado = texto_limpio[:pos_ultimo_objeto + 1].strip()
-            if not texto_recortado.endswith("]"):
-                texto_recortado += "\n]"
-            pos_inicio_array = texto_recortado.find("[")
-            if pos_inicio_array != -1:
-                return json.loads(texto_recortado[pos_inicio_array:])
+        pos_ultimo_obj = texto_limpio.rfind('}')
+        if pos_ultimo_obj != -1:
+            texto_recortado = texto_limpio[:pos_ultimo_obj + 1].strip()
+            if not texto_recortado.endswith(']'):
+                texto_recortado += '\n]'
+            pos_inicio = texto_recortado.find('[')
+            if pos_inicio != -1:
+                return json.loads(texto_recortado[pos_inicio:])
     except json.JSONDecodeError:
         pass
 
-    # Si todo falla, lanzamos una excepción limpia
     raise ValueError("No se encontró una estructura JSON válida en el texto de respuesta.")
 
 

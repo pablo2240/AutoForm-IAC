@@ -278,11 +278,21 @@ def _consultar_llm_requests(
         mensajes.append({"role": "system", "content": sistema})
     mensajes.append({"role": "user", "content": prompt_usuario})
 
-    # Lista de modelos candidate en OpenRouter para fallback automático si uno devuelve vacío o falla
-    modelo_principal = LLM_MODEL if (LLM_MODEL and "/" in LLM_MODEL) else "inclusionai/ling-3.0-flash:free"
+    # Modelos candidatos en OpenRouter. El orden importa:
+    # 1. LLM_MODEL del .env (si está configurado y NO es ling-3.0-flash)
+    # 2. Modelos Google Gemini — respetan json_mode sin emitir razonamiento inline
+    # 3. Fallbacks de alta calidad con buen cumplimiento de instrucciones
+    # EXCLUIDO: ling-3.0-flash — emite chain-of-thought en el cuerpo de la respuesta,
+    #           lo que produce texto de análisis en lugar de JSON puro.
+    modelo_principal = (
+        LLM_MODEL
+        if (LLM_MODEL and "/" in LLM_MODEL and "ling" not in LLM_MODEL)
+        else "google/gemini-2.0-flash-lite-preview-02-05:free"
+    )
     modelos_candidatos = [
         modelo_principal,
         "google/gemini-2.0-flash-lite-preview-02-05:free",
+        "google/gemini-flash-1.5-8b:free",
         "meta-llama/llama-3.3-70b-instruct:free",
         "qwen/qwen-2.5-72b-instruct:free",
     ]
