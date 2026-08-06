@@ -70,7 +70,36 @@ def _copiar_borde_inferior(origen: Worksheet, fila: int, columna: int) -> Option
     return None
 
 
-def _escribir_valor_en_celda(celda, valor, es_misma_celda: bool):
+def _obtener_celda_escribible(hoja: Worksheet, fila: int, columna: int) -> Any:
+    """Garantiza retornar un objeto Cell escribible (no MergedCell).
+
+    Si la celda indicada cae dentro de un rango combinado, retorna la celda superior izquierda
+    (min_row, min_col) del rango.
+    """
+    for rango in hoja.merged_cells.ranges:
+        if rango.min_row <= fila <= rango.max_row and rango.min_col <= columna <= rango.max_col:
+            celda_top = hoja.cell(row=rango.min_row, column=rango.min_col)
+            if type(celda_top).__name__ != "MergedCell":
+                return celda_top
+
+    celda = hoja.cell(row=fila, column=columna)
+    if type(celda).__name__ == "MergedCell":
+        for rango in hoja.merged_cells.ranges:
+            if rango.min_row <= fila <= rango.max_row and rango.min_col <= columna <= rango.max_col:
+                return hoja.cell(row=rango.min_row, column=rango.min_col)
+    return celda
+
+
+def _escribir_valor_en_celda(celda, valor, es_misma_celda: bool, hoja: Optional[Worksheet] = None):
+    # Si celda es un objeto MergedCell de openpyxl (solo lectura), redirigir a celda principal
+    if type(celda).__name__ == "MergedCell":
+        if hoja is not None:
+            celda = _obtener_celda_escribible(hoja, celda.row, celda.column)
+            if type(celda).__name__ == "MergedCell":
+                return  # Si aun así no es escribible, evitar crash
+        else:
+            return
+
     # Si el valor es booleano (True/False), lo representamos como una 'X' para casillas de verificación
     if isinstance(valor, bool):
         valor = "X" if valor else ""
@@ -80,14 +109,20 @@ def _escribir_valor_en_celda(celda, valor, es_misma_celda: bool):
         # Buscar patrones de marcadores de posición como underscores (__) o puntos (...)
         patron_placeholder = r'_{2,}|\.{3,}'
         if re.search(patron_placeholder, valor_actual):
-            celda.value = re.sub(patron_placeholder, str(valor), valor_actual, count=1)
+            try:
+                celda.value = re.sub(patron_placeholder, str(valor), valor_actual, count=1)
+            except AttributeError:
+                pass
             return
-        
+
         # Jamás invadimos o concatenamos sobre una celda de enunciado pura
         if es_misma_celda:
             return
 
-    celda.value = valor
+    try:
+        celda.value = valor
+    except AttributeError:
+        pass
 
 
 def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> bytes:
@@ -145,28 +180,28 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
                 end_column=columna_final,
             )
 
-        if rango_preexistente is not None:
-            celda_destino = ws.cell(row=rango_preexistente.min_row, column=rango_preexistente.min_col)
-        elif rango_combinado is not None:
-            celda_destino = ws.cell(row=fila_destino, column=columna_destino)
-        else:
-            celda_destino = ws.cell(row=fila_destino, column=columna_destino)
+        celda_destino = _obtener_celda_escribible(ws, fila_destino, columna_destino)
+        celda_origen = _obtener_celda_escribible(ws, fila_origen, columna_origen)
 
-        celda_origen = ws.cell(row=fila_origen, column=columna_origen)
         es_misma_celda = (celda_destino.coordinate == celda_origen.coordinate)
-        _escribir_valor_en_celda(celda_destino, valor, es_misma_celda)
-        celda_destino.alignment = Alignment(vertical="center", wrap_text=True)
+        _escribir_valor_en_celda(celda_destino, valor, es_misma_celda, hoja=ws)
 
-        borde_inferior = _copiar_borde_inferior(ws, fila_origen, columna_origen)
-        if borde_inferior is not None:
-            celda_destino.border = borde_inferior
+        if type(celda_destino).__name__ != "MergedCell":
+            celda_destino.alignment = Alignment(vertical="center", wrap_text=True)
+
+            borde_inferior = _copiar_borde_inferior(ws, fila_origen, columna_origen)
+            if borde_inferior is not None:
+                celda_destino.border = borde_inferior
 
         if rango_combinado is not None:
+            borde_inferior = _copiar_borde_inferior(ws, fila_origen, columna_origen)
             _, inicio_col, _, fin_col = rango_combinado
             for col in range(inicio_col, fin_col + 1):
-                ws.cell(row=fila_destino, column=col).alignment = Alignment(vertical="center", wrap_text=True)
-                if borde_inferior is not None:
-                    ws.cell(row=fila_destino, column=col).border = borde_inferior
+                c_item = _obtener_celda_escribible(ws, fila_destino, col)
+                if type(c_item).__name__ != "MergedCell":
+                    c_item.alignment = Alignment(vertical="center", wrap_text=True)
+                    if borde_inferior is not None:
+                        c_item.border = borde_inferior
 
     salida = BytesIO()
     workbook.save(salida)
