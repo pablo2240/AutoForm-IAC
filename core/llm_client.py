@@ -83,7 +83,9 @@ Significado de los campos de contexto visual en cada rotulo:
 - `anchoLinea`: columnas consecutivas con borde inferior (linea de captura). >1 = espacio para valor largo.
 - `anchoMergeVecino`: ancho en columnas del merge vecino derecho. 1 = sin merge.
 - `esMergePrincipal`: True si el propio rotulo es un merge. La columna de escritura ya fue corregida; no requiere ajuste.
-- `esCasillaVerificacion`: True si la celda es un recuadro 1x1 de opcion (checkbox). Si la opcion aplica segun DatosEmpresa, debes responder asignando valor "X".
+- `esCasillaVerificacion`: 
+  - Si es `True` (recuadro 1x1 de opción/checkbox): Asigna valor "X" a la opción si aplica.
+  - Si es `False` (línea de captura o espacio amplio): Asigna el DATO REAL (ej. escribe el número de cédula en el rótulo "C.C.", el nombre en "Nombre", etc.).
 
 ---
 
@@ -126,7 +128,9 @@ Evaluar ANTES que cualquier otra regla. Si aplica, OMITIR la celda:
 
 4. PERSONA CONTACTO EXTERNA: Rótulos como "Nombre y Cargo persona contacto" o "Correo persona contacto" son de terceros. OMITIR.
 
-5. TIPO ID COMO OPCIONES [CC | CE | PAS | OTRO]: NUNCA escribas el número dentro de las casillas de opción. Asigna 'X' a la opción "CC" y el número de documento solo en la columna "Número de identificación".
+5. TIPO ID Y OPCIONES [CC | CE | PAS | OTRO]: 
+   - Si la celda tiene `esCasillaVerificacion == True` (recuadro de opción 1x1), asigna 'X' a la casilla "CC" y el número de cédula en la columna o celda de "Número de identificación".
+   - Si la celda NO es casilla de verificación (`esCasillaVerificacion == False` o línea de captura `anchoLinea > 1`), escribe directamente el NÚMERO DE CÉDULA (campo `cedula`) en el espacio de escritura del rótulo "C.C." / "CÉDULA".
 
 6. NOTAS / INSTRUCCIONES CONDICIONALES: Frases como "Si en la composición accionaria...", "Si el espacio no es suficiente...", "Adjuntar relación..." son notas, NO campos de entrada. OMITIR.
 
