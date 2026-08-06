@@ -195,6 +195,40 @@ def _es_casilla_verificacion(
     return False
 
 
+def _encontrar_columna_escritura_raycasting(
+    hoja: Worksheet,
+    fila: int,
+    col_inicio: int,
+    mapa_merges: Dict[Tuple[int, int], Any],
+    max_distancia: int = 15,
+) -> int:
+    """Escanea hacia la derecha en la misma fila desde col_inicio buscando la primera celda
+    que actúe como línea de captura (borde inferior activo, recuadro o merge de escritura).
+
+    Tolera espacios en blanco/sangrías entre el texto del rótulo y la línea de captura.
+    """
+    max_col = min((hoja.max_column or col_inicio), col_inicio + max_distancia)
+    col = col_inicio
+
+    while col <= max_col:
+        rango = mapa_merges.get((fila, col))
+        if rango is not None:
+            return col  # Encontró un rango combinado: esa es la columna destino
+
+        es_vacia = _celda_vacia(hoja, fila, col)
+        if not es_vacia and col > col_inicio:
+            # Encontró otro rótulo con texto antes de un borde: detener escaneo
+            break
+
+        bordes = _analizar_bordes_celda(hoja, fila, col)
+        if bordes.get("bottom", False) or sum(1 for v in bordes.values() if v) >= 3:
+            return col  # Encontró celda vacía con borde inferior o recuadro
+
+        col += 1
+
+    return col_inicio
+
+
 def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
     """Recorre todas las hojas y extrae el mapa visual/espacial de los rótulos con texto.
 
@@ -303,6 +337,11 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                     abajo_vacia, abajo_es_merge, bordes_abajo, 1, texto
                 )
 
+                # ── PARSER-06: Ray-Casting horizontal para ubicar celda con border.bottom exacta ──
+                columna_escritura = _encontrar_columna_escritura_raycasting(
+                    hoja, fila, derecha_columna, mapa_merges
+                )
+
                 formulario.append(
                     {
                         "hoja": hoja.title,
@@ -323,6 +362,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "esMergePrincipal": es_merge_principal,
                         "coordMerge":       coord_merge,
                         "esCasillaVerificacion": es_casilla,
+                        "columnaEscritura": columna_escritura,
                     }
                 )
     return formulario

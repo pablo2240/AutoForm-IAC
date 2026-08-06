@@ -24,7 +24,7 @@ _CLAVES_LLM = {
     "hoja", "fila", "columna", "valor",
     "tipoEspacioEscritura", "anchoLinea", "anchoMergeVecino",
     "derechaVacia", "abajoVacia", "derechaEsMerge", "esMergePrincipal",
-    "esCasillaVerificacion",
+    "esCasillaVerificacion", "columnaEscritura",
 }
 
 # Campos que no pertenecen a DatosEmpresa directamente pero que siempre
@@ -175,7 +175,7 @@ def _validar_item(item: Dict[str, Any]) -> Dict[str, Any]:
     if requiere_merge and celdas_a_mergear == 1:
         celdas_a_mergear = 3
 
-    return {
+    res = {
         "hoja": str(item.get("hoja", "")),
         "fila": int(item.get("fila", 0) or 0),
         "columna": int(item.get("columna", 0) or 0),
@@ -185,6 +185,9 @@ def _validar_item(item: Dict[str, Any]) -> Dict[str, Any]:
         "requiereMerge": requiere_merge,
         "celdasAMergear": celdas_a_mergear,
     }
+    if "columnaEscritura" in item:
+        res["columnaEscritura"] = int(item["columnaEscritura"])
+    return res
 
 
 def _extraer_json(texto: str) -> Any:
