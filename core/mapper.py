@@ -254,64 +254,149 @@ def _extraer_json(texto: str) -> Any:
     raise ValueError("No se encontró una estructura JSON válida en el texto de respuesta.")
 
 
-def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> List[Dict[str, Any]]:
-    if not isinstance(mapa_formularios, list):
-        raise ValueError("El mapa de formularios debe ser una lista de objetos.")
-
-    prompt = construir_prompt(mapa_formularios, datos_empresa)
-    respuesta = invocar_llm(prompt)  # Complicidad 1 Fix: prompt consolidado aplicado automáticamente
-
+def _procesar_resultado_llm(respuesta: str) -> List[Dict[str, Any]]:
+    """Extrae, valida y estructura la lista de elementos mapeados desde una respuesta textual del LLM."""
     if not respuesta or not isinstance(respuesta, str):
         raise RuntimeError("La respuesta del LLM no es un texto válido.")
 
-    try:
-        resultado = _extraer_json(respuesta)
-    except Exception as exc:
-        raise RuntimeError(f"No se pudo parsear la respuesta JSON del LLM. Respuesta: {respuesta}") from exc
+    resultado = _extraer_json(respuesta)
 
-    # Robustez para modo JSON: Si el LLM devolvió un objeto (diccionario) en vez de una lista directa
+    # Robustez si el LLM devolvió un diccionario en lugar de una lista pura
     if isinstance(resultado, dict):
         lista_extraida = None
-        # Caso A: Buscar si hay alguna lista dentro de alguna clave del diccionario (ej: {"mappings": [...]})
-        for clave, valor in resultado.items():
+        for _, valor in resultado.items():
             if isinstance(valor, list):
                 lista_extraida = valor
                 break
-        
         if lista_extraida is not None:
             resultado = lista_extraida
         else:
-            # Caso B: Si es un diccionario indexado como {"0": {...}, "1": {...}}
             valores_dict = list(resultado.values())
             if valores_dict and all(isinstance(v, dict) and ("fila" in v or "hoja" in v) for v in valores_dict if v):
                 resultado = [v for v in valores_dict if v]
             else:
-                raise RuntimeError(
-                    f"El LLM devolvió un objeto JSON pero no se encontró ninguna lista de mapeos en su interior. "
-                    f"Estructura recibida: {resultado}"
-                )
+                raise RuntimeError(f"JSON del LLM no contiene lista de mapeos: {resultado}")
 
     if not isinstance(resultado, list):
-        raise RuntimeError(f"El LLM debe retornar un arreglo JSON. Estructura recibida: {resultado}")
+        raise RuntimeError(f"El LLM debe retornar un arreglo JSON: {resultado}")
 
-    plano_final: List[Dict[str, Any]] = []
+    elementos_validos: List[Dict[str, Any]] = []
     for item in resultado:
         try:
             elemento = _validar_item(item)
             if elemento["campo"] == "":
                 continue
-            # Complicidad 3 Fix: heurística sobre etiqueta del formulario y campo
-            # canónico, NO sobre el valor a escribir.
             if elemento["requiereMerge"] is False and _necesita_merge(
                 elemento["valor"], elemento["campo"]
             ):
                 elemento["requiereMerge"] = True
                 elemento["celdasAMergear"] = max(3, elemento["celdasAMergear"])
-            plano_final.append(elemento)
+            elementos_validos.append(elemento)
         except (ValueError, TypeError, KeyError) as e:
-            # Tolerancia a fallos: Si un elemento individual viene mal formateado de la IA,
-            # lo omitimos y continuamos con los demás en lugar de tumbar toda la ejecución.
             print(f"[AutoForm AI Warning] Omitiendo fila de mapeo inválida: {e}. Elemento: {item}")
             continue
 
-    return plano_final
+    return elementos_validos
+
+
+def _evaluar_cobertura_campos(
+    datos_empresa_filtrados: Dict[str, Any],
+    mapeos_realizados: List[Dict[str, Any]]
+) -> List[str]:
+    """Compara las claves esperadas de DatosEmpresa contra las claves realmente asignadas por el LLM.
+
+    Returns:
+        Lista de nombres de campos que no fueron asignados a ninguna celda.
+    """
+    esperados = set(datos_empresa_filtrados.keys())
+    asignados = {item["campo"] for item in mapeos_realizados if item.get("campo")}
+    faltantes = sorted(list(esperados - asignados))
+    return faltantes
+
+
+def _construir_prompt_focalizado(
+    mapa_formularios: List[Dict[str, Any]],
+    mapeos_realizados: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+    campos_faltantes: List[str]
+) -> str:
+    """Construye un payload ultra-compacto enviando solo los campos omitidos y las celdas aún no ocupadas."""
+    celdas_ocupadas = {
+        (item["hoja"], item["fila"], item["columna"])
+        for item in mapeos_realizados
+    }
+
+    mapa_purgado = _purgar_mapa(mapa_formularios)
+    rotulos_libres = [
+        elem for elem in mapa_purgado
+        if (elem.get("hoja"), elem.get("fila"), elem.get("columna")) not in celdas_ocupadas
+    ]
+
+    datos_faltantes = {
+        k: datos_empresa[k]
+        for k in campos_faltantes
+        if k in datos_empresa
+    }
+
+    payload = {
+        "F": rotulos_libres,
+        "D": datos_faltantes,
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
+
+def _fusionar_mapeos(
+    mapeos_iniciales: List[Dict[str, Any]],
+    mapeos_complementarios: List[Dict[str, Any]]
+) -> List[Dict[str, Any]]:
+    """Combina los mapeos de la llamada principal y la llamada de cobertura sin colisiones de celdas."""
+    celdas_existentes = {
+        (item["hoja"], item["fila"], item["columna"])
+        for item in mapeos_iniciales
+    }
+    resultado_final = list(mapeos_iniciales)
+
+    for item in mapeos_complementarios:
+        clave_celda = (item["hoja"], item["fila"], item["columna"])
+        if clave_celda not in celdas_existentes:
+            resultado_final.append(item)
+            celdas_existentes.add(clave_celda)
+
+    return resultado_final
+
+
+def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dict[str, Any]) -> List[Dict[str, Any]]:
+    if not isinstance(mapa_formularios, list):
+        raise ValueError("El mapa de formularios debe ser una lista de objetos.")
+
+    # 1. Llamada Principal al LLM
+    prompt_principal = construir_prompt(mapa_formularios, datos_empresa)
+    respuesta_principal = invocar_llm(prompt_principal)
+    mapeos_iniciales = _procesar_resultado_llm(respuesta_principal)
+
+    # 2. Auditoría de Cobertura en Python (Fase 2 - Enfoque 1)
+    mapa_purgado = _purgar_mapa(mapa_formularios)
+    datos_filtrados = _filtrar_datos_empresa(mapa_purgado, datos_empresa)
+    campos_faltantes = _evaluar_cobertura_campos(datos_filtrados, mapeos_iniciales)
+
+    if not campos_faltantes:
+        print("[AutoForm AI Coverage] Cobertura 100%: Todos los campos de DatosEmpresa fueron mapeados.")
+        return mapeos_iniciales
+
+    # 3. Re-consulta Focalizada (solo si hubo campos omitidos)
+    print(f"[AutoForm AI Coverage] Omisión detectada: Faltan {len(campos_faltantes)} campos por mapear: {campos_faltantes}. Ejecutando re-mapeo focalizado...")
+    try:
+        prompt_focalizado = _construir_prompt_focalizado(
+            mapa_formularios, mapeos_iniciales, datos_empresa, campos_faltantes
+        )
+        respuesta_complementaria = invocar_llm(prompt_focalizado)
+        mapeos_complementarios = _procesar_resultado_llm(respuesta_complementaria)
+
+        plano_final = _fusionar_mapeos(mapeos_iniciales, mapeos_complementarios)
+        campos_recuperados = len(plano_final) - len(mapeos_iniciales)
+        print(f"[AutoForm AI Coverage] Re-mapeo exitoso: Se recuperaron {campos_recuperados} campos adicionales.")
+        return plano_final
+    except Exception as exc:
+        print(f"[AutoForm AI Warning] La re-consulta de cobertura falló ({exc}). Retornando mapeo inicial.")
+        return mapeos_iniciales
+
