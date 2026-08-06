@@ -57,7 +57,7 @@ def _filtrar_datos_empresa(mapa_purgo: List[Dict[str, Any]], datos: Dict[str, An
         "telefono":              ["telefono", "tel", "celular", "contacto telefonico"],
         "correo":                ["correo", "email", "e-mail"],
         "pagina_web":            ["web", "pagina", "url", "sitio"],
-        "representante_legal":   ["representante", "firma", "legal"],
+        "representante_legal":   ["representante", "legal"],
         "representante_nombres": ["nombres"],
         "representante_apellidos": ["apellidos"],
         "pais":                  ["pais", "nacionalidad"],

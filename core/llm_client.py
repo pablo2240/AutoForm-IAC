@@ -106,7 +106,7 @@ DICCIONARIO DE SINÓNIMOS (rótulo del formulario → campo canónico):
 - telefono → TELÉFONO, TEL, CELULAR, CONTACTO TELEFONICO
 - correo → CORREO, CORREO ELECTRONICO, EMAIL, E-MAIL
 - pagina_web → PÁGINA WEB, SITIO WEB, URL
-- representante_legal → REPRESENTANTE LEGAL, NOMBRE REPRESENTANTE, FIRMA DEL REPRESENTANTE
+- representante_legal → REPRESENTANTE LEGAL, NOMBRE REPRESENTANTE
 - representante_nombres → NOMBRES (cuando aparece separado de apellidos en sección de representante o junta)
 - representante_apellidos → APELLIDOS (cuando aparece separado de nombres en sección de representante o junta)
 - pais → PAÍS, PAIS, NACIONALIDAD
@@ -132,7 +132,9 @@ Evaluar ANTES que cualquier otra regla. Si aplica, OMITIR la celda:
    - Si la celda tiene `esCasillaVerificacion == True` (recuadro de opción 1x1), asigna 'X' a la casilla "CC" y el número de cédula en la columna o celda de "Número de identificación".
    - Si la celda NO es casilla de verificación (`esCasillaVerificacion == False` o línea de captura `anchoLinea > 1`), escribe directamente el NÚMERO DE CÉDULA (campo `cedula`) en el espacio de escritura del rótulo "C.C." / "CÉDULA".
 
-6. NOTAS / INSTRUCCIONES CONDICIONALES: Frases como "Si en la composición accionaria...", "Si el espacio no es suficiente...", "Adjuntar relación..." son notas, NO campos de entrada. OMITIR.
+6. FIRMAS: Rótulos como "Firma del Representante Legal", "Firma", "Firma y Huella", "Firma Revisor Fiscal", "Firma Autorizada" o "Firma del Declarante" son espacios exclusivos para la firma manuscrita/digital física. NUNCA escribas datos ni texto en estos espacios. OMITIR.
+
+7. NOTAS / INSTRUCCIONES CONDICIONALES: Frases como "Si en la composición accionaria...", "Si el espacio no es suficiente...", "Adjuntar relación..." son notas, NO campos de entrada. OMITIR.
 
 ---
 
