@@ -494,6 +494,119 @@ with st.sidebar:
                 
             st.session_state["chat_messages"].append({"role": "assistant", "content": respuesta_llm})
             st.chat_message("assistant").write(respuesta_llm)
+
+
+# ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────
+
+def render_kpi_card(valor: str, label: str, color_borde: str = "#F8B126", icono: str = "📊") -> str:
+    """Retorna el HTML de una tarjeta KPI con borde superior coloreado y elevación hover."""
+    return f"""
+        <div style="
+            background: #FFFFFF;
+            border: 1px solid #E2E8F0;
+            border-top: 4px solid {color_borde};
+            border-radius: 10px;
+            padding: 1rem 1.15rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+            margin-bottom: 0.5rem;
+        ">
+            <div style="font-size: 0.78rem; color: #64748B; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: space-between;">
+                <span>{label}</span>
+                <span style="font-size: 1.1rem;">{icono}</span>
+            </div>
+            <div style="font-size: 1.35rem; color: #121212; font-weight: 800; font-family: 'Montserrat', sans-serif; margin-top: 0.35rem;">
+                {valor}
+            </div>
+        </div>
+    """
+
+
+def render_stepper_progress(paso_actual: int, porcentaje: int, texto_estado: str) -> str:
+    """Genera la barra de progreso por pasos (Stepper) en HTML/CSS pura."""
+    pasos = [
+        ("1", "Estructura Espacial"),
+        ("2", "Mapeo IA"),
+        ("3", "Inyección Nativa"),
+    ]
+    
+    steps_html = ""
+    for idx, (num, titulo) in enumerate(pasos, 1):
+        if idx < paso_actual:
+            circle = '<div style="width: 26px; height: 26px; border-radius: 50%; background: #10B981; color: white; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.8rem;">✓</div>'
+            text_style = 'color: #065F46; font-weight: 700;'
+        elif idx == paso_actual:
+            circle = f'<div style="width: 26px; height: 26px; border-radius: 50%; background: #FF6B00; color: white; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 0.8rem; box-shadow: 0 0 0 3px rgba(255,107,0,0.25);">{num}</div>'
+            text_style = 'color: #FF6B00; font-weight: 800;'
+        else:
+            circle = f'<div style="width: 26px; height: 26px; border-radius: 50%; background: #E2E8F0; color: #64748B; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 0.8rem;">{num}</div>'
+            text_style = 'color: #94A3B8; font-weight: 500;'
+            
+        steps_html += f"""
+            <div style="display: flex; align-items: center; gap: 0.45rem;">
+                {circle}
+                <span style="font-size: 0.84rem; {text_style}">{titulo}</span>
+            </div>
+        """
+        if idx < len(pasos):
+            steps_html += f'<div style="flex: 1; height: 3px; background: {"#10B981" if idx < paso_actual else "#E2E8F0"}; margin: 0 0.4rem;"></div>'
+
+    return f"""
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 1.15rem 1.35rem; margin: 1rem 0; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
+            <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
+                {steps_html}
+            </div>
+            <div style="background: #F1F5F9; border-radius: 6px; height: 8px; overflow: hidden; margin-bottom: 0.4rem;">
+                <div style="width: {porcentaje}%; height: 100%; background: linear-gradient(90deg, #FF6B00 0%, #F8B126 100%); transition: width 0.35s ease;"></div>
+            </div>
+            <div style="font-size: 0.82rem; color: #64748B; font-weight: 600; text-align: right;">
+                ⚡ {texto_estado} ({porcentaje}%)
+            </div>
+        </div>
+    """
+
+
+def render_tabla_coincidencias(df_resultado) -> str:
+    """Construye una vista estilizada HTML con badges de tipo de celda y coordenadas."""
+    filas_html = ""
+    for idx, row in df_resultado.iterrows():
+        campo = str(row.get("campo", ""))
+        valor = str(row.get("valor", ""))
+        hoja = str(row.get("hoja", ""))
+        fila = row.get("fila", "")
+        col = row.get("columna", "")
+        req_merge = bool(row.get("requiereMerge", False))
+
+        if req_merge:
+            badge = '<span style="background: #FEF3C7; color: #92400E; border: 1px solid #F8B126; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.72rem; font-weight: 700;">MERGE COMPUESTO</span>'
+        else:
+            badge = '<span style="background: #ECFDF5; color: #065F46; border: 1px solid #10B981; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.72rem; font-weight: 700;">DIRECTO</span>'
+
+        filas_html += f"""
+            <tr style="border-bottom: 1px solid #F1F5F9; transition: background 0.15s ease;">
+                <td style="padding: 0.65rem 0.85rem; font-weight: 700; color: #1E293B; font-family: monospace;">{campo}</td>
+                <td style="padding: 0.65rem 0.85rem; color: #0F172A; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{valor}</td>
+                <td style="padding: 0.65rem 0.85rem; color: #64748B; font-size: 0.82rem;">{hoja}!F{fila}:C{col}</td>
+                <td style="padding: 0.65rem 0.85rem; text-align: right;">{badge}</td>
+            </tr>
+        """
+
+    return f"""
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-top: 0.75rem;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
+                <thead>
+                    <tr style="background: #F8FAFC; border-bottom: 2px solid #E2E8F0; color: #64748B; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px;">
+                        <th style="padding: 0.65rem 0.85rem;">Campo Canónico</th>
+                        <th style="padding: 0.65rem 0.85rem;">Valor Inyectado</th>
+                        <th style="padding: 0.65rem 0.85rem;">Coordenada Excel</th>
+                        <th style="padding: 0.65rem 0.85rem; text-align: right;">Tipo Asignación</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {filas_html}
+                </tbody>
+            </table>
+        </div>
+    """
 def _sanitizar_resultados(resultados):
     sanitizados = []
     for item in resultados:
@@ -573,23 +686,24 @@ if uploaded_file is not None:
                 if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
                     st.error("Configura GEMINI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
                 else:
-                    progress_bar = st.progress(0, text="Iniciando motor de IA...")
+                    progress_placeholder = st.empty()
+                    progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
                     try:
                         uploaded_file.seek(0)
                         archivo_bytes = uploaded_file.read()
 
                         # Paso 1 & 2: Carga y Estructura
                         if file_type == "pdf":
-                            progress_bar.progress(30, text="📖 Escaneando coordenadas (x,y) del PDF...")
+                            progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas (x,y) del PDF..."), unsafe_allow_html=True)
                             mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
                         else:
-                            progress_bar.progress(20, text="📖 Leyendo estructura espacial del libro Excel...")
+                            progress_placeholder.markdown(render_stepper_progress(1, 25, "Leyendo estructura espacial del libro Excel..."), unsafe_allow_html=True)
                             libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
-                            progress_bar.progress(45, text="🔍 Analizando celdas vacías y líneas de captura...")
+                            progress_placeholder.markdown(render_stepper_progress(1, 45, "Analizando celdas vacías y líneas de captura..."), unsafe_allow_html=True)
                             mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
 
                         # Paso 3: IA
-                        progress_bar.progress(75, text="🤖 Invocando Gemini 2.0 Flash para mapeo semántico...")
+                        progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando Gemini 2.0 Flash para mapeo semántico..."), unsafe_allow_html=True)
                         resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
 
                         # LLM-04: Detectar caché
@@ -598,16 +712,21 @@ if uploaded_file is not None:
                         debug_info = _get_debug_info(form_hash_ui)
 
                         # Paso 4: Escritura
-                        progress_bar.progress(90, text="✍️ Inyectando datos y preservando estilos...")
-                        # ── LLM-05: Panel de Debug (Mover fuera del if para poder diagnosticar fallos) ──
+                        progress_placeholder.markdown(render_stepper_progress(3, 90, "Inyectando datos y preservando estilos nativos..."), unsafe_allow_html=True)
+                        
+                        # ── LLM-05: Panel de Debug con KPI Cards ──────────────────────────────
                         if debug_info:
                             with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
                                 c1, c2, c3, c4 = st.columns(4)
-                                c1.metric("📝 Rótulos Enviados", debug_info["rotulos_enviados"])
-                                c2.metric("✅ Campos Mapeados", debug_info["campos_mapeados"])
+                                with c1:
+                                    st.markdown(render_kpi_card(str(debug_info["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
+                                with c2:
+                                    st.markdown(render_kpi_card(str(debug_info["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
                                 faltantes_list = debug_info.get("campos_faltantes_detectados", [])
-                                c3.metric("⚠️ Campos Faltantes", len(faltantes_list))
-                                c4.metric("🔑 Hash Formulario", debug_info["hash"][:10] + "...")
+                                with c3:
+                                    st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
+                                with c4:
+                                    st.markdown(render_kpi_card(str(debug_info["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
 
                                 if faltantes_list:
                                     st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
@@ -655,20 +774,21 @@ if uploaded_file is not None:
                                 file_extension = "xlsx"
                                 mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                             
-                            progress_bar.progress(100, text="✅ ¡Proceso completado exitosamente!")
+                            progress_placeholder.markdown(render_stepper_progress(3, 100, "¡Formulario diligenciado exitosamente!"), unsafe_allow_html=True)
 
                             if debug_info and debug_info.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
                                 score_fuzzy = debug_info.get("score_similaridad", 95.0)
                                 st.markdown(f"""
-                                    <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 0.75rem 1rem; border-radius: 6px; margin: 0.5rem 0; color: #1E40AF; font-weight: 600; font-size: 0.88rem;">
-                                        ⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong> — Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).
+                                    <div class="iac-alert iac-alert-cache">
+                                        <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
+                                        <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
                                     </div>
                                 """, unsafe_allow_html=True)
 
                             st.markdown("""
-                                <div style="background: #FEF3C7; border-left: 4px solid #F8B126; padding: 0.85rem 1rem; border-radius: 6px; margin: 1rem 0;">
-                                    <strong style="color: #92400E;">🎉 Formulario Diligenciado Correctamente</strong>
-                                    <div style="font-size: 0.85rem; color: #78350F;">Se inyectaron los datos respetando diseño nativo del documento.</div>
+                                <div class="iac-alert iac-alert-warning">
+                                    <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
+                                    <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
                                 </div>
                             """, unsafe_allow_html=True)
 
@@ -679,14 +799,14 @@ if uploaded_file is not None:
                                 mime=mime_type,
                             )
 
-                            st.markdown("### 📍 Coordenadas Inyectadas")
-                            st.dataframe(df_resultado, width="stretch", height=250)
+                            st.markdown("### 📍 Coordenadas e Información Inyectada")
+                            st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
 
                         else:
-                            progress_bar.progress(100, text="⚠️ Proceso finalizado.")
+                            progress_placeholder.markdown(render_stepper_progress(3, 100, "Proceso finalizado."), unsafe_allow_html=True)
                             st.info("No se encontraron campos compatibles para rellenar en este formulario.")
                     except Exception as e:
-                        progress_bar.empty()
+                        progress_placeholder.empty()
                         st.error(f"⚠️ Se produjo un error durante el procesamiento: {str(e)}")
                         with st.expander("Ver detalles técnicos del error"):
                             st.text(traceback.format_exc())
