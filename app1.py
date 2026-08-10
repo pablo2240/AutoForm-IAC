@@ -343,6 +343,9 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background-color: var(--bg-surface);
         border-right: 1px solid var(--border-color);
+    }
+
+    section[data-testid="stSidebar"][aria-expanded="true"] {
         min-width: 300px;
         max-width: 380px;
     }
