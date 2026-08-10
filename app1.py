@@ -70,48 +70,84 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-# 2. Inyección del Sistema de Diseño Oficial de IAC (Vanilla CSS)
+# 2. Inyección del Sistema de Diseño Oficial de IAC (Vanilla CSS - Opción A)
 st.markdown("""
     <style>
     /* Google Fonts: Inter & Montserrat */
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
 
+    :root {
+        /* Sistema 60-30-10 */
+        --bg-app: #F8FAFC;
+        --bg-surface: #FFFFFF;
+        --brand-black: #121212;
+        --brand-yellow: #F8B126;
+        --accent-orange: #FF6B00;
+        --accent-orange-hover: #E65100;
+        --accent-green: #10B981;
+        --accent-blue: #3B82F6;
+        
+        /* Neutros & Textos */
+        --text-main: #1E293B;
+        --text-muted: #64748B;
+        --border-color: #E2E8F0;
+        
+        /* Elevación & Radios */
+        --radius-card: 10px;
+        --radius-btn: 8px;
+        --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.04);
+        --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.05);
+        --shadow-hover: 0 8px 24px rgba(248, 177, 38, 0.18);
+        --transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
     html, body, [class*="css"] {
         font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
-        color: #1E293B;
-        background-color: #F8FAFC;
+        color: var(--text-main);
+        background-color: var(--bg-app);
     }
 
     .stApp {
-        background-color: #F8FAFC;
+        background-color: var(--bg-app);
     }
 
     /* Header Institucional IAC */
     .iac-header {
-        background: #121212;
-        border-bottom: 4px solid #F8B126;
+        background: var(--brand-black);
+        border-bottom: 4px solid var(--brand-yellow);
         padding: 1.25rem 2rem;
         border-radius: 12px;
         margin-bottom: 1.75rem;
         display: flex;
         align-items: center;
         justify-content: space-between;
-        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
+        transition: var(--transition);
+    }
+
+    @media (max-width: 768px) {
+        .iac-header {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 0.85rem;
+            padding: 1rem 1.25rem;
+        }
     }
     
     .iac-title {
         font-family: 'Montserrat', sans-serif;
-        font-size: 1.8rem;
+        font-size: 1.85rem;
         font-weight: 800;
         color: #FFFFFF;
         margin: 0;
         display: flex;
         align-items: center;
         gap: 0.6rem;
+        letter-spacing: -0.5px;
     }
 
     .iac-title span {
-        color: #F8B126;
+        color: var(--brand-yellow);
     }
 
     .iac-subtitle {
@@ -123,150 +159,201 @@ st.markdown("""
     .iac-badge {
         background: #FEF3C7;
         color: #92400E;
-        border: 1px solid #F8B126;
-        padding: 0.35rem 0.85rem;
+        border: 1px solid var(--brand-yellow);
+        padding: 0.38rem 0.9rem;
         border-radius: 20px;
         font-size: 0.82rem;
         font-weight: 700;
-        letter-spacing: 0.3px;
+        letter-spacing: 0.4px;
         display: inline-flex;
         align-items: center;
-        gap: 0.4rem;
+        gap: 0.45rem;
+        box-shadow: 0 2px 6px rgba(248, 177, 38, 0.12);
     }
 
     /* Tarjetas (Cards) estilo IAC */
     .iac-card {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-left: 4px solid #F8B126;
-        border-radius: 10px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-left: 4px solid var(--brand-yellow);
+        border-radius: var(--radius-card);
         padding: 1.25rem 1.5rem;
         margin-bottom: 1.25rem;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
-        transition: all 0.2s ease-in-out;
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition);
     }
 
     .iac-card:hover {
-        border-color: #F8B126;
-        box-shadow: 0 6px 16px rgba(248, 177, 38, 0.15);
+        border-color: var(--brand-yellow);
+        box-shadow: var(--shadow-hover);
+        transform: translateY(-2px);
+    }
+
+    /* Banners de Estado y Alertas Reutilizables */
+    .iac-alert {
+        padding: 0.85rem 1.15rem;
+        border-radius: 8px;
+        margin: 0.85rem 0;
+        font-size: 0.9rem;
+        font-weight: 600;
+        line-height: 1.5;
+        display: flex;
+        flex-direction: column;
+        gap: 0.25rem;
+    }
+
+    .iac-alert-success {
+        background: #ECFDF5;
+        border: 1px solid #10B981;
+        border-left: 4px solid #10B981;
+        color: #065F46;
+    }
+
+    .iac-alert-cache {
+        background: #EFF6FF;
+        border: 1px solid #3B82F6;
+        border-left: 4px solid #3B82F6;
+        color: #1E40AF;
+    }
+
+    .iac-alert-warning {
+        background: #FEF3C7;
+        border: 1px solid var(--brand-yellow);
+        border-left: 4px solid var(--brand-yellow);
+        color: #92400E;
     }
 
     /* Encabezados H1, H2, H3 */
     h1, h2, h3 {
         font-family: 'Montserrat', sans-serif !important;
-        color: #121212 !important;
+        color: var(--brand-black) !important;
         font-weight: 700 !important;
     }
 
-    .stMarkdown h2, .stMarkdown h3 {
-        border-bottom: 2px solid #F8B126;
-        padding-bottom: 0.3rem;
+    .iac-section-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 1.35rem;
+        font-weight: 700;
+        color: var(--brand-black);
+        border-bottom: 2px solid var(--brand-yellow);
+        padding-bottom: 0.35rem;
+        margin-bottom: 1rem;
         display: inline-block;
     }
 
     /* Botones Principales CTA (Naranja Corporativo #FF6B00) */
     .stButton > button[kind="primary"], div.stButton > button:first-child {
-        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%) !important;
+        background: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-orange-hover) 100%) !important;
         color: #FFFFFF !important;
         font-family: 'Montserrat', sans-serif !important;
         font-weight: 700 !important;
         font-size: 1rem !important;
         border: none !important;
-        border-radius: 8px !important;
+        border-radius: var(--radius-btn) !important;
         padding: 0.65rem 1.75rem !important;
         box-shadow: 0 4px 14px rgba(255, 107, 0, 0.3) !important;
-        transition: all 0.2s ease !important;
+        transition: var(--transition) !important;
     }
 
     .stButton > button[kind="primary"]:hover, div.stButton > button:first-child:hover {
-        background: linear-gradient(135deg, #E65100 0%, #C74300 100%) !important;
+        background: linear-gradient(135deg, var(--accent-orange-hover) 0%, #C74300 100%) !important;
         box-shadow: 0 6px 18px rgba(255, 107, 0, 0.45) !important;
         transform: translateY(-1px);
     }
 
     /* Botones de Descargar (CTA Naranja) */
     .stDownloadButton > button {
-        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%) !important;
+        background: linear-gradient(135deg, var(--accent-orange) 0%, var(--accent-orange-hover) 100%) !important;
         color: #FFFFFF !important;
         font-family: 'Montserrat', sans-serif !important;
         font-weight: 700 !important;
         border: none !important;
-        border-radius: 8px !important;
+        border-radius: var(--radius-btn) !important;
         padding: 0.75rem 2rem !important;
         box-shadow: 0 4px 14px rgba(255, 107, 0, 0.35) !important;
         width: 100%;
+        transition: var(--transition) !important;
     }
 
     .stDownloadButton > button:hover {
-        background: linear-gradient(135deg, #E65100 0%, #C74300 100%) !important;
+        background: linear-gradient(135deg, var(--accent-orange-hover) 0%, #C74300 100%) !important;
         box-shadow: 0 6px 18px rgba(255, 107, 0, 0.5) !important;
-    }
-
-    /* Botón Secundario (Borde Amarillo IAC) */
-    .btn-secondary button {
-        background: #FFFFFF !important;
-        color: #121212 !important;
-        border: 1.5px solid #F8B126 !important;
-        border-radius: 8px !important;
-        font-weight: 600 !important;
-    }
-
-    .btn-secondary button:hover {
-        background: #FFFBEB !important;
-        border-color: #FF6B00 !important;
+        transform: translateY(-1px);
     }
 
     /* File Uploader Estilizado con borde Amarillo IAC */
     [data-testid="stFileUploader"] {
-        background: #FFFFFF;
-        border: 2px dashed #F8B126;
-        border-radius: 10px;
-        padding: 1rem;
-        transition: all 0.2s ease;
+        background: var(--bg-surface);
+        border: 2px dashed var(--brand-yellow);
+        border-radius: var(--radius-card);
+        padding: 1.25rem;
+        transition: var(--transition);
+        box-shadow: var(--shadow-sm);
     }
 
     [data-testid="stFileUploader"]:hover {
-        border-color: #FF6B00;
+        border-color: var(--accent-orange);
         background-color: #FFFDF5;
+        box-shadow: 0 4px 14px rgba(248, 177, 38, 0.15);
+    }
+
+    /* Estilizado de Expansores Streamlit */
+    [data-testid="stExpander"] {
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color) !important;
+        border-radius: var(--radius-card) !important;
+        box-shadow: var(--shadow-sm);
+        margin-bottom: 0.85rem;
+        overflow: hidden;
+    }
+
+    [data-testid="stExpander"]:hover {
+        border-color: var(--brand-yellow) !important;
     }
 
     /* Tarjetas de Métricas */
     [data-testid="stMetric"] {
-        background: #FFFFFF;
-        border: 1px solid #E2E8F0;
-        border-top: 4px solid #F8B126;
-        border-radius: 8px;
+        background: var(--bg-surface);
+        border: 1px solid var(--border-color);
+        border-top: 4px solid var(--brand-yellow);
+        border-radius: var(--radius-card);
         padding: 0.85rem 1rem;
-        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+        box-shadow: var(--shadow-sm);
+        transition: var(--transition);
+    }
+
+    [data-testid="stMetric"]:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-md);
     }
 
     [data-testid="stMetricLabel"] {
-        color: #64748B !important;
+        color: var(--text-muted) !important;
         font-size: 0.85rem !important;
         font-weight: 600 !important;
     }
 
     [data-testid="stMetricValue"] {
-        color: #121212 !important;
+        color: var(--brand-black) !important;
         font-family: 'Montserrat', sans-serif !important;
         font-weight: 700 !important;
     }
 
     /* Sidebar Styling */
     section[data-testid="stSidebar"] {
-        background-color: #FFFFFF;
-        border-right: 1px solid #E2E8F0;
+        background-color: var(--bg-surface);
+        border-right: 1px solid var(--border-color);
     }
 
     /* Progress bar */
     .stProgress > div > div > div > div {
-        background-color: #FF6B00 !important;
+        background-color: var(--accent-orange) !important;
     }
 
     /* Tablas Dataframe */
     .stDataFrame {
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
+        border: 1px solid var(--border-color);
+        border-radius: var(--radius-card);
         overflow: hidden;
     }
     </style>
@@ -587,5 +674,20 @@ if uploaded_file is not None:
             else:
                 st.warning("Soporte PDF en construcción. Solo Excel está disponible en esta fase.")
 else:
-    st.info("👆 Por favor, carga un archivo para comenzar.")
+    st.markdown("""
+        <div class="iac-card" style="text-align: center; padding: 2.5rem 1.5rem; margin-top: 1rem;">
+            <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📄⚡</div>
+            <h3 style="margin-bottom: 0.5rem;">Carga tu Formulario Oficial para Comenzar</h3>
+            <p style="color: #64748B; font-size: 0.95rem; max-width: 550px; margin: 0 auto 1.5rem auto;">
+                Selecciona tu perfil empresarial en el panel izquierdo y arrastra una plantilla de Excel (.xlsx, .xls) para el diligenciamiento cognitivo automático.
+            </p>
+            <div style="display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem; color: #475569; font-weight: 600;">
+                <div>1️⃣ Carga de Plantilla</div>
+                <div>➔</div>
+                <div>2️⃣ Mapeo Inteligente IA</div>
+                <div>➔</div>
+                <div>3️⃣ Descarga en Excel Nativo</div>
+            </div>
+        </div>
+    """, unsafe_allow_html=True)
 
