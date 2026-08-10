@@ -6,9 +6,10 @@ para permitir la escritura física nativa en Excel.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
 
@@ -30,6 +31,26 @@ _CLAVES_LLM = {
 # Campos que no pertenecen a DatosEmpresa directamente pero que siempre
 # deben estar disponibles como sinónimos o campos virtuales.
 _CAMPOS_VIRTUALES = {"nit_sin_dv", "nit_dv"}
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# LLM-04: Caché en memoria por hash del mapa de formularios
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Caché global de sesión: {hash_mapa: List[Dict]} y {hash_mapa: str (prompt_debug)}
+_cache_mapeos: Dict[str, List[Dict[str, Any]]] = {}
+_cache_debug: Dict[str, Dict[str, Any]] = {}
+
+
+def _hash_mapa(mapa_purgado: List[Dict[str, Any]]) -> str:
+    """Genera un hash SHA-256 determinísta del mapa purgado para identificar formularios identicos."""
+    contenido = json.dumps(mapa_purgado, sort_keys=True, ensure_ascii=False)
+    return hashlib.sha256(contenido.encode("utf-8")).hexdigest()
+
+
+def get_debug_info(hash_form: str) -> Optional[Dict[str, Any]]:
+    """Retorna la información de debug (prompt + respuesta) almacenada para el hash dado."""
+    return _cache_debug.get(hash_form)
 
 
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -370,6 +391,16 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
     if not isinstance(mapa_formularios, list):
         raise ValueError("El mapa de formularios debe ser una lista de objetos.")
 
+    # LLM-04: Calcular hash del mapa purgado para usar como clave de caché
+    mapa_purgado_pre = _purgar_mapa(mapa_formularios)
+    form_hash = _hash_mapa(mapa_purgado_pre)
+
+    if form_hash in _cache_mapeos:
+        print(f"[AutoForm AI LLM-04] ■ Cache HIT: Formulario ya procesado (hash {form_hash[:12]}...). Devolviendo resultado en caché sin llamar al LLM.")
+        return _cache_mapeos[form_hash]
+
+    print(f"[AutoForm AI LLM-04] □ Cache MISS (hash {form_hash[:12]}...). Procesando con LLM...")
+
     # 1. Llamada Principal al LLM
     prompt_principal = construir_prompt(mapa_formularios, datos_empresa)
     respuesta_principal = invocar_llm(prompt_principal)
@@ -380,24 +411,39 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
     datos_filtrados = _filtrar_datos_empresa(mapa_purgado, datos_empresa)
     campos_faltantes = _evaluar_cobertura_campos(datos_filtrados, mapeos_iniciales)
 
+    resultado_final: List[Dict[str, Any]]
+
     if not campos_faltantes:
         print("[AutoForm AI Coverage] Cobertura 100%: Todos los campos de DatosEmpresa fueron mapeados.")
-        return mapeos_iniciales
+        resultado_final = mapeos_iniciales
+    else:
+        # 3. Re-consulta Focalizada (solo si hubo campos omitidos)
+        print(f"[AutoForm AI Coverage] Omisión detectada: Faltan {len(campos_faltantes)} campos por mapear: {campos_faltantes}. Ejecutando re-mapeo focalizado...")
+        try:
+            prompt_focalizado = _construir_prompt_focalizado(
+                mapa_formularios, mapeos_iniciales, datos_empresa, campos_faltantes
+            )
+            respuesta_complementaria = invocar_llm(prompt_focalizado)
+            mapeos_complementarios = _procesar_resultado_llm(respuesta_complementaria)
 
-    # 3. Re-consulta Focalizada (solo si hubo campos omitidos)
-    print(f"[AutoForm AI Coverage] Omisión detectada: Faltan {len(campos_faltantes)} campos por mapear: {campos_faltantes}. Ejecutando re-mapeo focalizado...")
-    try:
-        prompt_focalizado = _construir_prompt_focalizado(
-            mapa_formularios, mapeos_iniciales, datos_empresa, campos_faltantes
-        )
-        respuesta_complementaria = invocar_llm(prompt_focalizado)
-        mapeos_complementarios = _procesar_resultado_llm(respuesta_complementaria)
+            resultado_final = _fusionar_mapeos(mapeos_iniciales, mapeos_complementarios)
+            campos_recuperados = len(resultado_final) - len(mapeos_iniciales)
+            print(f"[AutoForm AI Coverage] Re-mapeo exitoso: Se recuperaron {campos_recuperados} campos adicionales.")
+        except Exception as exc:
+            print(f"[AutoForm AI Warning] La re-consulta de cobertura falló ({exc}). Retornando mapeo inicial.")
+            resultado_final = mapeos_iniciales
 
-        plano_final = _fusionar_mapeos(mapeos_iniciales, mapeos_complementarios)
-        campos_recuperados = len(plano_final) - len(mapeos_iniciales)
-        print(f"[AutoForm AI Coverage] Re-mapeo exitoso: Se recuperaron {campos_recuperados} campos adicionales.")
-        return plano_final
-    except Exception as exc:
-        print(f"[AutoForm AI Warning] La re-consulta de cobertura falló ({exc}). Retornando mapeo inicial.")
-        return mapeos_iniciales
+    # LLM-04: Guardar resultado en caché de sesión
+    _cache_mapeos[form_hash] = resultado_final
 
+    # LLM-05: Guardar información de debug (prompt + mapa + respuesta)
+    _cache_debug[form_hash] = {
+        "hash": form_hash,
+        "rotulos_enviados": len(mapa_purgado_pre),
+        "prompt_payload": prompt_principal,
+        "respuesta_llm": respuesta_principal,
+        "campos_mapeados": len(resultado_final),
+        "campos_faltantes_detectados": campos_faltantes if campos_faltantes else [],
+    }
+
+    return resultado_final

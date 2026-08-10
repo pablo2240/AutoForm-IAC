@@ -22,6 +22,7 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
 
 from core import excel_parser, excel_writer, mapper
 from core.llm_client import consultar_llm
+from core.mapper import get_debug_info as _get_debug_info
 
 
 def _manual_load_dotenv(dotenv_path: str = ".env"):
@@ -198,8 +199,13 @@ if uploaded_file is not None:
                         mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
 
                         # Paso 3: IA
-                        progress_bar.progress(75, text="🤖 Consultando con la IA en OpenRouter para el mapeo...")
+                        progress_bar.progress(75, text="🤖 Consultando con la IA para el mapeo semántico...")
                         resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+
+                        # LLM-04: Detectar si vino de caché para mostrarlo en la UI
+                        mapa_purgado_ui = mapper._purgar_mapa(mapa_formularios)
+                        form_hash_ui = mapper._hash_mapa(mapa_purgado_ui)
+                        debug_info = _get_debug_info(form_hash_ui)
 
                         # Paso 4: Escritura
                         progress_bar.progress(90, text="✍️ Escribiendo datos de la empresa y combinando celdas...")
@@ -231,6 +237,35 @@ if uploaded_file is not None:
                                 file_name=f"{os.path.splitext(file_name)[0]}_diligenciado.xlsx",
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             )
+
+                            # ── LLM-05: Panel de Debug ────────────────────────────────────────
+                            if debug_info:
+                                with st.expander("🔍 Panel de Debug — Mapeo LLM", expanded=False):
+                                    # Métricas clave
+                                    c1, c2, c3, c4 = st.columns(4)
+                                    c1.metric("📝 Rótulos enviados", debug_info["rotulos_enviados"])
+                                    c2.metric("✅ Campos mapeados", debug_info["campos_mapeados"])
+                                    faltantes_list = debug_info.get("campos_faltantes_detectados", [])
+                                    c3.metric("⚠️ Campos faltantes", len(faltantes_list))
+                                    c4.metric("🔑 Hash formulario", debug_info["hash"][:10] + "...")
+
+                                    if faltantes_list:
+                                        st.warning(f"🚫 Campos no mapeados en el resultado: `{'`, `'.join(faltantes_list)}`")
+
+                                    st.markdown("**📤 Payload enviado al LLM** (JSON compacto)")
+                                    try:
+                                        payload_dict = json.loads(debug_info["prompt_payload"])
+                                        st.json(payload_dict)
+                                    except Exception:
+                                        st.code(debug_info["prompt_payload"], language="json")
+
+                                    st.markdown("**📥 Respuesta raw del LLM**")
+                                    try:
+                                        respuesta_dict = json.loads(debug_info["respuesta_llm"])
+                                        st.json(respuesta_dict)
+                                    except Exception:
+                                        st.code(debug_info["respuesta_llm"], language="json")
+                            # ─────────────────────────────────────────────────────────────────────
                         else:
                             progress_bar.progress(100, text="⚠️ Proceso finalizado.")
                             st.info("No se encontraron campos compatibles para rellenar en este formulario.")

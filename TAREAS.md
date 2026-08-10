@@ -48,8 +48,8 @@
 ### FASE 2 — Inferencia LLM (`mapper.py`, `llm_client.py`)
 
 - [ ] **[LLM-03]** Implementar **deduplicación de coordenadas destino** en el plan de mapeo. Si dos entradas apuntan a la misma celda `(hoja, fila_destino, columna_destino)`, conservar solo la primera y descartar las duplicadas.
-- [ ] **[LLM-04]** Implementar **caché de respuestas del LLM** basada en hash del mapa de formularios. Si el mismo formulario ya fue procesado en la sesión, devolver el resultado en caché sin repetir la llamada a la API.
-- [ ] **[LLM-05]** Agregar un **panel de debug visible en la UI** (sección expandible en `app1.py`) con el mapa enviado al LLM y el JSON de respuesta, para diagnosticar campos no mapeados.
+- [x] **[LLM-04]** Implementar **caché de respuestas del LLM** basada en hash del mapa de formularios. Si el mismo formulario ya fue procesado en la sesión, devolver el resultado en caché sin repetir la llamada a la API.
+- [x] **[LLM-05]** Agregar un **panel de debug visible en la UI** (sección expandible en `app1.py`) con el mapa enviado al LLM y el JSON de respuesta, para diagnosticar campos no mapeados.
 
 ---
 
