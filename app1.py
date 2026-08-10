@@ -393,15 +393,18 @@ with st.sidebar:
         user_prompt = st.chat_input("Probar razonamiento del modelo...")
         if user_prompt:
             st.session_state["chat_messages"].append({"role": "user", "content": user_prompt})
+            st.chat_message("user").write(user_prompt)
+            
             with st.spinner("Consultando modelo..."):
                 respuesta_llm = consultar_llm(user_prompt)
+            
             MAX_CHARS = 150
             if len(respuesta_llm) > MAX_CHARS:
                 corte = respuesta_llm[:MAX_CHARS].rfind(" ")
                 respuesta_llm = respuesta_llm[: corte if corte > 0 else MAX_CHARS] + "…"
+                
             st.session_state["chat_messages"].append({"role": "assistant", "content": respuesta_llm})
-            _safe_rerun()
-
+            st.chat_message("assistant").write(respuesta_llm)
 def _sanitizar_resultados(resultados):
     sanitizados = []
     for item in resultados:
