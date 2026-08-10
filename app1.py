@@ -289,15 +289,6 @@ st.markdown("""
 with st.sidebar:
     st.markdown("### 🏢 **IAC Latam**")
     st.caption("Ingeniería Asistida en Computadora")
-    
-    st.markdown("""
-        <div class="iac-card" style="padding: 0.85rem; margin-bottom: 1rem;">
-            <div style="font-size: 0.82rem; font-weight: 700; color: #121212;">ESTADO DE FASE:</div>
-            <div style="font-size: 0.88rem; color: #E65100; font-weight: 600;">✅ Fase 3: Escritura Nativa Excel</div>
-            <div style="font-size: 0.78rem; color: #64748B; margin-top: 0.2rem;">Soporte: .xlsx, .xls (PDF en dev)</div>
-        </div>
-    """, unsafe_allow_html=True)
-
     st.markdown("---")
 
     # 🏢 Fase 2: Gestión de Perfiles Empresariales (Multi-Perfil)
