@@ -55,34 +55,252 @@ def _safe_rerun():
             st.experimental_rerun()
         except Exception:
             pass
+    elif hasattr(st, "rerun"):
+        try:
+            st.rerun()
+        except Exception:
+            pass
 
-# 1. Configuración de pantalla
+
+# 1. Configuración de pantalla con el Sistema de Diseño IAC
 st.set_page_config(
-    page_title="AutoForm AI — Carga de Documentos",
-    page_icon="📄",
+    page_title="AutoForm AI | IAC Latam",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# Estilo personalizado simple
+# 2. Inyección del Sistema de Diseño Oficial de IAC (Vanilla CSS)
 st.markdown("""
     <style>
-    .main-title { font-size: 2.2rem; color: #38bdf8; font-weight: 700; margin-bottom: 0.5rem; }
-    .sub-title { font-size: 1.1rem; color: #94a3b8; margin-bottom: 2rem; }
+    /* Google Fonts: Inter & Montserrat */
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Montserrat:wght@600;700;800&display=swap');
+
+    html, body, [class*="css"] {
+        font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+        color: #1E293B;
+        background-color: #F8FAFC;
+    }
+
+    .stApp {
+        background-color: #F8FAFC;
+    }
+
+    /* Header Institucional IAC */
+    .iac-header {
+        background: #121212;
+        border-bottom: 4px solid #F8B126;
+        padding: 1.25rem 2rem;
+        border-radius: 12px;
+        margin-bottom: 1.75rem;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        box-shadow: 0 4px 20px rgba(0, 0, 0, 0.12);
+    }
+    
+    .iac-title {
+        font-family: 'Montserrat', sans-serif;
+        font-size: 1.8rem;
+        font-weight: 800;
+        color: #FFFFFF;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+
+    .iac-title span {
+        color: #F8B126;
+    }
+
+    .iac-subtitle {
+        font-size: 0.92rem;
+        color: #94A3B8;
+        margin-top: 0.2rem;
+    }
+
+    .iac-badge {
+        background: #FEF3C7;
+        color: #92400E;
+        border: 1px solid #F8B126;
+        padding: 0.35rem 0.85rem;
+        border-radius: 20px;
+        font-size: 0.82rem;
+        font-weight: 700;
+        letter-spacing: 0.3px;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+    }
+
+    /* Tarjetas (Cards) estilo IAC */
+    .iac-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-left: 4px solid #F8B126;
+        border-radius: 10px;
+        padding: 1.25rem 1.5rem;
+        margin-bottom: 1.25rem;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.03);
+        transition: all 0.2s ease-in-out;
+    }
+
+    .iac-card:hover {
+        border-color: #F8B126;
+        box-shadow: 0 6px 16px rgba(248, 177, 38, 0.15);
+    }
+
+    /* Encabezados H1, H2, H3 */
+    h1, h2, h3 {
+        font-family: 'Montserrat', sans-serif !important;
+        color: #121212 !important;
+        font-weight: 700 !important;
+    }
+
+    .stMarkdown h2, .stMarkdown h3 {
+        border-bottom: 2px solid #F8B126;
+        padding-bottom: 0.3rem;
+        display: inline-block;
+    }
+
+    /* Botones Principales CTA (Naranja Corporativo #FF6B00) */
+    .stButton > button[kind="primary"], div.stButton > button:first-child {
+        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%) !important;
+        color: #FFFFFF !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 700 !important;
+        font-size: 1rem !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.65rem 1.75rem !important;
+        box-shadow: 0 4px 14px rgba(255, 107, 0, 0.3) !important;
+        transition: all 0.2s ease !important;
+    }
+
+    .stButton > button[kind="primary"]:hover, div.stButton > button:first-child:hover {
+        background: linear-gradient(135deg, #E65100 0%, #C74300 100%) !important;
+        box-shadow: 0 6px 18px rgba(255, 107, 0, 0.45) !important;
+        transform: translateY(-1px);
+    }
+
+    /* Botones de Descargar (CTA Naranja) */
+    .stDownloadButton > button {
+        background: linear-gradient(135deg, #FF6B00 0%, #E65100 100%) !important;
+        color: #FFFFFF !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 700 !important;
+        border: none !important;
+        border-radius: 8px !important;
+        padding: 0.75rem 2rem !important;
+        box-shadow: 0 4px 14px rgba(255, 107, 0, 0.35) !important;
+        width: 100%;
+    }
+
+    .stDownloadButton > button:hover {
+        background: linear-gradient(135deg, #E65100 0%, #C74300 100%) !important;
+        box-shadow: 0 6px 18px rgba(255, 107, 0, 0.5) !important;
+    }
+
+    /* Botón Secundario (Borde Amarillo IAC) */
+    .btn-secondary button {
+        background: #FFFFFF !important;
+        color: #121212 !important;
+        border: 1.5px solid #F8B126 !important;
+        border-radius: 8px !important;
+        font-weight: 600 !important;
+    }
+
+    .btn-secondary button:hover {
+        background: #FFFBEB !important;
+        border-color: #FF6B00 !important;
+    }
+
+    /* File Uploader Estilizado con borde Amarillo IAC */
+    [data-testid="stFileUploader"] {
+        background: #FFFFFF;
+        border: 2px dashed #F8B126;
+        border-radius: 10px;
+        padding: 1rem;
+        transition: all 0.2s ease;
+    }
+
+    [data-testid="stFileUploader"]:hover {
+        border-color: #FF6B00;
+        background-color: #FFFDF5;
+    }
+
+    /* Tarjetas de Métricas */
+    [data-testid="stMetric"] {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-top: 4px solid #F8B126;
+        border-radius: 8px;
+        padding: 0.85rem 1rem;
+        box-shadow: 0 2px 8px rgba(0,0,0,0.04);
+    }
+
+    [data-testid="stMetricLabel"] {
+        color: #64748B !important;
+        font-size: 0.85rem !important;
+        font-weight: 600 !important;
+    }
+
+    [data-testid="stMetricValue"] {
+        color: #121212 !important;
+        font-family: 'Montserrat', sans-serif !important;
+        font-weight: 700 !important;
+    }
+
+    /* Sidebar Styling */
+    section[data-testid="stSidebar"] {
+        background-color: #FFFFFF;
+        border-right: 1px solid #E2E8F0;
+    }
+
+    /* Progress bar */
+    .stProgress > div > div > div > div {
+        background-color: #FF6B00 !important;
+    }
+
+    /* Tablas Dataframe */
+    .stDataFrame {
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        overflow: hidden;
+    }
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown('<div class="main-title">📄 AutoForm AI</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">Carga un formulario en Excel o PDF para rellenar automáticamente los datos corporativos.</div>', unsafe_allow_html=True)
+# 3. Header Hero Institucional
+st.markdown("""
+    <div class="iac-header">
+        <div>
+            <h1 class="iac-title">⚡ AutoForm <span>AI</span></h1>
+            <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
+        </div>
+        <div class="iac-badge">
+            <span>●</span> MOTOR GEMINI 2.0 FLASH ACTIVE
+        </div>
+    </div>
+""", unsafe_allow_html=True)
 
-# 2. Sidebar con información
+# 4. Sidebar Corporativa
 with st.sidebar:
-    st.header("⚙️ Estado del Sistema")
-    st.success("Fase 3: Rellenado de Excel")
-    st.info("Soporta: `.xlsx`, `.xls`. PDF en construcción.")
+    st.markdown("### 🏢 **IAC Latam**")
+    st.caption("Ingeniería Asistida en Computadora")
+    
+    st.markdown("""
+        <div class="iac-card" style="padding: 0.85rem; margin-bottom: 1rem;">
+            <div style="font-size: 0.82rem; font-weight: 700; color: #121212;">ESTADO DE FASE:</div>
+            <div style="font-size: 0.88rem; color: #E65100; font-weight: 600;">✅ Fase 3: Escritura Nativa Excel</div>
+            <div style="font-size: 0.78rem; color: #64748B; margin-top: 0.2rem;">Soporte: .xlsx, .xls (PDF en dev)</div>
+        </div>
+    """, unsafe_allow_html=True)
 
     st.markdown("---")
-    with st.expander("💬 Probador de Agente", expanded=True):
+    
+    with st.expander("💬 Probador de Agente", expanded=False):
         if "chat_messages" not in st.session_state:
             st.session_state["chat_messages"] = []
 
@@ -96,12 +314,11 @@ with st.sidebar:
             content = message.get("content", "")
             st.chat_message(role).write(content)
 
-        user_prompt = st.chat_input("Escribe para probar el modelo...")
+        user_prompt = st.chat_input("Probar razonamiento del modelo...")
         if user_prompt:
             st.session_state["chat_messages"].append({"role": "user", "content": user_prompt})
-            with st.spinner("Pensando..."):
+            with st.spinner("Consultando modelo..."):
                 respuesta_llm = consultar_llm(user_prompt)
-            # Limitar la respuesta del agente a 150 caracteres (truncado en el último espacio)
             MAX_CHARS = 150
             if len(respuesta_llm) > MAX_CHARS:
                 corte = respuesta_llm[:MAX_CHARS].rfind(" ")
@@ -109,7 +326,7 @@ with st.sidebar:
             st.session_state["chat_messages"].append({"role": "assistant", "content": respuesta_llm})
             _safe_rerun()
 
-# 3. Cargar datos empresariales
+# 5. Cargar Datos Empresariales
 datos_empresa = {}
 ruta_config = os.path.join("config", "datos_empresa.json")
 if os.path.exists(ruta_config):
@@ -135,23 +352,29 @@ def _sanitizar_resultados(resultados):
     return sanitizados
 
 
-# 4. Componente de Carga
+# 6. Zona de Carga Principal
+st.markdown("### 📥 1. Cargar Formulario de Terceros")
+
 uploaded_file = st.file_uploader(
-    "Arrastra o selecciona el formulario de un tercero aquí",
+    "Arrastra y suelta tu archivo Excel (.xlsx, .xls) o PDF aquí",
     type=["xlsx", "xls", "pdf"],
-    help="Sube un archivo Excel o PDF para iniciar la detección de campos.",
+    help="Sube la plantilla de licitación o formulario del proveedor para iniciar el diligenciamiento automático.",
 )
 
 if uploaded_file is not None:
     file_name = uploaded_file.name
     file_type = file_name.split(".")[-1].lower()
 
-    st.success(f"✅ Archivo cargado correctamente: **{file_name}**")
+    st.markdown(f"""
+        <div style="background: #ECFDF5; border: 1px solid #10B981; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; color: #065F46; font-weight: 600; font-size: 0.92rem;">
+            ✅ Archivo listo para procesar: <strong>{file_name}</strong> ({(uploaded_file.size/1024):.1f} KB)
+        </div>
+    """, unsafe_allow_html=True)
 
-    col_preview, col_actions = st.columns([2, 1])
+    col_preview, col_actions = st.columns([2, 1], gap="medium")
 
     with col_preview:
-        st.subheader("👀 Previsualización del Documento")
+        st.markdown("### 👀 Previsualización de Hojas")
 
         if file_type in ["xlsx", "xls"]:
             try:
@@ -159,11 +382,11 @@ if uploaded_file is not None:
                 excel_file = pd.ExcelFile(uploaded_file)
                 sheet_names = excel_file.sheet_names
 
-                selected_sheet = st.selectbox("Selecciona la hoja a visualizar:", sheet_names)
+                selected_sheet = st.selectbox("Seleccionar Hoja:", sheet_names)
                 uploaded_file.seek(0)
                 df = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None)
 
-                st.dataframe(df, width="stretch", height=400)
+                st.dataframe(df, width="stretch", height=380)
             except Exception as e:
                 st.error(f"Error al leer el archivo Excel: {e}")
 
@@ -176,39 +399,38 @@ if uploaded_file is not None:
             })
 
     with col_actions:
-        st.subheader("⚡ Procesamiento")
-        st.write("Haz clic para extraer rótulos, detectar campos vacíos y rellenar con IA.")
+        st.markdown("### ⚡ Ejecutar IA")
+        st.write("Extrae rótulos visuales, analiza campos vacíos e inyecta los datos de la empresa respetando estilos.")
 
-        if st.button("🚀 Procesar Formulario"):
+        if st.button("🚀 Procesar Formulario", type="primary", use_container_width=True):
             if file_type in ["xlsx", "xls"]:
                 if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
                     st.error("Configura GEMINI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
                 else:
-                    progress_text = "Iniciando procesamiento..."
-                    progress_bar = st.progress(0, text=progress_text)
+                    progress_bar = st.progress(0, text="Iniciando motor de IA...")
                     try:
                         uploaded_file.seek(0)
                         archivo_bytes = uploaded_file.read()
 
                         # Paso 1: Carga
-                        progress_bar.progress(20, text="📖 Leyendo y cargando el archivo Excel...")
+                        progress_bar.progress(20, text="📖 Leyendo estructura espacial del libro Excel...")
                         libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
                         
                         # Paso 2: Estructura
-                        progress_bar.progress(45, text="🔍 Analizando celdas vacías y estructura del formulario...")
+                        progress_bar.progress(45, text="🔍 Analizando celdas vacías y líneas de captura...")
                         mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
 
                         # Paso 3: IA
-                        progress_bar.progress(75, text="🤖 Consultando con la IA para el mapeo semántico...")
+                        progress_bar.progress(75, text="🤖 Invocando Gemini 2.0 Flash para mapeo semántico...")
                         resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
 
-                        # LLM-04: Detectar si vino de caché para mostrarlo en la UI
+                        # LLM-04: Detectar caché
                         mapa_purgado_ui = mapper._purgar_mapa(mapa_formularios)
                         form_hash_ui = mapper._hash_mapa(mapa_purgado_ui)
                         debug_info = _get_debug_info(form_hash_ui)
 
                         # Paso 4: Escritura
-                        progress_bar.progress(90, text="✍️ Escribiendo datos de la empresa y combinando celdas...")
+                        progress_bar.progress(90, text="✍️ Inyectando datos y preservando fuentes/colores...")
                         if resultados:
                             resultados = _sanitizar_resultados(resultados)
                             df_resultado = pd.DataFrame.from_records(resultados)
@@ -225,12 +447,17 @@ if uploaded_file is not None:
                                 },
                                 errors="ignore",
                             )
-                            st.subheader("📍 Coordenadas de escritura para Fase 3")
-                            st.dataframe(df_resultado, width="stretch")
 
                             bytes_relleno = excel_writer.rellenar_formulario_excel(archivo_bytes, resultados, datos_empresa)
-                            progress_bar.progress(100, text="✅ ¡Proceso completado con éxito!")
-                            st.success("Formulario completado correctamente")
+                            progress_bar.progress(100, text="✅ ¡Proceso completado exitosamente!")
+
+                            st.markdown("""
+                                <div style="background: #FEF3C7; border-left: 4px solid #F8B126; padding: 0.85rem 1rem; border-radius: 6px; margin: 1rem 0;">
+                                    <strong style="color: #92400E;">🎉 Formulario Diligenciado Correctamente</strong>
+                                    <div style="font-size: 0.85rem; color: #78350F;">Se inyectaron los datos respetando colores, bordes y fuentes originales.</div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
                             st.download_button(
                                 "📥 Descargar Formulario Rellenado (.xlsx)",
                                 data=bytes_relleno,
@@ -238,33 +465,37 @@ if uploaded_file is not None:
                                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                             )
 
+                            st.markdown("### 📍 Coordenadas Inyectadas")
+                            st.dataframe(df_resultado, width="stretch", height=250)
+
                             # ── LLM-05: Panel de Debug ────────────────────────────────────────
                             if debug_info:
-                                with st.expander("🔍 Panel de Debug — Mapeo LLM", expanded=False):
-                                    # Métricas clave
+                                with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
                                     c1, c2, c3, c4 = st.columns(4)
-                                    c1.metric("📝 Rótulos enviados", debug_info["rotulos_enviados"])
-                                    c2.metric("✅ Campos mapeados", debug_info["campos_mapeados"])
+                                    c1.metric("📝 Rótulos Enviados", debug_info["rotulos_enviados"])
+                                    c2.metric("✅ Campos Mapeados", debug_info["campos_mapeados"])
                                     faltantes_list = debug_info.get("campos_faltantes_detectados", [])
-                                    c3.metric("⚠️ Campos faltantes", len(faltantes_list))
-                                    c4.metric("🔑 Hash formulario", debug_info["hash"][:10] + "...")
+                                    c3.metric("⚠️ Campos Faltantes", len(faltantes_list))
+                                    c4.metric("🔑 Hash Formulario", debug_info["hash"][:10] + "...")
 
                                     if faltantes_list:
-                                        st.warning(f"🚫 Campos no mapeados en el resultado: `{'`, `'.join(faltantes_list)}`")
+                                        st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
 
-                                    st.markdown("**📤 Payload enviado al LLM** (JSON compacto)")
-                                    try:
-                                        payload_dict = json.loads(debug_info["prompt_payload"])
-                                        st.json(payload_dict)
-                                    except Exception:
-                                        st.code(debug_info["prompt_payload"], language="json")
+                                    tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
+                                    
+                                    with tab_payload:
+                                        try:
+                                            payload_dict = json.loads(debug_info["prompt_payload"])
+                                            st.json(payload_dict)
+                                        except Exception:
+                                            st.code(debug_info["prompt_payload"], language="json")
 
-                                    st.markdown("**📥 Respuesta raw del LLM**")
-                                    try:
-                                        respuesta_dict = json.loads(debug_info["respuesta_llm"])
-                                        st.json(respuesta_dict)
-                                    except Exception:
-                                        st.code(debug_info["respuesta_llm"], language="json")
+                                    with tab_response:
+                                        try:
+                                            respuesta_dict = json.loads(debug_info["respuesta_llm"])
+                                            st.json(respuesta_dict)
+                                        except Exception:
+                                            st.code(debug_info["respuesta_llm"], language="json")
                             # ─────────────────────────────────────────────────────────────────────
                         else:
                             progress_bar.progress(100, text="⚠️ Proceso finalizado.")
@@ -277,4 +508,5 @@ if uploaded_file is not None:
             else:
                 st.warning("Soporte PDF en construcción. Solo Excel está disponible en esta fase.")
 else:
-    st.info("👆 Por favor, carga un archivo para continuar.")
+    st.info("👆 Por favor, carga un archivo para comenzar.")
+
