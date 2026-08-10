@@ -20,7 +20,7 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
-from core import excel_parser, excel_writer, mapper, profile_manager
+from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor
 from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
@@ -343,6 +343,8 @@ st.markdown("""
     section[data-testid="stSidebar"] {
         background-color: var(--bg-surface);
         border-right: 1px solid var(--border-color);
+        min-width: 300px;
+        max-width: 380px;
     }
 
     /* Progress bar */
@@ -549,19 +551,25 @@ if uploaded_file is not None:
                 st.error(f"Error al leer el archivo Excel: {e}")
 
         elif file_type == "pdf":
-            st.warning("📄 Documento PDF detectado. Se procesará la estructura de capas de texto/vectores en la Fase 2.")
-            st.json({
-                "Nombre": file_name,
-                "Tamaño (KB)": round(uploaded_file.size / 1024, 2),
-                "Tipo": "PDF Document",
-            })
+            try:
+                uploaded_file.seek(0)
+                bytes_pdf = uploaded_file.read()
+                imagenes_png = pdf_processor.renderizar_paginas_png(bytes_pdf, max_paginas=2)
+                
+                if imagenes_png:
+                    for i, img_bytes in enumerate(imagenes_png):
+                        st.image(img_bytes, caption=f"Página {i+1}", use_container_width=True)
+                else:
+                    st.info("No se pudieron renderizar las páginas del PDF.")
+            except Exception as e:
+                st.error(f"Error al leer el archivo PDF: {e}")
 
     with col_actions:
         st.markdown("### ⚡ Ejecutar IA")
         st.write("Extrae rótulos visuales, analiza campos vacíos e inyecta los datos de la empresa respetando estilos.")
 
         if st.button("🚀 Procesar Formulario", type="primary", use_container_width=True):
-            if file_type in ["xlsx", "xls"]:
+            if file_type in ["xlsx", "xls", "pdf"]:
                 if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
                     st.error("Configura GEMINI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
                 else:
@@ -570,13 +578,15 @@ if uploaded_file is not None:
                         uploaded_file.seek(0)
                         archivo_bytes = uploaded_file.read()
 
-                        # Paso 1: Carga
-                        progress_bar.progress(20, text="📖 Leyendo estructura espacial del libro Excel...")
-                        libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
-                        
-                        # Paso 2: Estructura
-                        progress_bar.progress(45, text="🔍 Analizando celdas vacías y líneas de captura...")
-                        mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
+                        # Paso 1 & 2: Carga y Estructura
+                        if file_type == "pdf":
+                            progress_bar.progress(30, text="📖 Escaneando coordenadas (x,y) del PDF...")
+                            mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+                        else:
+                            progress_bar.progress(20, text="📖 Leyendo estructura espacial del libro Excel...")
+                            libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
+                            progress_bar.progress(45, text="🔍 Analizando celdas vacías y líneas de captura...")
+                            mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
 
                         # Paso 3: IA
                         progress_bar.progress(75, text="🤖 Invocando Gemini 2.0 Flash para mapeo semántico...")
@@ -588,7 +598,37 @@ if uploaded_file is not None:
                         debug_info = _get_debug_info(form_hash_ui)
 
                         # Paso 4: Escritura
-                        progress_bar.progress(90, text="✍️ Inyectando datos y preservando fuentes/colores...")
+                        progress_bar.progress(90, text="✍️ Inyectando datos y preservando estilos...")
+                        # ── LLM-05: Panel de Debug (Mover fuera del if para poder diagnosticar fallos) ──
+                        if debug_info:
+                            with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
+                                c1, c2, c3, c4 = st.columns(4)
+                                c1.metric("📝 Rótulos Enviados", debug_info["rotulos_enviados"])
+                                c2.metric("✅ Campos Mapeados", debug_info["campos_mapeados"])
+                                faltantes_list = debug_info.get("campos_faltantes_detectados", [])
+                                c3.metric("⚠️ Campos Faltantes", len(faltantes_list))
+                                c4.metric("🔑 Hash Formulario", debug_info["hash"][:10] + "...")
+
+                                if faltantes_list:
+                                    st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
+
+                                tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
+                                
+                                with tab_payload:
+                                    try:
+                                        payload_dict = json.loads(debug_info["prompt_payload"])
+                                        st.json(payload_dict)
+                                    except Exception:
+                                        st.code(debug_info["prompt_payload"], language="json")
+
+                                with tab_response:
+                                    try:
+                                        respuesta_dict = json.loads(debug_info["respuesta_llm"])
+                                        st.json(respuesta_dict)
+                                    except Exception:
+                                        st.code(debug_info["respuesta_llm"], language="json")
+                        # ─────────────────────────────────────────────────────────────────────
+                        
                         if resultados:
                             resultados = _sanitizar_resultados(resultados)
                             df_resultado = pd.DataFrame.from_records(resultados)
@@ -606,7 +646,15 @@ if uploaded_file is not None:
                                 errors="ignore",
                             )
 
-                            bytes_relleno = excel_writer.rellenar_formulario_excel(archivo_bytes, resultados, datos_empresa)
+                            if file_type == "pdf":
+                                bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados, datos_empresa)
+                                file_extension = "pdf"
+                                mime_type = "application/pdf"
+                            else:
+                                bytes_relleno = excel_writer.rellenar_formulario_excel(archivo_bytes, resultados, datos_empresa)
+                                file_extension = "xlsx"
+                                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            
                             progress_bar.progress(100, text="✅ ¡Proceso completado exitosamente!")
 
                             if debug_info and debug_info.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
@@ -620,49 +668,20 @@ if uploaded_file is not None:
                             st.markdown("""
                                 <div style="background: #FEF3C7; border-left: 4px solid #F8B126; padding: 0.85rem 1rem; border-radius: 6px; margin: 1rem 0;">
                                     <strong style="color: #92400E;">🎉 Formulario Diligenciado Correctamente</strong>
-                                    <div style="font-size: 0.85rem; color: #78350F;">Se inyectaron los datos respetando colores, bordes y fuentes originales.</div>
+                                    <div style="font-size: 0.85rem; color: #78350F;">Se inyectaron los datos respetando diseño nativo del documento.</div>
                                 </div>
                             """, unsafe_allow_html=True)
 
                             st.download_button(
-                                "📥 Descargar Formulario Rellenado (.xlsx)",
+                                f"📥 Descargar Formulario Rellenado (.{file_extension})",
                                 data=bytes_relleno,
-                                file_name=f"{os.path.splitext(file_name)[0]}_diligenciado.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                file_name=f"{os.path.splitext(file_name)[0]}_diligenciado.{file_extension}",
+                                mime=mime_type,
                             )
 
                             st.markdown("### 📍 Coordenadas Inyectadas")
                             st.dataframe(df_resultado, width="stretch", height=250)
 
-                            # ── LLM-05: Panel de Debug ────────────────────────────────────────
-                            if debug_info:
-                                with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
-                                    c1, c2, c3, c4 = st.columns(4)
-                                    c1.metric("📝 Rótulos Enviados", debug_info["rotulos_enviados"])
-                                    c2.metric("✅ Campos Mapeados", debug_info["campos_mapeados"])
-                                    faltantes_list = debug_info.get("campos_faltantes_detectados", [])
-                                    c3.metric("⚠️ Campos Faltantes", len(faltantes_list))
-                                    c4.metric("🔑 Hash Formulario", debug_info["hash"][:10] + "...")
-
-                                    if faltantes_list:
-                                        st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
-
-                                    tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
-                                    
-                                    with tab_payload:
-                                        try:
-                                            payload_dict = json.loads(debug_info["prompt_payload"])
-                                            st.json(payload_dict)
-                                        except Exception:
-                                            st.code(debug_info["prompt_payload"], language="json")
-
-                                    with tab_response:
-                                        try:
-                                            respuesta_dict = json.loads(debug_info["respuesta_llm"])
-                                            st.json(respuesta_dict)
-                                        except Exception:
-                                            st.code(debug_info["respuesta_llm"], language="json")
-                            # ─────────────────────────────────────────────────────────────────────
                         else:
                             progress_bar.progress(100, text="⚠️ Proceso finalizado.")
                             st.info("No se encontraron campos compatibles para rellenar en este formulario.")
@@ -671,8 +690,6 @@ if uploaded_file is not None:
                         st.error(f"⚠️ Se produjo un error durante el procesamiento: {str(e)}")
                         with st.expander("Ver detalles técnicos del error"):
                             st.text(traceback.format_exc())
-            else:
-                st.warning("Soporte PDF en construcción. Solo Excel está disponible en esta fase.")
 else:
     st.markdown("""
         <div class="iac-card" style="text-align: center; padding: 2.5rem 1.5rem; margin-top: 1rem;">
