@@ -232,6 +232,85 @@ def _extraer_color_fondo(celda) -> str:
     return ""
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# PARSER-07: Filtro de hojas no rellenables por nombre
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Palabras clave que identifican hojas de instrucciones/portada sin campos rellenables.
+# Se compara en minusculas contra el nombre de la hoja.
+_NOMBRES_HOJA_EXCLUIR = frozenset({
+    "instrucciones", "instruccion", "instruction", "instructions",
+    "portada", "cover", "caratula", "carátula",
+    "referencias", "reference", "references",
+    "glosario", "glossary",
+    "terminos", "términos", "terms",
+    "condiciones", "conditions",
+    "ayuda", "help",
+    "leyenda", "legend",
+    "resumen", "summary",
+    "inicio", "home",
+    "indice", "índice", "index",
+    "notas", "notes",
+})
+
+
+def _es_hoja_no_rellenable(nombre_hoja: str) -> bool:
+    """PARSER-07: Retorna True si la hoja debe ser descartada por su nombre.
+
+    Compara el nombre en minusculas contra la lista de palabras clave excluyentes.
+    Tambien descarta hojas cuyo nombre contenga alguna de esas palabras
+    (ej. 'Hoja_Instrucciones', 'Portada General').
+    """
+    nombre_lower = nombre_hoja.strip().lower()
+    if nombre_lower in _NOMBRES_HOJA_EXCLUIR:
+        return True
+    return any(kw in nombre_lower for kw in _NOMBRES_HOJA_EXCLUIR)
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PARSER-08: Filtro de ruido en textos de celdas
+# ──────────────────────────────────────────────────────────────────────────────
+
+# Patron: fechas en formatos colombianos/internacionales comunes
+_PATRON_FECHA = re.compile(
+    r'^\d{1,2}[/\-.\s]\d{1,2}[/\-.\s]\d{2,4}$'
+    r'|^\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}$',
+    re.IGNORECASE
+)
+# Patron: numeros puros o con separadores de miles/decimales (no son rotulos)
+_PATRON_NUMERO_TEXTO = re.compile(r'^[\d.,\s%$\-+()]{1,20}$')
+# Patron: texto compuesto solo de puntuacion, guiones, asteriscos o simbolos
+_PATRON_SOLO_PUNTUACION = re.compile(r'^[\W_]+$')
+# Patron: codigos CIIU (4 digitos exactos), codigos de actividad o codigos postales cortos
+_PATRON_CODIGO_CORTO = re.compile(r'^\d{3,6}$')
+# Patron: URLs, correos o cadenas tecnicas que no son rotulos de formulario
+_PATRON_URL = re.compile(r'https?://|www\.|@.*\.', re.IGNORECASE)
+
+
+def _es_texto_ruido(texto: str) -> bool:
+    """PARSER-08: Retorna True si el texto de la celda es ruido y debe descartarse.
+
+    Clasifica como ruido:
+    - Fechas en cualquier formato comun (dd/mm/yyyy, yyyy-mm-dd, etc.)
+    - Numeros puros con separadores de miles o porcentajes
+    - Codigos cortos de 3 a 6 digitos (CIIU, codigos postales, etc.)
+    - Texto compuesto unicamente de puntuacion o simbolos
+    - URLs o correos electronicos
+    """
+    t = texto.strip()
+    if _PATRON_FECHA.match(t):
+        return True
+    if _PATRON_NUMERO_TEXTO.match(t):
+        return True
+    if _PATRON_CODIGO_CORTO.match(t):
+        return True
+    if _PATRON_SOLO_PUNTUACION.match(t):
+        return True
+    if _PATRON_URL.search(t):
+        return True
+    return False
+
+
 def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
     """Recorre todas las hojas y extrae el mapa visual/espacial de los rótulos con texto.
 
@@ -239,6 +318,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
     """
     formulario: List[Dict[str, Any]] = []
     for hoja in libro.worksheets:
+        # PARSER-07: Saltar hojas de instrucciones, portada, glosario y similares
+        if _es_hoja_no_rellenable(hoja.title):
+            print(f"[AutoForm AI PARSER-07] Hoja '{hoja.title}' omitida (tipo no rellenable).")
+            continue
         # 1. Crear un diccionario O(1) de celdas combinadas -> objeto CellRange
         mapa_merges: Dict[Tuple[int, int], Any] = {}
         for rango in hoja.merged_cells.ranges:
@@ -260,6 +343,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 texto = str(valor).strip()
                 # Omitir textos vacíos o demasiado cortos (menor a 2)
                 if not texto or len(texto) < 2 or len(texto) > 120:
+                    continue
+
+                # PARSER-08: Filtrar ruido: fechas, numeros, codigos, puntuacion y URLs
+                if _es_texto_ruido(texto):
                     continue
 
                 fila = cell.row

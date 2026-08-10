@@ -40,8 +40,8 @@
 ### FASE 1 — Extracción (`excel_parser.py`)
 
 - [ ] **[PARSER-06]** Implementar **detección de tipo de celda de entrada** combinando heurísticas: celda vacía + borde inferior = `subrayado`; celda vacía + todos los bordes = `cuadro`; celda vacía + merge = `espacio_merge`. Exportar `tipoEntrada`.
-- [ ] **[PARSER-07]** Agregar soporte para **filtrar hojas por nombre** desde la UI. Descartar hojas como `"Instrucciones"`, `"Portada"` o `"Referencias"` que no contienen formularios rellenables.
-- [ ] **[PARSER-08]** Mejorar filtrado de ruido: omitir celdas cuyo texto sea una **fecha, código CIIU, número con formato de texto o solo caracteres de puntuación**, que pasan el filtro de longitud y llegan al LLM innecesariamente.
+- [x] **[PARSER-07]** Agregar soporte para **filtrar hojas por nombre** desde la UI. Descartar hojas como `"Instrucciones"`, `"Portada"` o `"Referencias"` que no contienen formularios rellenables.
+- [x] **[PARSER-08]** Mejorar filtrado de ruido: omitir celdas cuyo texto sea una **fecha, código CIIU, número con formato de texto o solo caracteres de puntuación**, que pasan el filtro de longitud y llegan al LLM innecesariamente.
 
 ---
 
@@ -56,7 +56,7 @@
 ### FASE 3 — Inyección en Excel (`excel_writer.py`)
 
 - [ ] **[WRITER-06]** Implementar **soporte para merge vertical** en dirección `abajo`. Si el formulario tiene casillas de entrada en filas combinadas verticalmente, el escritor debe soportar combinarlas verticalmente.
-- [ ] **[WRITER-07]** Agregar **validación de coordenadas fuera de rango** antes de escribir. Si la fila o columna destino excede `ws.max_row` / `ws.max_column`, saltarla silenciosamente.
+- [x] **[WRITER-07]** Agregar **validación de coordenadas fuera de rango** antes de escribir. Si la fila o columna destino excede `ws.max_row` / `ws.max_column`, saltarla silenciosamente.
 
 ---
 

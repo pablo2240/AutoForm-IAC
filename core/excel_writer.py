@@ -188,6 +188,17 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
         celdas_a_mergear = int(item.get("celdasAMergear", 1) or 1)
         ancho_linea = int(item.get("anchoLinea", 1) or 1)
 
+        # WRITER-07: Validación de coordenadas fuera de rango — saltar silenciosamente
+        max_fila = ws.max_row or 0
+        max_col  = ws.max_column or 0
+        if fila_destino < 1 or columna_destino < 1 or fila_destino > max_fila or columna_destino > max_col:
+            print(
+                f"[AutoForm AI WRITER-07] Coordenada fuera de rango omitida: "
+                f"hoja='{hoja_nombre}' fila={fila_destino} col={columna_destino} "
+                f"(max_fila={max_fila}, max_col={max_col})"
+            )
+            continue
+
         # WRITER-03: Determinar cantidad de columnas a combinar por merge o por línea de captura dividida
         cant_cols_merge = 1
         if requiere_merge and celdas_a_mergear > 1:
