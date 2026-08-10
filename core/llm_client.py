@@ -161,7 +161,7 @@ Evaluar ANTES que cualquier otra regla. Si aplica, OMITIR la celda:
 
 CAMPOS ADICIONALES EN CADA ELEMENTO:
 - `requiereMerge`: True si `tipoEspacioEscritura` es "subrayado" o "merge" Y (`anchoLinea` > 1 O `anchoMergeVecino` > 1).
-- `celdasAMergear`: usar `anchoMergeVecino` si la derecha es merge; o `anchoLinea` si > 1; o 3 como mínimo si `requiereMerge` es True.
+- `celdasAMergear`: usar `anchoMergeVecino` si la derecha es merge; o `anchoLinea` si > 1; de lo contrario 1. NUNCA inventes celdasAMergear > 1 si a la derecha en la misma fila hay otro rótulo (ej. PAÍS, DEPARTAMENTO).
 
 CONTEXTO DE SECCIÓN — REGLAS ADICIONALES:
 - JUNTA DIRECTIVA / ÓRGANOS DE ADMINISTRACIÓN: `representante_nombres` → NOMBRES, `representante_apellidos` → APELLIDOS, `cedula` → Número ID. Primera fila de datos (`ubicacion: "abajo"`).

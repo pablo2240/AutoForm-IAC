@@ -133,7 +133,7 @@ def _escribir_valor_en_celda(celda, valor, es_misma_celda: bool, hoja: Optional[
         valor = "X" if valor else ""
 
     valor_actual = celda.value
-    if valor_actual is not None and isinstance(valor_actual, str):
+    if valor_actual is not None and isinstance(valor_actual, str) and str(valor_actual).strip():
         # Buscar patrones de marcadores de posición como underscores (__) o puntos (...)
         patron_placeholder = r'_{2,}|\.{3,}'
         if re.search(patron_placeholder, valor_actual):
@@ -143,9 +143,8 @@ def _escribir_valor_en_celda(celda, valor, es_misma_celda: bool, hoja: Optional[
                 pass
             return
 
-        # Jamás invadimos o concatenamos sobre una celda de enunciado pura
-        if es_misma_celda:
-            return
+        # Jamás invadimos ni sobreescribimos una celda que ya contiene un rótulo o enunciado
+        return
 
     try:
         celda.value = valor
@@ -205,6 +204,18 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
             cant_cols_merge = celdas_a_mergear
         if ancho_linea > 1:
             cant_cols_merge = max(cant_cols_merge, ancho_linea)
+
+        # PROTECCIÓN ANTI-INVASIÓN DE RÓTULOS: Verificar cuántas celdas consecutivas hacia la derecha
+        # están realmente VACÍAS para jamás destruir u ocultar rótulos vecinos (ej. PAÍS, DEPARTAMENTO).
+        if cant_cols_merge > 1:
+            max_cols_libres = 1
+            for col_chk in range(columna_destino + 1, min(columna_destino + cant_cols_merge, max_col + 1)):
+                val_chk = ws.cell(row=fila_destino, column=col_chk).value
+                if val_chk is not None and str(val_chk).strip() != "":
+                    # Se encontró un rótulo o celda con contenido (ej. 'PAÍS') -> Detener el merge aquí
+                    break
+                max_cols_libres += 1
+            cant_cols_merge = max_cols_libres
 
         valor = _obtener_valor_datos(datos_empresa, str(item.get("campo", "")))
 
