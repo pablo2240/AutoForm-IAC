@@ -50,6 +50,10 @@
 - [ ] **[LLM-03]** Implementar **deduplicación de coordenadas destino** en el plan de mapeo. Si dos entradas apuntan a la misma celda `(hoja, fila_destino, columna_destino)`, conservar solo la primera y descartar las duplicadas.
 - [x] **[LLM-04]** Implementar **caché de respuestas del LLM** basada en hash del mapa de formularios. Si el mismo formulario ya fue procesado en la sesión, devolver el resultado en caché sin repetir la llamada a la API.
 - [x] **[LLM-05]** Agregar un **panel de debug visible en la UI** (sección expandible en `app1.py`) con el mapa enviado al LLM y el JSON de respuesta, para diagnosticar campos no mapeados.
+- [x] **[CACHE-01]** Implementar **módulo de caché semántico** (`core/semantic_cache.py`) con generación de huellas estructurales y persistencia en `config/plantillas_cache.json`.
+- [x] **[CACHE-02]** Implementar **algoritmo de similitud difusa** (`rapidfuzz.fuzz.token_sort_ratio`) con umbral `>= 90.0%` para detectar variaciones de plantilla.
+- [x] **[CACHE-03]** Integrar **adaptación dinámica de coordenadas** en `mapper.py` para re-alinear mapas aprendidos sobre nuevos documentos en `< 0.05s` y `$0` de API.
+- [x] **[CACHE-04]** Agregar **banner e indicador visual en UI** (`app1.py`) y en el panel de debug para los aciertos de Caché Semántico Fuzzy (`SEMANTIC_FUZZY_HIT`).
 
 ---
 

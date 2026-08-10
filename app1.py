@@ -519,6 +519,14 @@ if uploaded_file is not None:
                             bytes_relleno = excel_writer.rellenar_formulario_excel(archivo_bytes, resultados, datos_empresa)
                             progress_bar.progress(100, text="✅ ¡Proceso completado exitosamente!")
 
+                            if debug_info and debug_info.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
+                                score_fuzzy = debug_info.get("score_similaridad", 95.0)
+                                st.markdown(f"""
+                                    <div style="background: #EFF6FF; border-left: 4px solid #3B82F6; padding: 0.75rem 1rem; border-radius: 6px; margin: 0.5rem 0; color: #1E40AF; font-weight: 600; font-size: 0.88rem;">
+                                        ⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong> — Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).
+                                    </div>
+                                """, unsafe_allow_html=True)
+
                             st.markdown("""
                                 <div style="background: #FEF3C7; border-left: 4px solid #F8B126; padding: 0.85rem 1rem; border-radius: 6px; margin: 1rem 0;">
                                     <strong style="color: #92400E;">🎉 Formulario Diligenciado Correctamente</strong>

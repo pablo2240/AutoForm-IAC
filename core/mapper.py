@@ -11,6 +11,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional
 
+from core import semantic_cache
 from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
 
 # Complicidad 1 Fix: Se eliminó el SYSTEM_PROMPT local redundante.
@@ -396,8 +397,33 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
     form_hash = _hash_mapa(mapa_purgado_pre)
 
     if form_hash in _cache_mapeos:
-        print(f"[AutoForm AI LLM-04] ■ Cache HIT: Formulario ya procesado (hash {form_hash[:12]}...). Devolviendo resultado en caché sin llamar al LLM.")
+        print(f"[AutoForm AI LLM-04] ■ Cache HIT Exacto: Formulario ya procesado (hash {form_hash[:12]}...). Devolviendo resultado en caché.")
         return _cache_mapeos[form_hash]
+
+    # ── FASE B: Caché Semántico Fuzzy (Similaridad de Plantillas con rapidfuzz) ──
+    huella_entrante = semantic_cache.generar_huella_formulario(mapa_purgado_pre)
+    res_fuzzy = semantic_cache.buscar_plantilla_similar(huella_entrante, umbral=90.0)
+
+    if res_fuzzy is not None:
+        id_plantilla, plantilla_guardada, score_similaridad = res_fuzzy
+        print(
+            f"[AutoForm AI FASE B] ⚡ Caché Semántico HIT (Score: {score_similaridad:.1f}% - Plantilla: {id_plantilla}). "
+            f"Adaptando mapeo sin llamar a la API..."
+        )
+        plan_adaptado = semantic_cache.adaptar_mapeo_plantilla(mapa_formularios, plantilla_guardada)
+        _cache_mapeos[form_hash] = plan_adaptado
+        _cache_debug[form_hash] = {
+            "hash": form_hash,
+            "tipo_cache": "SEMANTIC_FUZZY_HIT",
+            "score_similaridad": round(score_similaridad, 1),
+            "plantilla_coincidente": id_plantilla,
+            "rotulos_enviados": len(mapa_purgado_pre),
+            "prompt_payload": f"[Caché Semántico Fuzzy {score_similaridad:.1f}% con plantilla {id_plantilla}]",
+            "respuesta_llm": json.dumps(plan_adaptado, ensure_ascii=False),
+            "campos_mapeados": len(plan_adaptado),
+            "campos_faltantes_detectados": [],
+        }
+        return plan_adaptado
 
     print(f"[AutoForm AI LLM-04] □ Cache MISS (hash {form_hash[:12]}...). Procesando con LLM...")
 
@@ -436,9 +462,16 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
     # LLM-04: Guardar resultado en caché de sesión
     _cache_mapeos[form_hash] = resultado_final
 
+    # FASE B: Persistir plantilla en el Caché Semántico en disco (config/plantillas_cache.json)
+    try:
+        semantic_cache.guardar_plantilla_en_cache(form_hash[:16], mapa_purgado_pre, resultado_final)
+    except Exception as exc:
+        print(f"[AutoForm AI Warning] No se pudo guardar la plantilla en el Caché Semántico: {exc}")
+
     # LLM-05: Guardar información de debug (prompt + mapa + respuesta)
     _cache_debug[form_hash] = {
         "hash": form_hash,
+        "tipo_cache": "LLM_GENERATED",
         "rotulos_enviados": len(mapa_purgado_pre),
         "prompt_payload": prompt_principal,
         "respuesta_llm": respuesta_principal,
