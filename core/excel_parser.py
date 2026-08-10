@@ -195,6 +195,43 @@ def _es_casilla_verificacion(
     return False
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# PARSER-03: Extracción del color de fondo (fill.fgColor)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _extraer_color_fondo(celda) -> str:
+    """Extrae el color de fondo de una celda como string hex (ej. 'FFFF00') o '' si no tiene.
+
+    Soporta colores de tipo 'rgb', 'indexed' y 'theme'.
+    Retorna cadena vacía si la celda no tiene relleno significativo.
+    """
+    try:
+        fill = celda.fill
+        if fill is None:
+            return ""
+        # Solo PatternFill con fill_type definido indica color real
+        if not getattr(fill, "fill_type", None) or fill.fill_type in (None, "none"):
+            return ""
+        fg = getattr(fill, "fgColor", None)
+        if fg is None:
+            return ""
+        color_type = getattr(fg, "type", None)
+        if color_type == "rgb":
+            rgb = getattr(fg, "rgb", "") or ""
+            # Ignorar blanco puro y transparente (00000000, FFFFFFFF, 00FFFFFF)
+            if rgb in ("", "00000000", "FFFFFFFF", "00FFFFFF", "FF000000"):
+                return ""
+            # Quitar prefijo de alpha (los 2 primeros chars) si son 8 dígitos
+            return rgb[-6:] if len(rgb) == 8 else rgb
+        if color_type == "indexed":
+            return f"indexed:{getattr(fg, 'indexed', '')}"
+        if color_type == "theme":
+            return f"theme:{getattr(fg, 'theme', '')}"
+    except Exception:
+        pass
+    return ""
+
+
 def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
     """Recorre todas las hojas y extrae el mapa visual/espacial de los rótulos con texto.
 
@@ -303,6 +340,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                     abajo_vacia, abajo_es_merge, bordes_abajo, 1, texto
                 )
 
+                # ── PARSER-03: Color de fondo del rótulo ─────────────────────
+                color_fondo = _extraer_color_fondo(cell)
+                # ────────────────────────────────────────────────────────────
+
                 formulario.append(
                     {
                         "hoja": hoja.title,
@@ -323,6 +364,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "esMergePrincipal": es_merge_principal,
                         "coordMerge":       coord_merge,
                         "esCasillaVerificacion": es_casilla,
+                        "colorFondo": color_fondo,
                     }
                 )
     return formulario

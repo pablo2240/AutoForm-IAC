@@ -4,15 +4,14 @@ Este módulo implementa la escritura nativa en Excel usando openpyxl y evita
 borrar fórmulas o estilos no mapeados.
 """
 
-from __future__ import annotations
-
+from copy import copy
 from io import BytesIO
 from typing import Any, Dict, List, Optional
+import re
 
 from openpyxl import load_workbook
-from openpyxl.styles import Alignment, Border, Side
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
-import re
 
 
 def _celda_en_merge(hoja: Worksheet, fila: int, columna: int) -> Optional[Any]:
@@ -63,10 +62,39 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     return _buscar_campo_anidado(datos_empresa, campo)
 
 
-def _copiar_borde_inferior(origen: Worksheet, fila: int, columna: int) -> Optional[Border]:
-    celda = origen.cell(row=fila, column=columna)
-    if celda.border and celda.border.bottom and celda.border.bottom.style:
-        return Border(bottom=Side(style=celda.border.bottom.style, color=celda.border.bottom.color))
+def _obtener_relleno_preservado(celda_origen, celda_destino) -> Optional[PatternFill]:
+    """WRITER-01: Preserva el PatternFill de la celda destino u origen."""
+    for c in (celda_destino, celda_origen):
+        if c and hasattr(c, "fill") and c.fill and getattr(c.fill, "fill_type", None):
+            return copy(c.fill)
+    return None
+
+
+def _obtener_fuente_preservada(celda_origen, celda_destino) -> Optional[Font]:
+    """WRITER-02: Preserva la Font de la celda destino u origen."""
+    for c in (celda_destino, celda_origen):
+        if c and hasattr(c, "font") and c.font and (c.font.name or c.font.size or c.font.bold or c.font.color):
+            return copy(c.font)
+    return None
+
+
+def _obtener_borde_completo(celda_origen, celda_destino) -> Optional[Border]:
+    """WRITER-04: Copia los bordes relevantes (top, bottom, left, right) combinando celda_destino y celda_origen."""
+    b_dest = celda_destino.border if celda_destino and hasattr(celda_destino, "border") else None
+    b_orig = celda_origen.border if celda_origen and hasattr(celda_origen, "border") else None
+
+    sides = {}
+    for lado in ("top", "bottom", "left", "right"):
+        side_dest = getattr(b_dest, lado, None) if b_dest else None
+        side_orig = getattr(b_orig, lado, None) if b_orig else None
+
+        if side_dest and side_dest.style and side_dest.style != "none":
+            sides[lado] = Side(style=side_dest.style, color=side_dest.color)
+        elif side_orig and side_orig.style and side_orig.style != "none":
+            sides[lado] = Side(style=side_orig.style, color=side_orig.color)
+
+    if sides:
+        return Border(**sides)
     return None
 
 
@@ -157,7 +185,16 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
             raise ValueError(f"Ubicación inválida en plan de mapeo: {ubicacion}")
 
         requiere_merge = bool(item.get("requiereMerge", False))
-        celdas_a_mergear = int(item.get("celdasAMergear", 1))
+        celdas_a_mergear = int(item.get("celdasAMergear", 1) or 1)
+        ancho_linea = int(item.get("anchoLinea", 1) or 1)
+
+        # WRITER-03: Determinar cantidad de columnas a combinar por merge o por línea de captura dividida
+        cant_cols_merge = 1
+        if requiere_merge and celdas_a_mergear > 1:
+            cant_cols_merge = celdas_a_mergear
+        if ancho_linea > 1:
+            cant_cols_merge = max(cant_cols_merge, ancho_linea)
+
         valor = _obtener_valor_datos(datos_empresa, str(item.get("campo", "")))
 
         # WRITER-05: Si el valor es None (campo no presente en datos_empresa), continuar de forma silenciosa
@@ -167,9 +204,8 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
         rango_preexistente = _celda_en_merge(ws, fila_destino, columna_destino)
 
         rango_combinado = None
-        if requiere_merge and celdas_a_mergear > 1 and ubicacion == "derecha" and rango_preexistente is None:
-            # Si la celda destino es simple y requiere merge, creamos el rango combinado
-            columna_final = columna_destino + celdas_a_mergear - 1
+        if cant_cols_merge > 1 and ubicacion == "derecha" and rango_preexistente is None:
+            columna_final = columna_destino + cant_cols_merge - 1
             rango_combinado = (fila_destino, columna_destino, fila_destino, columna_final)
             ws.merge_cells(
                 start_row=fila_destino,
@@ -184,24 +220,42 @@ def rellenar_formulario_excel(bytes_excel: bytes, plan_mapeo: List[Dict[str, Any
         es_misma_celda = (celda_destino.coordinate == celda_origen.coordinate)
         _escribir_valor_en_celda(celda_destino, valor, es_misma_celda, hoja=ws)
 
-        if type(celda_destino).__name__ != "MergedCell":
-            celda_destino.alignment = Alignment(vertical="center", wrap_text=True)
-
-            borde_inferior = _copiar_borde_inferior(ws, fila_origen, columna_origen)
-            if borde_inferior is not None:
-                celda_destino.border = borde_inferior
+        # WRITER-01, WRITER-02, WRITER-04: Aplicación y preservación de fondo (PatternFill), fuente (Font) y bordes (Border)
+        relleno = _obtener_relleno_preservado(celda_origen, celda_destino)
+        fuente = _obtener_fuente_preservada(celda_origen, celda_destino)
+        borde_completo = _obtener_borde_completo(celda_origen, celda_destino)
 
         if rango_combinado is not None:
-            borde_inferior = _copiar_borde_inferior(ws, fila_origen, columna_origen)
             _, inicio_col, _, fin_col = rango_combinado
             for col in range(inicio_col, fin_col + 1):
                 c_item = _obtener_celda_escribible(ws, fila_destino, col)
                 if type(c_item).__name__ != "MergedCell":
                     c_item.alignment = Alignment(vertical="center", wrap_text=True)
-                    if borde_inferior is not None:
-                        c_item.border = borde_inferior
+                    if relleno is not None:
+                        c_item.fill = copy(relleno)
+                    if fuente is not None:
+                        c_item.font = copy(fuente)
+
+                    if borde_completo is not None:
+                        borde_celda = Border(
+                            top=copy(borde_completo.top) if borde_completo.top else None,
+                            bottom=copy(borde_completo.bottom) if borde_completo.bottom else None,
+                            left=copy(borde_completo.left) if col == inicio_col and borde_completo.left else None,
+                            right=copy(borde_completo.right) if col == fin_col and borde_completo.right else None,
+                        )
+                        c_item.border = borde_celda
+        else:
+            if type(celda_destino).__name__ != "MergedCell":
+                celda_destino.alignment = Alignment(vertical="center", wrap_text=True)
+                if relleno is not None:
+                    celda_destino.fill = relleno
+                if fuente is not None:
+                    celda_destino.font = fuente
+                if borde_completo is not None:
+                    celda_destino.border = borde_completo
 
     salida = BytesIO()
     workbook.save(salida)
     salida.seek(0)
     return salida.getvalue()
+

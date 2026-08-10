@@ -79,13 +79,22 @@ Antes de mapear, analiza la estructura visual:
 - NUNCA modifiques titulos, encabezados, bordes ni estructura. Solo diligencia los espacios destinados al usuario.
 
 Significado de los campos de contexto visual en cada rotulo:
-- `tipoEspacioEscritura`: "subrayado" (borde inferior), "cuadro" (bordes completos), "merge" (rango combinado), "vacio", "ocupado".
-- `anchoLinea`: columnas consecutivas con borde inferior (linea de captura). >1 = espacio para valor largo.
+- `tipoEspacioEscritura`: tipo del espacio de escritura disponible. PRIORIZA este campo para decidir la ubicacion:
+  - "subrayado" → borde inferior visible (linea de captura ____). PRIMERA prioridad para escritura.
+  - "cuadro"    → celda con bordes completos (caja de tabla). SEGUNDA prioridad.
+  - "merge"     → rango combinado vacio. TERCERA prioridad.
+  - "vacio"     → celda sin bordes. Usar solo si no hay otra opcion.
+  - "ocupado"   → celda con contenido. NUNCA escribir aqui.
+- `anchoLinea`: numero de columnas consecutivas con borde inferior (linea de captura). Si > 1, el espacio es amplio (ej. Razon Social, Direccion). Usar `requiereMerge: true` y `celdasAMergear: anchoLinea`.
 - `anchoMergeVecino`: ancho en columnas del merge vecino derecho. 1 = sin merge.
 - `esMergePrincipal`: True si el propio rotulo es un merge. La columna de escritura ya fue corregida; no requiere ajuste.
-- `esCasillaVerificacion`: 
-  - Si es `True` (recuadro 1x1 de opción/checkbox): Asigna valor "X" a la opción si aplica.
-  - Si es `False` (línea de captura o espacio amplio): Asigna el DATO REAL (ej. escribe el número de cédula en el rótulo "C.C.", el nombre en "Nombre", etc.).
+- `esCasillaVerificacion`:
+  - Si es `True` (recuadro 1x1 de opcion/checkbox): Asigna valor "X" a la opcion si aplica.
+  - Si es `False` (linea de captura o espacio amplio): Asigna el DATO REAL (ej. escribe el numero de cedula en el rotulo "C.C.", el nombre en "Nombre", etc.).
+- `colorFondo`: color de fondo del rotulo en hex (ej. "FFFF00" = amarillo) o cadena vacia. Usa esta informacion para:
+  - Identificar secciones resaltadas o de alta prioridad en el formulario (filas con fondo de color).
+  - Distinguir encabezados de seccion (normalmente tienen fondo gris/azul) de celdas de captura (normalmente blancas o con color tenue).
+  - Si el rotulo tiene `colorFondo` no vacio y sus vecinos tambien, probablemente es una fila de encabezado. Prioriza `ubicacion: "abajo"` en ese caso.
 
 ---
 
@@ -335,9 +344,11 @@ def _consultar_llm_requests(
                     timeout=timeout,
                 )
             except (requests.Timeout, requests.ConnectionError) as exc:
-                ultimo_error = RuntimeError(f"Error de red con {modelo} (intento {intento}): {exc}")
+                backoff = min(2 ** intento, 16)
+                ultimo_error = RuntimeError(f"Error de red con {modelo} (intento {intento}/{MAX_REINTENTOS}): {exc}")
                 if intento < MAX_REINTENTOS:
-                    time.sleep(1)
+                    print(f"[AutoForm AI] Error de red con {modelo}. Reintentando en {backoff}s...")
+                    time.sleep(backoff)
                     continue
                 modelo_fallido = True
                 break
@@ -349,10 +360,24 @@ def _consultar_llm_requests(
                 modelo_fallido = True
                 break
 
-            if respuesta.status_code >= 500:
-                ultimo_error = RuntimeError(f"OpenRouter {modelo} devolvió status {respuesta.status_code}.")
+            # 429 Rate Limit: esperar el tiempo indicado por el servidor y reintentar
+            if respuesta.status_code == 429:
+                retry_after = int(respuesta.headers.get("Retry-After", 0))
+                espera = retry_after if retry_after > 0 else min(4 ** intento, 30)
+                print(f"[AutoForm AI] Rate limit en OpenRouter {modelo} (429). Esperando {espera}s antes del intento {intento + 1}...")
+                ultimo_error = RuntimeError(f"OpenRouter {modelo} devolvio 429 Rate Limit.")
                 if intento < MAX_REINTENTOS:
-                    time.sleep(1)
+                    time.sleep(espera)
+                    continue
+                modelo_fallido = True
+                break
+
+            if respuesta.status_code >= 500:
+                backoff = min(2 ** intento, 16)
+                ultimo_error = RuntimeError(f"OpenRouter {modelo} devolvio status {respuesta.status_code}.")
+                if intento < MAX_REINTENTOS:
+                    print(f"[AutoForm AI] Error {respuesta.status_code} en OpenRouter {modelo}. Reintentando en {backoff}s (intento {intento + 1}/{MAX_REINTENTOS})...")
+                    time.sleep(backoff)
                     continue
                 modelo_fallido = True
                 break

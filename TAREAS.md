@@ -1,4 +1,4 @@
-﻿# 📋 TAREAS.md — Backlog Técnico AutoForm AI
+# 📋 TAREAS.md — Backlog Técnico AutoForm AI
 
 > **Rol:** Arquitecto de Software / Lead Developer
 > **Fecha de análisis:** 2026-08-05
@@ -12,7 +12,7 @@
 
 - [x] **[PARSER-01]** Agregar detección de **bordes visuales** (`border.bottom`, `border.top`, `border.left`, `border.right`) para cada celda candidata y sus vecinas. Exportar como `derechaConBordeInferior`, `abajoConBordeInferior`, `tipoEspacioEscritura` (`subrayado` | `cuadro` | `merge` | `vacio`) para enriquecer el contexto enviado al LLM.
 - [x] **[PARSER-02]** Detectar **líneas de captura divididas entre celdas consecutivas** (`______` en B10, C10, D10 todas con borde inferior y vacías). Calcular `anchoLinea` automáticamente y exportarlo para que el escritor las combine antes de escribir.
-- [ ] **[PARSER-03]** Detectar **relleno de fondo de celda** (`fill.fgColor`) de la celda y sus vecinas, exportar como `colorFondo` (hex). Permite al LLM identificar secciones resaltadas y al escritor preservar el color al rellenar.
+- [x] **[PARSER-03]** Detectar **relleno de fondo de celda** (`fill.fgColor`) de la celda y sus vecinas, exportar como `colorFondo` (hex). Permite al LLM identificar secciones resaltadas y al escritor preservar el color al rellenar.
 - [x] **[PARSER-04]** Agregar detección del **ancho real del rango combinado** al que pertenece la celda contigua (`anchoMergeVecino`), para que el escritor sepa exactamente cuántas columnas abarca el espacio de entrada y no lo subestime al hacer `merge_cells`.
 - [x] **[PARSER-05]** Detectar y exportar si la **celda actual pertenece a un rango combinado** (`esMergePrincipal`, `coordMerge`), para que el mapeador pueda saltar sub-celdas de un merge ya procesado y evitar duplicados en el mapa.
 
@@ -20,18 +20,18 @@
 
 ### FASE 3 — Inyección en Excel (`excel_writer.py`)
 
-- [ ] **[WRITER-01]** Implementar **preservación de color de fondo** (`PatternFill`) al escribir en celdas destino. Actualmente se sobreescribe el color con blanco al asignar `Alignment`, destruyendo el diseño visual del formulario.
-- [ ] **[WRITER-02]** Implementar **preservación de fuente original** (`Font`) de la celda destino. Al escribir el valor, respetar `font.name`, `font.size`, `font.bold` y `font.color` de la celda de captura original.
-- [ ] **[WRITER-03]** Implementar **llenado automático de líneas de captura divididas**. Si `anchoLinea > 1`, detectar celdas consecutivas con borde inferior y vacías, combinarlas en un rango y escribir el valor una sola vez sin fragmentarlo.
-- [ ] **[WRITER-04]** Mejorar `_copiar_borde_inferior` para copiar **todos los bordes relevantes** (`top`, `left`, `right`, `bottom`) de la celda origen a la destino, no solo el inferior, conservando el aspecto visual completo.
+- [x] **[WRITER-01]** Implementar **preservación de color de fondo** (`PatternFill`) al escribir en celdas destino. Actualmente se sobreescribe el color con blanco al asignar `Alignment`, destruyendo el diseño visual del formulario.
+- [x] **[WRITER-02]** Implementar **preservación de fuente original** (`Font`) de la celda destino. Al escribir el valor, respetar `font.name`, `font.size`, `font.bold` y `font.color` de la celda de captura original.
+- [x] **[WRITER-03]** Implementar **llenado automático de líneas de captura divididas**. Si `anchoLinea > 1`, detectar celdas consecutivas con borde inferior y vacías, combinarlas en un rango y escribir el valor una sola vez sin fragmentarlo.
+- [x] **[WRITER-04]** Mejorar `_copiar_borde_inferior` para copiar **todos los bordes relevantes** (`top`, `left`, `right`, `bottom`) de la celda origen a la destino, no solo el inferior, conservando el aspecto visual completo.
 - [x] **[WRITER-05]** Manejar `valor is None` de forma **silenciosa (skip)** en lugar de lanzar `ValueError`. Si el campo no está en `datos_empresa.json`, ignorar ese elemento del plan de mapeo y continuar sin interrumpir el proceso.
 
 ---
 
 ### FASE 2 — Inferencia LLM (`llm_client.py`, `mapper.py`)
 
-- [ ] **[LLM-01]** Enriquecer el `SYSTEM_PROMPT` en `mapper.py` con las nuevas claves del mapa (`tipoEspacioEscritura`, `derechaConBordeInferior`, `anchoMergeVecino`), instruyendo al LLM a priorizar `tipoEspacioEscritura: "subrayado"` como espacio de escritura.
-- [ ] **[LLM-02]** Implementar **retry automático** en `_consultar_llm_requests` con backoff exponencial (1–3 intentos) ante errores `5xx` de OpenRouter.
+- [x] **[LLM-01]** Enriquecer el `SYSTEM_PROMPT` en `mapper.py` con las nuevas claves del mapa (`tipoEspacioEscritura`, `derechaConBordeInferior`, `anchoMergeVecino`), instruyendo al LLM a priorizar `tipoEspacioEscritura: "subrayado"` como espacio de escritura.
+- [x] **[LLM-02]** Implementar **retry automático** en `_consultar_llm_requests` con backoff exponencial (1–3 intentos) ante errores `5xx` de OpenRouter.
 
 ---
 
