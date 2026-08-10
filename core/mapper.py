@@ -278,48 +278,9 @@ def _extraer_json(texto: str) -> Any:
 
 
 def _procesar_resultado_llm(respuesta: str) -> List[Dict[str, Any]]:
-    """Extrae, valida y estructura la lista de elementos mapeados desde una respuesta textual del LLM."""
-    if not respuesta or not isinstance(respuesta, str):
-        raise RuntimeError("La respuesta del LLM no es un texto válido.")
-
-    resultado = _extraer_json(respuesta)
-
-    # Robustez si el LLM devolvió un diccionario en lugar de una lista pura
-    if isinstance(resultado, dict):
-        lista_extraida = None
-        for _, valor in resultado.items():
-            if isinstance(valor, list):
-                lista_extraida = valor
-                break
-        if lista_extraida is not None:
-            resultado = lista_extraida
-        else:
-            valores_dict = list(resultado.values())
-            if valores_dict and all(isinstance(v, dict) and ("fila" in v or "hoja" in v) for v in valores_dict if v):
-                resultado = [v for v in valores_dict if v]
-            else:
-                raise RuntimeError(f"JSON del LLM no contiene lista de mapeos: {resultado}")
-
-    if not isinstance(resultado, list):
-        raise RuntimeError(f"El LLM debe retornar un arreglo JSON: {resultado}")
-
-    elementos_validos: List[Dict[str, Any]] = []
-    for item in resultado:
-        try:
-            elemento = _validar_item(item)
-            if elemento["campo"] == "":
-                continue
-            if elemento["requiereMerge"] is False and _necesita_merge(
-                elemento["valor"], elemento["campo"]
-            ):
-                elemento["requiereMerge"] = True
-                elemento["celdasAMergear"] = max(3, elemento["celdasAMergear"])
-            elementos_validos.append(elemento)
-        except (ValueError, TypeError, KeyError) as e:
-            print(f"[AutoForm AI Warning] Omitiendo fila de mapeo inválida: {e}. Elemento: {item}")
-            continue
-
-    return elementos_validos
+    """FASE C: Extrae y sanitiza la lista de elementos mapeados usando el validador estricto de Pydantic V2."""
+    from core import schema_models
+    return schema_models.validar_y_sanitizar_mapeo(respuesta)
 
 
 def _evaluar_cobertura_campos(

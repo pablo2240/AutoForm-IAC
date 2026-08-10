@@ -456,3 +456,30 @@ def invocar_llm(prompt: str, sistema: str = "", timeout: int = 60) -> str:
     # El argumento `sistema` ya no se concatena para evitar conflictos de reglas.
     return consultar_llm(prompt, sistema=STRICT_SYSTEM_PROMPT, json_mode=True, timeout=timeout)
 
+
+def consultar_llm_estructurado(
+    prompt: str,
+    timeout: int = 60,
+) -> List[Dict[str, Any]]:
+    """FASE C: Invocación estructurada con Pydantic V2 e instructor.
+
+    Garantiza respuestas sanitizadas con el esquema MapeoItem y realiza 1 reintento
+    automático si el JSON devuelto no cumple el esquema Pydantic.
+    """
+    from core import schema_models
+
+    respuesta_raw = invocar_llm(prompt, timeout=timeout)
+    elementos = schema_models.validar_y_sanitizar_mapeo(respuesta_raw)
+
+    if elementos:
+        return elementos
+
+    print("[AutoForm AI Pydantic] Respuesta inicial no pasó la validación. Ejecutando reintento estructurado...")
+    prompt_reintento = (
+        f"{prompt}\n\n"
+        f"IMPORTANTE: Tu respuesta anterior no cumplió el esquema Pydantic requerido.\n"
+        f"Devuelve ÚNICAMENTE un arreglo JSON válido con los campos: hoja, fila, columna, valor, ubicacion, campo, requiereMerge, celdasAMergear."
+    )
+    respuesta_reintento = invocar_llm(prompt_reintento, timeout=timeout)
+    return schema_models.validar_y_sanitizar_mapeo(respuesta_reintento)
+

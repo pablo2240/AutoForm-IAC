@@ -54,6 +54,10 @@
 - [x] **[CACHE-02]** Implementar **algoritmo de similitud difusa** (`rapidfuzz.fuzz.token_sort_ratio`) con umbral `>= 90.0%` para detectar variaciones de plantilla.
 - [x] **[CACHE-03]** Integrar **adaptación dinámica de coordenadas** en `mapper.py` para re-alinear mapas aprendidos sobre nuevos documentos en `< 0.05s` y `$0` de API.
 - [x] **[CACHE-04]** Agregar **banner e indicador visual en UI** (`app1.py`) y en el panel de debug para los aciertos de Caché Semántico Fuzzy (`SEMANTIC_FUZZY_HIT`).
+- [x] **[SCHEMA-01]** Crear esquemas Pydantic V2 (`MapeoItem`, `PlanMapeoFormulario`) en `core/schema_models.py` con tipado estricto (`int >= 1`, `Literal["derecha", "abajo", "misma"]`, `bool`).
+- [x] **[SCHEMA-02]** Integrar invocación estructurada `consultar_llm_estructurado()` en `core/llm_client.py` con reintento automático ante fallos de validación.
+- [x] **[SCHEMA-03]** Migrar la extracción y sanitización de `mapper.py` al validador estricto de Pydantic V2 (0% errores de sintaxis JSON).
+- [x] **[SCHEMA-04]** Crear prueba unitaria automatizada en `scratch/test_schema_models.py` para validar respuestas JSON imperfectas con Markdown.
 
 ---
 
