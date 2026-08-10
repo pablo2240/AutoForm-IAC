@@ -20,7 +20,7 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
-from core import excel_parser, excel_writer, mapper
+from core import excel_parser, excel_writer, mapper, profile_manager
 from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
@@ -299,6 +299,91 @@ with st.sidebar:
     """, unsafe_allow_html=True)
 
     st.markdown("---")
+
+    # 🏢 Fase 2: Gestión de Perfiles Empresariales (Multi-Perfil)
+    st.markdown("### 🪪 **Perfil Empresarial Activo**")
+    dict_perfiles = profile_manager.listar_perfiles()
+    nombres_perfiles = list(dict_perfiles.keys())
+
+    if "perfil_activo_nombre" not in st.session_state or st.session_state["perfil_activo_nombre"] not in dict_perfiles:
+        st.session_state["perfil_activo_nombre"] = nombres_perfiles[0] if nombres_perfiles else "🏢 Principal (IAC Latam)"
+
+    perfil_seleccionado_etiqueta = st.selectbox(
+        "Seleccionar Perfil:",
+        options=nombres_perfiles,
+        index=nombres_perfiles.index(st.session_state["perfil_activo_nombre"]) if st.session_state["perfil_activo_nombre"] in nombres_perfiles else 0,
+        help="Los datos de este perfil se usarán para diligenciar los formularios automáticamente."
+    )
+    st.session_state["perfil_activo_nombre"] = perfil_seleccionado_etiqueta
+    ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
+    datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
+
+    # ✏️ Editor Visual de Datos del Perfil Activo
+    with st.expander("✏️ Editar Datos de Empresa", expanded=False):
+        tab_id, tab_ub, tab_bn = st.tabs(["🪪 ID", "📍 Contacto", "🏦 Banco"])
+        
+        with tab_id:
+            razon_social = st.text_input("Razón Social", value=datos_empresa.get("razon_social", ""))
+            nit = st.text_input("NIT", value=datos_empresa.get("nit", ""))
+            representante_legal = st.text_input("Representante Legal", value=datos_empresa.get("representante_legal", ""))
+            cedula = st.text_input("Cédula Representante", value=datos_empresa.get("cedula", ""))
+            rep_nombres = st.text_input("Nombres Rep.", value=datos_empresa.get("representante_nombres", ""))
+            rep_apellidos = st.text_input("Apellidos Rep.", value=datos_empresa.get("representante_apellidos", ""))
+
+        with tab_ub:
+            direccion = st.text_input("Dirección Principal", value=datos_empresa.get("direccion", ""))
+            ciudad = st.text_input("Ciudad", value=datos_empresa.get("ciudad", ""))
+            departamento = st.text_input("Departamento", value=datos_empresa.get("departamento", ""))
+            pais = st.text_input("País", value=datos_empresa.get("pais", "Colombia"))
+            telefono = st.text_input("Teléfono", value=datos_empresa.get("telefono", ""))
+            correo = st.text_input("Correo Electrónico", value=datos_empresa.get("correo", ""))
+            pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web", ""))
+
+        with tab_bn:
+            banco = st.text_input("Banco", value=datos_empresa.get("banco", ""))
+            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta", ""))
+            
+            tipo_cta_actual = str(datos_empresa.get("tipo_cuenta", "AHORROS")).upper()
+            idx_tipo = 0 if "AHORRO" in tipo_cta_actual else (1 if "CORRIENTE" in tipo_cta_actual else 2)
+            tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo)
+            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal", ""))
+
+        if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", use_container_width=True):
+            datos_actualizados = {
+                "razon_social": razon_social,
+                "nit": nit,
+                "direccion": direccion,
+                "telefono": telefono,
+                "correo": correo,
+                "cedula": cedula,
+                "ciudad": ciudad,
+                "departamento": departamento,
+                "pagina_web": pagina_web,
+                "representante_legal": representante_legal,
+                "representante_nombres": rep_nombres,
+                "representante_apellidos": rep_apellidos,
+                "pais": pais,
+                "banco": banco,
+                "numero_cuenta": numero_cuenta,
+                "tipo_cuenta": tipo_cuenta,
+                "sucursal": sucursal,
+            }
+            if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados):
+                st.success("✅ ¡Datos del perfil guardados!")
+                datos_empresa = datos_actualizados
+                _safe_rerun()
+
+    with st.expander("➕ Crear Nuevo Perfil", expanded=False):
+        nuevo_nombre = st.text_input("Nombre del Nuevo Perfil", placeholder="Ej: IAC Sucursal Bogotá")
+        if st.button("Crear Perfil", key="btn_crear_perfil", use_container_width=True):
+            if nuevo_nombre.strip():
+                exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
+                if exito:
+                    st.session_state["perfil_activo_nombre"] = nueva_etiqueta
+                    st.success(f"✅ Perfil creado: {nueva_etiqueta}")
+                    _safe_rerun()
+
+    st.markdown("---")
     
     with st.expander("💬 Probador de Agente", expanded=False):
         if "chat_messages" not in st.session_state:
@@ -325,14 +410,6 @@ with st.sidebar:
                 respuesta_llm = respuesta_llm[: corte if corte > 0 else MAX_CHARS] + "…"
             st.session_state["chat_messages"].append({"role": "assistant", "content": respuesta_llm})
             _safe_rerun()
-
-# 5. Cargar Datos Empresariales
-datos_empresa = {}
-ruta_config = os.path.join("config", "datos_empresa.json")
-if os.path.exists(ruta_config):
-    with open(ruta_config, "r", encoding="utf-8") as f:
-        datos_empresa = json.load(f)
-
 
 def _sanitizar_resultados(resultados):
     sanitizados = []

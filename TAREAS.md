@@ -87,8 +87,8 @@
 
 ### Infraestructura General (`app1.py`, `config/`)
 
-- [ ] **[APP-01]** Agregar **editor visual de `datos_empresa.json`** en la barra lateral de Streamlit para agregar, editar y eliminar campos corporativos directamente desde la UI.
-- [ ] **[APP-02]** Implementar **soporte para múltiples perfiles de empresa** (`datos_empresa_*.json`). Permitir al usuario seleccionar el perfil activo desde la UI antes de procesar.
+- [x] **[APP-01]** Agregar **editor visual de `datos_empresa.json`** en la barra lateral de Streamlit para agregar, editar y eliminar campos corporativos directamente desde la UI.
+- [x] **[APP-02]** Implementar **soporte para múltiples perfiles de empresa** (`datos_empresa_*.json`). Permitir al usuario seleccionar el perfil activo desde la UI antes de procesar.
 - [ ] **[APP-03]** Agregar **autenticación básica por contraseña** en Streamlit para proteger el acceso a la aplicación y a las claves API configuradas en `.env`.
 
 ---
