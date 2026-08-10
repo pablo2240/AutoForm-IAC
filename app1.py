@@ -24,6 +24,27 @@ from core import excel_parser, excel_writer, mapper, profile_manager, pdf_proces
 from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
+# ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
+try:
+    from streamlit_option_menu import option_menu
+except ImportError:
+    option_menu = None
+
+try:
+    from streamlit_lottie import st_lottie
+except ImportError:
+    st_lottie = None
+
+try:
+    from st_aggrid import AgGrid, GridOptionsBuilder, GridUpdateMode
+except ImportError:
+    AgGrid = None
+
+try:
+    from streamlit_extras.add_vertical_space import add_vertical_space
+except ImportError:
+    add_vertical_space = None
+
 
 def _manual_load_dotenv(dotenv_path: str = ".env"):
     path = Path(dotenv_path)
@@ -610,6 +631,21 @@ def render_tabla_coincidencias(df_resultado) -> str:
             </table>
         </div>
     """
+
+
+def render_aggrid_coincidencias(df_resultado):
+    """Renderiza una tabla Enterprise AgGrid con edición, filtros y ordenamiento dinámico."""
+    if AgGrid is not None:
+        try:
+            gb = GridOptionsBuilder.from_dataframe(df_resultado)
+            gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=10)
+            gb.configure_side_bar()
+            gb.configure_default_column(editable=True, groupable=True, filter=True, resizable=True)
+            gridOptions = gb.build()
+            return AgGrid(df_resultado, gridOptions=gridOptions, height=280, theme="streamlit", fit_columns_on_grid_load=True)
+        except Exception as e:
+            print(f"[AutoForm AI Warning] AgGrid no pudo cargar: {e}")
+    return None
 def _sanitizar_resultados(resultados):
     sanitizados = []
     for item in resultados:
@@ -803,7 +839,14 @@ if uploaded_file is not None:
                             )
 
                             st.markdown("### 📍 Coordenadas e Información Inyectada")
-                            st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
+                            if AgGrid is not None:
+                                tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
+                                with tab_aggrid:
+                                    render_aggrid_coincidencias(df_resultado)
+                                with tab_html:
+                                    st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
+                            else:
+                                st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
 
                         else:
                             progress_placeholder.markdown(render_stepper_progress(3, 100, "Proceso finalizado."), unsafe_allow_html=True)

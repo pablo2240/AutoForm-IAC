@@ -10,3 +10,6 @@ google-genai>=2.0.0
 pypdf>=4.2.0
 reportlab>=4.2.0
 streamlit-option-menu>=0.3.12
+streamlit-aggrid>=1.2.1
+streamlit-lottie>=0.0.5
+streamlit-extras>=1.6.0
