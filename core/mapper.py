@@ -329,6 +329,45 @@ def _construir_prompt_focalizado(
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
 
 
+def _calcular_celda_destino(item: Dict[str, Any]) -> Tuple[str, int, int]:
+    """LLM-03: Calcula la coordenada de destino final (hoja, fila_destino, columna_destino) para un ítem."""
+    hoja = str(item.get("hoja", ""))
+    fila = int(item.get("fila", 0) or 0)
+    col = int(item.get("columna", 0) or 0)
+    ubicacion = str(item.get("ubicacion", "")).lower()
+
+    if ubicacion == "misma":
+        return (hoja, fila, col)
+    elif ubicacion == "abajo":
+        return (hoja, fila + 1, col)
+    else:  # "derecha" por defecto
+        return (hoja, fila, col + 1)
+
+
+def deduplicar_coordenadas_destino(mapeos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """LLM-03: Deduplica las coordenadas de destino en el plan de mapeo.
+    
+    Si dos entradas apuntan a la misma celda de destino (hoja, fila_destino, columna_destino),
+    conserva únicamente la primera asignación y descarta las duplicadas posteriores.
+    """
+    destinos_ocupados: set = set()
+    mapeos_unicos: List[Dict[str, Any]] = []
+
+    for item in mapeos:
+        coord_dest = _calcular_celda_destino(item)
+        if coord_dest in destinos_ocupados:
+            print(
+                f"[AutoForm AI LLM-03] Deduplicación: Omitido campo duplicado '{item.get('campo')}' "
+                f"que apuntaba a la celda de destino ya ocupada {coord_dest}."
+            )
+            continue
+
+        destinos_ocupados.add(coord_dest)
+        mapeos_unicos.append(item)
+
+    return mapeos_unicos
+
+
 def _fusionar_mapeos(
     mapeos_iniciales: List[Dict[str, Any]],
     mapeos_complementarios: List[Dict[str, Any]]
@@ -419,6 +458,9 @@ def mapeo_formularios(mapa_formularios: List[Dict[str, Any]], datos_empresa: Dic
         except Exception as exc:
             print(f"[AutoForm AI Warning] La re-consulta de cobertura falló ({exc}). Retornando mapeo inicial.")
             resultado_final = mapeos_iniciales
+
+    # LLM-03: Deduplicación estricta de coordenadas de destino
+    resultado_final = deduplicar_coordenadas_destino(resultado_final)
 
     # LLM-04: Guardar resultado en caché de sesión
     _cache_mapeos[form_hash] = resultado_final
