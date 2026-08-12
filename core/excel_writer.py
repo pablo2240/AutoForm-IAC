@@ -231,15 +231,19 @@ def rellenar_formulario_excel(
                 columna_destino = columna_origen + 1
 
         elif ubicacion == "abajo":
-            # FIX: para "abajo" la columna de destino debe ser la columna del
-            # rótulo (min_col del merge si aplica), no columna_origen + 1.
             if rango_origen is not None:
                 fila_destino    = rango_origen.max_row + 1
-                columna_destino = rango_origen.min_col        # ← columna alineada al inicio del merge
+                columna_destino = rango_origen.min_col
             else:
                 fila_destino    = fila_origen + 1
                 columna_destino = columna_origen
+
+            # Garantizar que fila_destino sea estrictamente posterior al rango de la cabecera origen
+            rango_dest_chk = _celda_en_merge(ws, fila_destino, columna_destino)
+            if rango_dest_chk is not None and (rango_dest_chk.min_row <= fila_origen <= rango_dest_chk.max_row):
+                fila_destino = rango_dest_chk.max_row + 1
         else:
+
             reporte.append(_log_item("ERROR", item, None, 0, 0, f"Ubicación inválida: '{ubicacion}'"))
             continue
 
