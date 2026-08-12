@@ -132,15 +132,29 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         valor = "X" if valor else ""
 
     valor_actual = celda.value
-    if valor_actual is not None and isinstance(valor_actual, str) and str(valor_actual).strip():
+
+    # Limpiar valor actual de caracteres invisibles o de formato
+    txt_actual = ""
+    if valor_actual is not None:
+        txt_actual = str(valor_actual).replace("\xa0", " ").replace("\t", " ").strip()
+
+    # Si la celda contiene una fórmula o comilla simple que el usuario ve vacía en Excel, permitir sobreescritura
+    es_formula_o_vacio_visualmente = bool(
+        not txt_actual or
+        txt_actual.startswith("=") or
+        txt_actual in ("''", '""', "-", "N/A", "0") or
+        re.match(r"^[\s_\.\:\-]+$", txt_actual)
+    )
+
+    if not es_formula_o_vacio_visualmente and not es_misma_celda:
         patron_placeholder = r'_{2,}|\.{3,}'
-        if re.search(patron_placeholder, valor_actual):
+        if re.search(patron_placeholder, txt_actual):
             try:
-                celda.value = re.sub(patron_placeholder, str(valor), valor_actual, count=1)
+                celda.value = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
                 return True
             except AttributeError:
                 return False
-        # Celda con contenido real: no sobreescribir
+        # Celda con contenido descriptivo real pre-impreso: no sobreescribir
         return False
 
     try:
@@ -148,6 +162,7 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         return True
     except AttributeError:
         return False
+
 
 
 # ---------------------------------------------------------------------------

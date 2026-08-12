@@ -58,7 +58,7 @@ def get_debug_info(hash_form: str) -> Optional[Dict[str, Any]]:
 
 
 _PATRON_DOCUMENTOS_ANEXAR = re.compile(
-    r"^\s*(?:\d+[\.\)]\s*)?(?:copia|adjuntar|fotocopia|anexo|certificado|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?)\b",
+    r"^\s*(?:\d+[\.\)\-]\s*)?(?:copia|adjuntar|fotocopia|anexo|certificado|certificaci[oó]n|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?|rut|c[aá]mara\s+de\s+comercio|declaraci[oó]n|antecedentes)\b",
     re.IGNORECASE
 )
 
@@ -71,8 +71,11 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     purgado = []
     for idx, entrada in enumerate(mapa):
         txt_rotulo = str(entrada.get("valor", "")).strip()
-        # Omitir rótulos que sean instrucciones de anexos/documentos a presentar
+
+        # Omitir rótulos que sean instrucciones de anexos o listas de documentos a presentar
         if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
+            continue
+        if re.search(r"^\s*\d+[\.\)]\s*(?:copia|fotocopia|adjuntar|c[eé]dula|rut|certificado)", txt_rotulo, re.IGNORECASE):
             continue
 
         purgado.append({
@@ -85,6 +88,7 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "anchoLinea": entrada.get("anchoLinea", 1),
         })
     return purgado
+
 
 
 

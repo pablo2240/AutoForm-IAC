@@ -555,8 +555,8 @@ def rellenar_pdf(
             if rect_original.height < 5:
                 rect_original.y1 = rect_original.y0 + 12
 
-            font_size_ideal = min(10.5, max(6.5, rect_original.height * 0.72))
-            font_min = 5.0
+            font_size_ideal = min(10.5, max(8.0, rect_original.height * 0.78))
+            font_min = 7.0
 
             if es_caja and len(valor_a_escribir) < 20:
                 align_mode = fitz.TEXT_ALIGN_CENTER
@@ -568,7 +568,7 @@ def rellenar_pdf(
             rc = -1
             size = font_size_ideal
             while size >= font_min:
-                top_margin = max(0.0, (rect_original.height - size) / 2.6)
+                top_margin = max(0.0, (rect_original.height - size) / 3.5)
                 rect_ajustado = fitz.Rect(
                     rect_original.x0 + 1,
                     rect_original.y0 + top_margin,
@@ -581,13 +581,14 @@ def rellenar_pdf(
                     valor_a_escribir,
                     fontsize=size,
                     fontname="helv",
-                    color=(0.07, 0.16, 0.23),
+                    color=(0.05, 0.12, 0.20),
                     align=align_mode
                 )
                 if rc >= 0:
                     inyectados += 1
                     break
                 size -= 0.5
+
 
             if rc < 0:
                 # Truncado de seguridad acotado si excede físicamente el rectángulo
