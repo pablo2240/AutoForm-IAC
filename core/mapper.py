@@ -678,8 +678,9 @@ def _reconstruir_mapeo_fisico(
 # Orquestador principal
 # ---------------------------------------------------------------------------
 
-# Variable global para pausar/activar el caché
-CACHE_HABILITADO: bool = False
+# Variable global para pausar/activar el caché (HABILITADO POR DEFECTO PARA DETERMINISMO ABSOLUTO)
+CACHE_HABILITADO: bool = True
+
 
 
 def deshabilitar_cache() -> None:

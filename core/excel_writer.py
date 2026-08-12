@@ -360,14 +360,23 @@ def rellenar_formulario_excel(
                     celda_destino.border = borde_completo
 
 
-        estado = "OK" if escrito else "SKIP"
-        motivo = "" if escrito else "Celda ya contiene contenido o es sólo lectura"
+        # ── READ-BACK VERIFICATION: Comprobación física real en el Excel ───
+        verificado_real = False
+        if escrito:
+            celda_chk = _obtener_celda_escribible(ws, fila_destino, columna_destino)
+            val_fisico = celda_chk.value
+            if val_fisico is not None and str(val_fisico).strip() != "":
+                verificado_real = True
+
+        estado = "OK" if verificado_real else "SKIP"
+        motivo = "" if verificado_real else ("Valor no verificado físicamente en la celda destino" if escrito else "Celda no escribible o ya contiene contenido")
         reporte.append(_log_item(estado, item, valor, fila_destino, columna_destino, motivo))
 
     # ── Serializar y retornar ─────────────────────────────────────────────
     salida = BytesIO()
     workbook.save(salida)
     salida.seek(0)
+
 
     # Resumen final en consola
     ok_count   = sum(1 for r in reporte if r["estado"] == "OK")

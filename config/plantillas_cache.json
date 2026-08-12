@@ -1,0 +1,74 @@
+{
+  "3f53c65eb7b747f8": {
+    "id": "3f53c65eb7b747f8",
+    "huella": "",
+    "total_rotulos": 5,
+    "plan_mapeo": [
+      {
+        "hoja": "FORMATO DE PRUEBA",
+        "fila": 1,
+        "columna": 1,
+        "inicioLineaCol": 1,
+        "finLineaCol": 1,
+        "valor": "RAZON SOCIAL:",
+        "ubicacion": "derecha",
+        "campo": "razon_social",
+        "requiereMerge": true,
+        "celdasAMergear": 3,
+        "anchoLinea": 3
+      },
+      {
+        "hoja": "FORMATO DE PRUEBA",
+        "fila": 2,
+        "columna": 1,
+        "inicioLineaCol": 1,
+        "finLineaCol": 1,
+        "valor": "NIT:",
+        "ubicacion": "derecha",
+        "campo": "nit",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1
+      },
+      {
+        "hoja": "FORMATO DE PRUEBA",
+        "fila": 3,
+        "columna": 1,
+        "inicioLineaCol": 1,
+        "finLineaCol": 1,
+        "valor": "DIRECCION:",
+        "ubicacion": "derecha",
+        "campo": "direccion",
+        "requiereMerge": true,
+        "celdasAMergear": 3,
+        "anchoLinea": 3
+      },
+      {
+        "hoja": "FORMATO DE PRUEBA",
+        "fila": 4,
+        "columna": 1,
+        "inicioLineaCol": 1,
+        "finLineaCol": 1,
+        "valor": "TELEFONO:",
+        "ubicacion": "derecha",
+        "campo": "telefono",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1
+      },
+      {
+        "hoja": "FORMATO DE PRUEBA",
+        "fila": 5,
+        "columna": 1,
+        "inicioLineaCol": 1,
+        "finLineaCol": 1,
+        "valor": "CIUDAD:",
+        "ubicacion": "derecha",
+        "campo": "ciudad",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1
+      }
+    ]
+  }
+}

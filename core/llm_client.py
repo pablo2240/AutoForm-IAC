@@ -456,6 +456,7 @@ def _consultar_openai(
                     max_retries=2,
                     messages=mensajes_inst,
                     temperature=0.0,
+                    seed=42,
                 )
                 if res_pydantic and res_pydantic.mappings:
                     return res_pydantic.model_dump_json()
@@ -481,7 +482,9 @@ def _consultar_openai(
                 "model": mod_openai,
                 "messages": mensajes,
                 "temperature": 0.0,
+                "seed": 42,
             }
+
             if fmt:
                 cuerpo["response_format"] = fmt
 
