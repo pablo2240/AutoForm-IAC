@@ -153,9 +153,10 @@ def _consultar_gemini_studio(
         raise RuntimeError("GEMINI_API_KEY no configurada en .env")
 
     # Lista de modelos Gemini conocidos en orden de preferencia por si el del .env está obsoleto
-    modelos_gemini = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    modelos_gemini = [GEMINI_MODEL, "gemini-2.0-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
     # Quitar duplicados y Nones
     modelos_gemini_unicos = [m for idx, m in enumerate(modelos_gemini) if m and m not in modelos_gemini[:idx]]
+
 
     ultimo_exc = None
     for mod_gemini in modelos_gemini_unicos:
@@ -426,78 +427,82 @@ def _consultar_openai(
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY no configurada en .env")
 
-    # Opción A: Usar la librería 'instructor' si está disponible (Auto-corrección por Pydantic V2)
-    if instructor is not None and openai is not None:
-        try:
-            raw_client = openai.OpenAI(api_key=OPENAI_API_KEY)
-            client = instructor.from_openai(raw_client)
-            mensajes_inst = []
-            if sistema:
-                mensajes_inst.append({"role": "system", "content": sistema})
-            mensajes_inst.append({"role": "user", "content": prompt_usuario})
+    # Modelos candidatos para OpenAI
+    modelos_openai = [OPENAI_MODEL, "gpt-4o-mini", "gpt-4o"]
+    modelos_unicos = [m for idx, m in enumerate(modelos_openai) if m and m not in modelos_openai[:idx]]
 
-            res_pydantic: PlanMapeoSemantico = client.chat.completions.create(
-                model=OPENAI_MODEL,
-                response_model=PlanMapeoSemantico,
-                max_retries=2,
-                messages=mensajes_inst,
-                temperature=0.0,
-            )
-            if res_pydantic and res_pydantic.mappings:
-                return res_pydantic.model_dump_json()
-        except Exception as exc_inst:
-            print(f"[AutoForm AI Warning] Instructor falló ({exc_inst}). Usando REST con Strict JSON Schema...")
+    ultimo_exc_openai: Exception = RuntimeError("Fallaron todos los intentos con OpenAI API.")
 
-    # Opción B: Usar REST API nativa con Strict JSON Schema (strict: True)
-    mensajes: List[Dict[str, str]] = []
-    if sistema:
-        mensajes.append({"role": "system", "content": sistema})
-    mensajes.append({"role": "user", "content": prompt_usuario})
+    for mod_openai in modelos_unicos:
+        # Opción A: Usar la librería 'instructor' si está disponible
+        if instructor is not None and openai is not None:
+            try:
+                raw_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+                client = instructor.from_openai(raw_client)
+                mensajes_inst = []
+                if sistema:
+                    mensajes_inst.append({"role": "system", "content": sistema})
+                mensajes_inst.append({"role": "user", "content": prompt_usuario})
 
-    cuerpo: Dict[str, Any] = {
-        "model": OPENAI_MODEL,
-        "messages": mensajes,
-        "temperature": 0.0,
-    }
-    if json_mode:
-        schema_json = PlanMapeoSemantico.model_json_schema()
-        cuerpo["response_format"] = {
-            "type": "json_schema",
-            "json_schema": {
-                "name": "PlanMapeoSemantico",
-                "strict": True,
-                "schema": schema_json,
-            },
+                res_pydantic: PlanMapeoSemantico = client.chat.completions.create(
+                    model=mod_openai,
+                    response_model=PlanMapeoSemantico,
+                    max_retries=2,
+                    messages=mensajes_inst,
+                    temperature=0.0,
+                )
+                if res_pydantic and res_pydantic.mappings:
+                    return res_pydantic.model_dump_json()
+            except Exception as exc_inst:
+                pass
+
+        # Opción B: Usar REST API nativa con fallback de response_format
+        mensajes: List[Dict[str, str]] = []
+        if sistema:
+            mensajes.append({"role": "system", "content": sistema})
+        mensajes.append({"role": "user", "content": prompt_usuario})
+
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
         }
 
-    headers = {
-        "Authorization": f"Bearer {OPENAI_API_KEY}",
-        "Content-Type": "application/json",
-    }
+        # Probar primero json_object (compatible al 100% con todos los modelos GPT)
+        formatos_resp = [{"type": "json_object"}] if json_mode else [None]
 
-    MAX_REINTENTOS = 2
-    for intento in range(1, MAX_REINTENTOS + 1):
-        try:
-            respuesta = requests.post(
-                "https://api.openai.com/v1/chat/completions",
-                headers=headers,
-                json=cuerpo,
-                timeout=timeout,
-            )
-            respuesta.raise_for_status()
-            datos = respuesta.json()
-            choices = datos.get("choices", [])
-            if choices:
-                msg = choices[0].get("message", {})
-                content = msg.get("content", "").strip()
-                if content:
-                    return content
-            raise RuntimeError(f"Respuesta vacía de OpenAI API: {datos}")
-        except Exception as exc:
-            if intento < MAX_REINTENTOS:
-                time.sleep(1.5)
+        for fmt in formatos_resp:
+            cuerpo: Dict[str, Any] = {
+                "model": mod_openai,
+                "messages": mensajes,
+                "temperature": 0.0,
+            }
+            if fmt:
+                cuerpo["response_format"] = fmt
+
+            try:
+                respuesta = requests.post(
+                    "https://api.openai.com/v1/chat/completions",
+                    headers=headers,
+                    json=cuerpo,
+                    timeout=timeout,
+                )
+                if respuesta.status_code == 400:
+                    ultimo_exc_openai = RuntimeError(f"Error 400 en OpenAI API ({mod_openai}): {respuesta.text}")
+                    continue  # Probar siguiente modelo u opción
+                respuesta.raise_for_status()
+                datos = respuesta.json()
+                choices = datos.get("choices", [])
+                if choices:
+                    msg = choices[0].get("message", {})
+                    content = msg.get("content", "").strip()
+                    if content:
+                        return content
+            except Exception as exc:
+                ultimo_exc_openai = exc
                 continue
-            raise RuntimeError(f"Error en OpenAI API ({OPENAI_MODEL}): {exc}")
+
+    raise ultimo_exc_openai
+
 
 
 

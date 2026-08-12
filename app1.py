@@ -645,15 +645,17 @@ def render_aggrid_coincidencias(df_resultado):
     """Renderiza una tabla Enterprise AgGrid con edición, filtros y ordenamiento dinámico."""
     if AgGrid is not None:
         try:
-            gb = GridOptionsBuilder.from_dataframe(df_resultado)
+            df_safe = df_resultado.astype(str)
+            gb = GridOptionsBuilder.from_dataframe(df_safe)
             gb.configure_pagination(paginationAutoPageSize=False, paginationPageSize=10)
             gb.configure_side_bar()
             gb.configure_default_column(editable=True, groupable=True, filter=True, resizable=True)
             gridOptions = gb.build()
-            return AgGrid(df_resultado, gridOptions=gridOptions, height=280, theme="streamlit", fit_columns_on_grid_load=True)
+            return AgGrid(df_safe, gridOptions=gridOptions, height=280, theme="streamlit", fit_columns_on_grid_load=True)
         except Exception as e:
             print(f"[AutoForm AI Warning] AgGrid no pudo cargar: {e}")
     return None
+
 def _sanitizar_resultados(resultados):
     sanitizados = []
     for item in resultados:
