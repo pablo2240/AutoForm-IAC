@@ -18,15 +18,26 @@ class MapeoSemanticoItem(BaseModel):
 
     id: int = Field(ge=1, description="ID del rótulo")
     campo: str = Field(description="Clave exacta de DatosEmpresa que satisface la solicitud del rótulo")
-    ubicacion: Optional[Literal["derecha", "abajo", "misma"]] = Field(
+    ubicacion: Literal["derecha", "abajo", "misma"] = Field(
         default="derecha", description="Ubicación elegida por el modelo para escribir el valor ('derecha', 'abajo', 'misma')"
     )
+
+    @field_validator("ubicacion", mode="before")
+    @classmethod
+    def normalizar_ubicacion_semantica(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            return "derecha"
+        v_clean = v.strip().lower()
+        if v_clean in ("derecha", "abajo", "misma"):
+            return v_clean
+        return "derecha"
 
 
 class PlanMapeoSemantico(BaseModel):
     """Lista de emparejamientos semánticos."""
 
     mappings: List[MapeoSemanticoItem] = Field(default_factory=list)
+
 
 
 class MapeoItem(BaseModel):

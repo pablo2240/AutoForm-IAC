@@ -679,7 +679,7 @@ def _sanitizar_resultados(resultados):
 
 
 # 6. Zona de Carga Principal
-st.markdown("### 📥 1. Cargar Formulario de Terceros")
+st.markdown("### 📥 Cargar Formulario de Terceros")
 
 uploaded_file = st.file_uploader(
     "Arrastra y suelta tu archivo Excel (.xlsx, .xls) o PDF aquí",

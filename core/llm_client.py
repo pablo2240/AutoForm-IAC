@@ -20,7 +20,15 @@ try:
 except ImportError:
     openai = None  # type: ignore
 
+try:
+    import instructor
+except ImportError:
+    instructor = None  # type: ignore
+
+from core.schema_models import PlanMapeoSemantico
+
 import requests
+
 
 try:
     from dotenv import load_dotenv
@@ -110,14 +118,29 @@ Recibes un objeto JSON con dos componentes principales:
 - Cero Alucinación: Si la información solicitada no existe en 'D', DEBES OMITIR ese id.
 - Realiza un pase de verificación final: Comprueba que ningún dato disponible en 'D' haya sido omitido si existe una pregunta o enunciado que lo solicite.
 
+## EJEMPLOS FEW-SHOT EN CONTEXTO (FORMULARIOS COLOMBIANOS)
+
+Ejemplo 1 (Datos Básicos del Proponente):
+Rótulo: {"id": 1, "rotulo": "1. DATOS GENERALES DE LA SOCIEDAD SOLICITANTE / RAZÓN SOCIAL:", "seccion": "INFORMACIÓN DE VINCULACIÓN"}
+Asignación: {"id": 1, "campo": "razon_social", "ubicacion": "derecha"}
+
+Ejemplo 2 (Texto Declarativo Inline con Guiones):
+Rótulo: {"id": 5, "rotulo": "Yo, _____ identificado con C.C. No. _____ expedida en _____", "seccion": "DECLARACIÓN JURAMENTADA"}
+Asignación: {"id": 5, "campo": "representante_legal", "ubicacion": "misma"}
+
+Ejemplo 3 (Identificación Tributaria):
+Rótulo: {"id": 8, "rotulo": "NIT / CÉDULA DE CIUDADANÍA NO.:", "seccion": "DATOS TRIBUTARIOS"}
+Asignación: {"id": 8, "campo": "nit", "ubicacion": "derecha"}
+
 ## FORMATO DE SALIDA (ESTRICTO JSON)
 Responde ÚNICAMENTE con un objeto JSON válido con la clave "mappings":
 {
   "mappings": [
-    {"id": 1, "campo": "razon_social"},
-    {"id": 2, "campo": "nit"}
+    {"id": 1, "campo": "razon_social", "ubicacion": "derecha"},
+    {"id": 2, "campo": "nit", "ubicacion": "derecha"}
   ]
 }"""
+
 
 
 def _consultar_gemini_studio(
@@ -395,10 +418,37 @@ def _consultar_openai(
     json_mode: bool = False,
     timeout: int = 60,
 ) -> str:
-    """Invocación directa a la API oficial de OpenAI (gpt-4o-mini por defecto)."""
+    """Invocación optimizada a la API oficial de OpenAI (gpt-4.1-mini / gpt-4o-mini).
+
+    Aplica Strict JSON Schema (Grammar Constrained Sampling) e instructor (si está disponible)
+    para garantizar 100% cumplimiento sintáctico de Pydantic V2 y cero alucinaciones de formato.
+    """
     if not OPENAI_API_KEY:
         raise RuntimeError("OPENAI_API_KEY no configurada en .env")
 
+    # Opción A: Usar la librería 'instructor' si está disponible (Auto-corrección por Pydantic V2)
+    if instructor is not None and openai is not None:
+        try:
+            raw_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            client = instructor.from_openai(raw_client)
+            mensajes_inst = []
+            if sistema:
+                mensajes_inst.append({"role": "system", "content": sistema})
+            mensajes_inst.append({"role": "user", "content": prompt_usuario})
+
+            res_pydantic: PlanMapeoSemantico = client.chat.completions.create(
+                model=OPENAI_MODEL,
+                response_model=PlanMapeoSemantico,
+                max_retries=2,
+                messages=mensajes_inst,
+                temperature=0.0,
+            )
+            if res_pydantic and res_pydantic.mappings:
+                return res_pydantic.model_dump_json()
+        except Exception as exc_inst:
+            print(f"[AutoForm AI Warning] Instructor falló ({exc_inst}). Usando REST con Strict JSON Schema...")
+
+    # Opción B: Usar REST API nativa con Strict JSON Schema (strict: True)
     mensajes: List[Dict[str, str]] = []
     if sistema:
         mensajes.append({"role": "system", "content": sistema})
@@ -407,10 +457,18 @@ def _consultar_openai(
     cuerpo: Dict[str, Any] = {
         "model": OPENAI_MODEL,
         "messages": mensajes,
-        "temperature": 0.1,
+        "temperature": 0.0,
     }
     if json_mode:
-        cuerpo["response_format"] = {"type": "json_object"}
+        schema_json = PlanMapeoSemantico.model_json_schema()
+        cuerpo["response_format"] = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": "PlanMapeoSemantico",
+                "strict": True,
+                "schema": schema_json,
+            },
+        }
 
     headers = {
         "Authorization": f"Bearer {OPENAI_API_KEY}",
@@ -440,6 +498,7 @@ def _consultar_openai(
                 time.sleep(1.5)
                 continue
             raise RuntimeError(f"Error en OpenAI API ({OPENAI_MODEL}): {exc}")
+
 
 
 def consultar_llm(

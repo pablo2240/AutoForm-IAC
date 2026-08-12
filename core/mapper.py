@@ -529,6 +529,61 @@ def deduplicar_coordenadas_destino(mapeos: List[Dict[str, Any]]) -> List[Dict[st
     return resultado
 
 
+def _validar_hard_gates_mapeo(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate Validador: Garantiza que la Razón Social y el NIT no sean omitidos.
+
+    Si el formulario tiene una celda para 'Razón Social' o 'NIT' y existe el dato en
+    datos_empresa, se fuerza su asignación si el LLM por error lo dejó fuera.
+    """
+    campos_mapeados = {m.get("campo") for m in resultado_mapeo if m.get("campo")}
+    mapeo_resultado = list(resultado_mapeo)
+
+    # Regla 1: Razón Social
+    if "razon_social" not in campos_mapeados and datos_empresa.get("razon_social"):
+        for elem in mapa_formularios:
+            val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"r[aá]z[oó]n\s+social|nombre\s+(?:de\s+la\s+)?empresa|proponente|oferente|sociedad", val_str):
+                mapeo_resultado.append({
+                    "hoja": elem.get("hoja", ""),
+                    "fila": int(elem.get("fila", 1)),
+                    "columna": int(elem.get("columna", 1)),
+                    "valor": elem.get("valor", ""),
+                    "ubicacion": "derecha",
+                    "campo": "razon_social",
+                    "requiereMerge": True,
+                    "celdasAMergear": int(elem.get("anchoLinea", 3) or 3),
+                    "anchoLinea": int(elem.get("anchoLinea", 3) or 3),
+                })
+                print(f"[AutoForm AI Hard-Gate] Razón Social recuperada automáticamente para el rótulo '{elem.get('valor')}'")
+                break
+
+    # Regla 2: NIT
+    if "nit" not in campos_mapeados and datos_empresa.get("nit"):
+        for elem in mapa_formularios:
+            val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"\bnit\b|n\.i\.t|identificaci[oó]n\s+tributaria|r\.u\.t", val_str):
+                mapeo_resultado.append({
+                    "hoja": elem.get("hoja", ""),
+                    "fila": int(elem.get("fila", 1)),
+                    "columna": int(elem.get("columna", 1)),
+                    "valor": elem.get("valor", ""),
+                    "ubicacion": "derecha",
+                    "campo": "nit",
+                    "requiereMerge": False,
+                    "celdasAMergear": 1,
+                    "anchoLinea": 1,
+                })
+                print(f"[AutoForm AI Hard-Gate] NIT recuperado automáticamente para el rótulo '{elem.get('valor')}'")
+                break
+
+    return mapeo_resultado
+
+
+
 def _fusionar_mapeos(
     mapeos_iniciales: List[Dict[str, Any]],
     mapeos_complementarios: List[Dict[str, Any]],
@@ -727,14 +782,18 @@ def mapeo_formularios(
             print(f"[AutoForm AI Warning] Re-consulta de cobertura falló ({exc}). Usando mapeo inicial.")
             resultado_final = mapeos_iniciales
 
-    # ── 5. Deduplicación ──────────────────────────────────────────────────
+    # ── 5. Hard Gates Validador (Garantizar campos críticos Razón Social y NIT) ──
+    resultado_final = _validar_hard_gates_mapeo(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6. Deduplicación ──────────────────────────────────────────────────
     resultado_final = deduplicar_coordenadas_destino(resultado_final)
 
-    # ── 6. Enriquecimiento con anchoLinea del parser (WRITER-03) ──────────
+    # ── 7. Enriquecimiento con anchoLinea del parser (WRITER-03) ──────────
     resultado_final = _enriquecer_con_ancholinea(resultado_final, mapa_formularios)
 
-    # ── 7. Reporte de cobertura en consola ────────────────────────────────
+    # ── 8. Reporte de cobertura en consola ────────────────────────────────
     _generar_reporte_cobertura(datos_empresa, datos_filtrados, resultado_final)
+
 
     # ── 8. Persistencia (solo si el caché está activo) ───────────────────────
     if CACHE_HABILITADO:
