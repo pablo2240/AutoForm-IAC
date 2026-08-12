@@ -635,20 +635,17 @@ def _reconstruir_mapeo_fisico(
             val_str = str(elem.get("valor", "")).strip()
 
             tipo_sugerido = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-            es_cabecera_tabla = bool(
-                campo in {
-                    "banco", "sucursal", "numero_cuenta", "tipo_cuenta",
-                    "cedula", "representante_legal", "representante_nombres", "representante_apellidos",
-                    "direccion", "nit", "razon_social"
-                } and (
-                    elem.get("abajoVacia", True) or tipo_sugerido == "abajo" or
-                    re.search(r"identificaci[oó]n|nombre|apellidos?|direcci[oó]n|banco|cuenta", val_str, re.IGNORECASE)
-                )
-            )
+
+            derecha_disponible = bool(elem.get("derechaVacia", True) or elem.get("derechaEsMerge", False))
+            abajo_disponible = bool(elem.get("abajoVacia", False))
 
             if re.search(r"_{2,}|\.{3,}", val_str):
                 ubicacion_calc = "misma"
-            elif es_cabecera_tabla or tipo_sugerido == "abajo":
+            elif derecha_disponible and tipo_sugerido != "abajo":
+                # Si hay espacio libre o merge a la derecha (Sección 1), escribir a la DERECHA
+                ubicacion_calc = "derecha"
+            elif not derecha_disponible and abajo_disponible:
+                # Si a la derecha hay otra etiqueta y abajo está libre (Cabecera de Tabla Sección 3), escribir ABAJO
                 ubicacion_calc = "abajo"
             elif ubicacion_llm in ("derecha", "abajo", "misma"):
                 ubicacion_calc = ubicacion_llm
@@ -656,6 +653,7 @@ def _reconstruir_mapeo_fisico(
                 ubicacion_calc = tipo_sugerido
             else:
                 ubicacion_calc = "derecha"
+
 
 
 
