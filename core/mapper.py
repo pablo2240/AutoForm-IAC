@@ -57,13 +57,27 @@ def get_debug_info(hash_form: str) -> Optional[Dict[str, Any]]:
     return _cache_debug.get(hash_form)
 
 
+_PATRON_DOCUMENTOS_ANEXAR = re.compile(
+    r"^\s*(?:\d+[\.\)]\s*)?(?:copia|adjuntar|fotocopia|anexo|certificado|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?)\b",
+    re.IGNORECASE
+)
+
+
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N)."""
+    """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N).
+
+    Filtra automáticamente enunciados que correspondan a listas de requisitos o anexos a presentar.
+    """
     purgado = []
     for idx, entrada in enumerate(mapa):
+        txt_rotulo = str(entrada.get("valor", "")).strip()
+        # Omitir rótulos que sean instrucciones de anexos/documentos a presentar
+        if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
+            continue
+
         purgado.append({
             "id": idx + 1,
-            "rotulo": str(entrada.get("valor", "")).strip(),
+            "rotulo": txt_rotulo,
             "hoja": str(entrada.get("hoja", "")),
             "fila": entrada.get("fila"),
             "columna": entrada.get("columna"),
@@ -71,6 +85,7 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "anchoLinea": entrada.get("anchoLinea", 1),
         })
     return purgado
+
 
 
 # ---------------------------------------------------------------------------
@@ -620,14 +635,19 @@ def _reconstruir_mapeo_fisico(
             val_str = str(elem.get("valor", "")).strip()
 
             tipo_sugerido = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
+            es_cabecera_financiera = bool(campo in {"banco", "sucursal", "numero_cuenta", "tipo_cuenta"} and elem.get("abajoVacia", True))
+
             if re.search(r"_{2,}|\.{3,}", val_str):
                 ubicacion_calc = "misma"
+            elif es_cabecera_financiera or tipo_sugerido == "abajo":
+                ubicacion_calc = "abajo"
             elif ubicacion_llm in ("derecha", "abajo", "misma"):
                 ubicacion_calc = ubicacion_llm
             elif tipo_sugerido in ("derecha", "abajo", "misma"):
                 ubicacion_calc = tipo_sugerido
             else:
                 ubicacion_calc = "derecha"
+
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             resultado.append({

@@ -92,23 +92,29 @@ Recibes un objeto JSON con dos componentes principales:
 - Si el rótulo o la sección hace referencia al proponente, solicitante, oferente, sociedad o empresa contratista:
   * Rótulos como '1. DATOS DEL PROPONENTE', 'Nombre de la persona jurídica o empresa que presenta la propuesta', 'Identificación del oferente', 'Datos de la firma proveedora', 'Información de la entidad' -> razon_social
   * Rótulos como 'Número de NIT', 'Identificación del oferente', 'Registro tributario', 'CC/CE/PAS/NIT' -> nit
-  * Rótulos como 'Nombre del representante', 'Nombre de quien suscribe el documento', 'Apoderado autorizado', 'Nombre del declarante' -> representante_legal
+  * Rótulos como 'Nombre del representante legal', 'Nombre completo del representante', 'Apoderado autorizado' -> representante_legal
+  * Rótulos que pidan específicamente Nombres del representante (ej. 'Primer Nombre', 'Nombres del Representante') -> representante_nombres
+  * Rótulos que pidan específicamente Apellidos del representante (ej. 'Apellidos del Representante', 'Primer Apellido') -> representante_apellidos
   * Rótulos como 'Lugar de expedición', 'Expedida en', 'Ciudad de expedición' -> expedicion
   * Rótulos como 'Domicilio principal', 'Dirección de notificación', 'Dirección fiscal' -> direccion
   * Rótulos como 'Canal de contacto electrónico', 'Correo institucional', 'Email notificación' -> correo
   * Rótulos como 'Entidad financiera para transferencias', 'Banco donde tiene la cuenta' -> banco
   * Rótulos como 'Número de cuenta para pagos', 'No. de cuenta corriente o ahorros' -> numero_cuenta
 
-### ETAPA 2: ASIGNACIÓN DE CAMPOS DECLARATIVOS E INLINE
+### ETAPA 2: ASIGNACIÓN DE CAMPOS DECLARATIVOS, INLINE Y CABECERAS DE TABLA
 - Si el rótulo contiene marcadores inline como `____` o `...` dentro de un texto declarativo (ej: 'Yo, _____ identificado con documento _____ expedido en _____'):
   * Asigna en orden secuencial: representante_legal -> cedula -> expedicion.
+- Si el rótulo forma parte de una cabecera de tabla (ej. 'BANCO', 'SUCURSAL', 'NÚMERO DE CUENTA', 'TIPO DE CUENTA', 'ENTIDAD') donde los datos se escriben en la celda de la fila inferior:
+  * DEBES especificar obligatoriamente `ubicacion: "abajo"`.
 
-### ETAPA 3: DISTINCIÓN ENTRE DATOS MAESTROS Y TERCEROS/FIRMAS
+### ETAPA 3: DISTINCIÓN ENTRE DATOS MAESTROS Y TERCEROS/FIRMAS/DOCUMENTOS A ANEXAR
 - DILIGENCIAR: Únicamente información referente a la empresa o su representante legal principal contenidos en 'D'.
-- OMITIR (NO DILIGENCIAR):
+- OMITIR (NO DILIGENCIAR ESTRICTAMENTE):
   * Casillas para firma física manuscrita, huella o sello.
+  * Listas de documentos a adjuntar o instrucciones de anexos (ej. 'Copia de la cédula...', 'Adjuntar RUT...', '2. Fotocopia de...', 'Certificado de...', 'Anexo 1...', 'Documentos requeridos'). NO escribas datos ni cédulas al lado de estos enunciados de requisitos.
   * Secciones exclusivas para diligenciamiento del cliente / entidad licitante (ej. 'Uso exclusivo de la empresa', 'Aprobado por').
   * Referencias comerciales de terceros o juntas directivas secundarias no presentes en 'D'.
+
 
 ### ETAPA 4: CASILLAS DE VERIFICACIÓN (CHECKBOXES)
 - Si el rótulo solicita seleccionar una opción (ej: 'Tipo de Cuenta: Ahorros [ ] Corriente [ ]') y el dato en 'D' coincide exactamente:

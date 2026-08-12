@@ -53,14 +53,24 @@ def listar_perfiles() -> Dict[str, Path]:
 def cargar_perfil(ruta: Path) -> Dict[str, Any]:
     """Carga los datos JSON del perfil especificado."""
     if not ruta.exists():
-        return _obtener_plantilla_vacia()
+        datos = _obtener_plantilla_vacia()
+    else:
+        try:
+            with ruta.open("r", encoding="utf-8") as f:
+                datos = json.load(f)
+        except Exception as exc:
+            print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
+            datos = _obtener_plantilla_vacia()
 
-    try:
-        with ruta.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception as exc:
-        print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
-        return _obtener_plantilla_vacia()
+    # Generación dinámica de representante_legal concatenado si no existe explícitamente
+    if not datos.get("representante_legal"):
+        nombres = str(datos.get("representante_nombres", "")).strip()
+        apellidos = str(datos.get("representante_apellidos", "")).strip()
+        if nombres or apellidos:
+            datos["representante_legal"] = f"{nombres} {apellidos}".strip()
+
+    return datos
+
 
 
 def guardar_perfil(ruta: Path, datos: Dict[str, Any]) -> bool:
