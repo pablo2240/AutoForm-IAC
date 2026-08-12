@@ -331,7 +331,10 @@ def rellenar_formulario_excel(
             for col in range(ini_col, fin_col + 1):
                 c = _obtener_celda_escribible(ws, fila_destino, col)
                 if type(c).__name__ != "MergedCell":
-                    c.alignment = Alignment(vertical="center", wrap_text=True)
+                    if c.alignment:
+                        c.alignment = copy(c.alignment)
+                    else:
+                        c.alignment = Alignment(vertical="center")
                     if relleno:
                         c.fill = copy(relleno)
                     if fuente:
@@ -345,13 +348,17 @@ def rellenar_formulario_excel(
                         )
         else:
             if type(celda_destino).__name__ != "MergedCell":
-                celda_destino.alignment = Alignment(vertical="center", wrap_text=True)
+                if celda_destino.alignment:
+                    celda_destino.alignment = copy(celda_destino.alignment)
+                else:
+                    celda_destino.alignment = Alignment(vertical="center")
                 if relleno:
                     celda_destino.fill = relleno
                 if fuente:
                     celda_destino.font = fuente
                 if borde_completo:
                     celda_destino.border = borde_completo
+
 
         estado = "OK" if escrito else "SKIP"
         motivo = "" if escrito else "Celda ya contiene contenido o es sólo lectura"

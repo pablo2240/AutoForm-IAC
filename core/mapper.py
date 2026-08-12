@@ -635,11 +635,20 @@ def _reconstruir_mapeo_fisico(
             val_str = str(elem.get("valor", "")).strip()
 
             tipo_sugerido = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-            es_cabecera_financiera = bool(campo in {"banco", "sucursal", "numero_cuenta", "tipo_cuenta"} and elem.get("abajoVacia", True))
+            es_cabecera_tabla = bool(
+                campo in {
+                    "banco", "sucursal", "numero_cuenta", "tipo_cuenta",
+                    "cedula", "representante_legal", "representante_nombres", "representante_apellidos",
+                    "direccion", "nit", "razon_social"
+                } and (
+                    elem.get("abajoVacia", True) or tipo_sugerido == "abajo" or
+                    re.search(r"identificaci[oó]n|nombre|apellidos?|direcci[oó]n|banco|cuenta", val_str, re.IGNORECASE)
+                )
+            )
 
             if re.search(r"_{2,}|\.{3,}", val_str):
                 ubicacion_calc = "misma"
-            elif es_cabecera_financiera or tipo_sugerido == "abajo":
+            elif es_cabecera_tabla or tipo_sugerido == "abajo":
                 ubicacion_calc = "abajo"
             elif ubicacion_llm in ("derecha", "abajo", "misma"):
                 ubicacion_calc = ubicacion_llm
@@ -647,6 +656,7 @@ def _reconstruir_mapeo_fisico(
                 ubicacion_calc = tipo_sugerido
             else:
                 ubicacion_calc = "derecha"
+
 
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
