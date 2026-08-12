@@ -40,9 +40,20 @@ def cargar_cache_plantillas() -> Dict[str, Any]:
         return {}
     try:
         with CACHE_FILE.open("r", encoding="utf-8") as f:
-            return json.load(f)
+            cache = json.load(f)
+        # Auto-purga: eliminar entradas con plan_mapeo vacío o inválido
+        limpias = {
+            k: v for k, v in cache.items()
+            if isinstance(v.get("plan_mapeo"), list) and len(v["plan_mapeo"]) > 0
+            and any(p.get("hoja") and int(p.get("fila", 0) or 0) > 0 for p in v["plan_mapeo"])
+        }
+        if len(limpias) < len(cache):
+            descartadas = len(cache) - len(limpias)
+            print(f"[AutoForm AI Cache] {descartadas} entradas invalidas eliminadas del cache semantico.")
+            guardar_cache_plantillas(limpias)
+        return limpias
     except Exception as exc:
-        print(f"[AutoForm AI] Error leyendo caché de plantillas ({exc}). Reiniciando caché...")
+        print(f"[AutoForm AI] Error leyendo cache de plantillas ({exc}). Reiniciando cache...")
         return {}
 
 
@@ -157,7 +168,18 @@ def guardar_plantilla_en_cache(
     mapa_purgado: List[Dict[str, Any]],
     plan_mapeo: List[Dict[str, Any]],
 ) -> None:
-    """Registra o actualiza una plantilla procesada en el archivo config/plantillas_cache.json."""
+    """Registra o actualiza una plantilla procesada en el archivo config/plantillas_cache.json.
+    
+    Solo guarda si el plan tiene entradas físicas válidas (hoja + fila + campo).
+    """
+    plan_valido = [
+        p for p in plan_mapeo
+        if p.get("hoja") and int(p.get("fila", 0) or 0) > 0 and p.get("campo")
+    ]
+    if not plan_valido:
+        print(f"[AutoForm AI Cache] Omitiendo guardado: plan vacio o invalido para {id_plantilla}.")
+        return
+
     huella = generar_huella_formulario(mapa_purgado)
     cache = cargar_cache_plantillas()
 
@@ -165,7 +187,19 @@ def guardar_plantilla_en_cache(
         "id": id_plantilla,
         "huella": huella,
         "total_rotulos": len(mapa_purgado),
-        "plan_mapeo": plan_mapeo,
+        "plan_mapeo": plan_valido,
     }
 
     guardar_cache_plantillas(cache)
+
+
+def eliminar_plantilla(id_plantilla: str) -> None:
+    """Elimina una entrada del caché semántico por su ID."""
+    try:
+        cache = cargar_cache_plantillas()
+        if id_plantilla in cache:
+            del cache[id_plantilla]
+            guardar_cache_plantillas(cache)
+            print(f"[AutoForm AI Cache] Plantilla '{id_plantilla}' eliminada del cache semantico.")
+    except Exception as exc:
+        print(f"[AutoForm AI Cache] Error eliminando plantilla {id_plantilla}: {exc}")

@@ -24,3 +24,8 @@ Thumbs.db
 
 # Streamlit
 .streamlit/
+
+# Caché y pruebas locales
+config/pdf_cache/
+scratch/
+

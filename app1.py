@@ -20,7 +20,7 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
-from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor
+from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor, llm_client
 from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
@@ -452,7 +452,7 @@ with st.sidebar:
             tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo)
             sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal", ""))
 
-        if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", use_container_width=True):
+        if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
                 "razon_social": razon_social,
                 "nit": nit,
@@ -479,7 +479,7 @@ with st.sidebar:
 
     with st.expander("➕ Crear Nuevo Perfil", expanded=False):
         nuevo_nombre = st.text_input("Nombre del Nuevo Perfil", placeholder="Ej: IAC Sucursal Bogotá")
-        if st.button("Crear Perfil", key="btn_crear_perfil", use_container_width=True):
+        if st.button("Crear Perfil", key="btn_crear_perfil", width="stretch"):
             if nuevo_nombre.strip():
                 exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
                 if exito:
@@ -494,7 +494,7 @@ with st.sidebar:
             st.session_state["chat_messages"] = []
 
         if st.session_state["chat_messages"]:
-            if st.button("🧹 Limpiar Chat", key="btn_clear_chat", use_container_width=True):
+            if st.button("🧹 Limpiar Chat", key="btn_clear_chat", width="stretch"):
                 st.session_state["chat_messages"] = []
                 _safe_rerun()
 
@@ -522,9 +522,14 @@ with st.sidebar:
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────
 
+def _clean_html(html_str: str) -> str:
+    """Elimina la sangría inicial (4+ espacios) de cada línea para evitar que Streamlit renderice el HTML como un bloque de código Markdown."""
+    return "\n".join(line.strip() for line in html_str.splitlines() if line.strip())
+
+
 def render_kpi_card(valor: str, label: str, color_borde: str = "#F8B126", icono: str = "📊") -> str:
     """Retorna el HTML de una tarjeta KPI con borde superior coloreado y elevación hover."""
-    return f"""
+    html_raw = f"""
         <div style="
             background: #FFFFFF;
             border: 1px solid #E2E8F0;
@@ -543,6 +548,7 @@ def render_kpi_card(valor: str, label: str, color_borde: str = "#F8B126", icono:
             </div>
         </div>
     """
+    return _clean_html(html_raw)
 
 
 def render_stepper_progress(paso_actual: int, porcentaje: int, texto_estado: str) -> str:
@@ -574,7 +580,7 @@ def render_stepper_progress(paso_actual: int, porcentaje: int, texto_estado: str
         if idx < len(pasos):
             steps_html += f'<div style="flex: 1; height: 3px; background: {"#10B981" if idx < paso_actual else "#E2E8F0"}; margin: 0 0.4rem;"></div>'
 
-    return f"""
+    html_raw = f"""
         <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; padding: 1.15rem 1.35rem; margin: 1rem 0; box-shadow: 0 2px 8px rgba(0,0,0,0.03);">
             <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.85rem;">
                 {steps_html}
@@ -587,6 +593,7 @@ def render_stepper_progress(paso_actual: int, porcentaje: int, texto_estado: str
             </div>
         </div>
     """
+    return _clean_html(html_raw)
 
 
 def render_tabla_coincidencias(df_resultado) -> str:
@@ -614,7 +621,7 @@ def render_tabla_coincidencias(df_resultado) -> str:
             </tr>
         """
 
-    return f"""
+    html_raw = f"""
         <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-top: 0.75rem;">
             <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
                 <thead>
@@ -631,6 +638,7 @@ def render_tabla_coincidencias(df_resultado) -> str:
             </table>
         </div>
     """
+    return _clean_html(html_raw)
 
 
 def render_aggrid_coincidencias(df_resultado):
@@ -649,12 +657,18 @@ def render_aggrid_coincidencias(df_resultado):
 def _sanitizar_resultados(resultados):
     sanitizados = []
     for item in resultados:
+        val_raw = item.get("valor", "")
+        if hasattr(val_raw, "isoformat") or hasattr(val_raw, "strftime"):
+            val_str = str(val_raw)
+        else:
+            val_str = str(val_raw) if val_raw is not None else ""
+
         sanitizados.append(
             {
                 "hoja": str(item.get("hoja", "")),
                 "fila": int(item.get("fila", 0) or 0),
                 "columna": int(item.get("columna", 0) or 0),
-                "valor": str(item.get("valor", "")),
+                "valor": val_str,
                 "ubicacion": str(item.get("ubicacion", "")),
                 "campo": str(item.get("campo", "")),
                 "requiereMerge": bool(item.get("requiereMerge", False)),
@@ -698,7 +712,13 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 df = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None)
 
-                st.dataframe(df, width="stretch", height=380)
+                # Conversión Arrow-safe en preview: datetime y otros tipos complejos -> str
+                df_display = df.copy()
+                for col in df_display.columns:
+                    df_display[col] = df_display[col].apply(
+                        lambda x: str(x) if x is not None and not isinstance(x, (str, int, float, bool)) else x
+                    )
+                st.dataframe(df_display, width="stretch", height=380)
             except Exception as e:
                 st.error(f"Error al leer el archivo Excel: {e}")
 
@@ -710,7 +730,7 @@ if uploaded_file is not None:
                 
                 if imagenes_png:
                     for i, img_bytes in enumerate(imagenes_png):
-                        st.image(img_bytes, caption=f"Página {i+1}", use_container_width=True)
+                        st.image(img_bytes, caption=f"Página {i+1}", width="stretch")
                 else:
                     st.info("No se pudieron renderizar las páginas del PDF.")
             except Exception as e:
@@ -720,142 +740,240 @@ if uploaded_file is not None:
         st.markdown("### ⚡ Ejecutar IA")
         st.write("Extrae rótulos visuales, analiza campos vacíos e inyecta los datos de la empresa respetando estilos.")
 
-        if st.button("🚀 Procesar Formulario", type="primary", use_container_width=True):
+        modo_pdf = "Autodetectar (Híbrido)"
+        if file_type == "pdf":
+            modo_pdf = st.selectbox(
+                "🎯 Modo Motor PDF:",
+                [
+                    "Autodetectar (Híbrido - Recomendado)",
+                    "Heurístico Local (Ray-Casting Bidireccional)",
+                    "IA Visual (Gemini / GPT Vision)"
+                ],
+                help="El modo híbrido usa el motor local ultra-rápido para PDFs estándar y conmuta automáticamente a IA Visual si el PDF es escaneado o complejo."
+            )
+
+        if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
             if file_type in ["xlsx", "xls", "pdf"]:
-                if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY"):
-                    st.error("Configura GEMINI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
-                else:
-                    progress_placeholder = st.empty()
-                    progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
-                    try:
-                        uploaded_file.seek(0)
-                        archivo_bytes = uploaded_file.read()
+                if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY") and not os.getenv("OPENAI_API_KEY"):
+                    st.error("Configura GEMINI_API_KEY, OPENAI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
+                current_file_id = f"{uploaded_file.name}_{uploaded_file.size}_{modo_pdf}" if file_type == "pdf" else f"{uploaded_file.name}_{uploaded_file.size}"
 
-                        # Paso 1 & 2: Carga y Estructura
-                        if file_type == "pdf":
-                            progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas (x,y) del PDF..."), unsafe_allow_html=True)
-                            mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+                progress_placeholder = st.empty()
+                progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
+                try:
+                    uploaded_file.seek(0)
+                    archivo_bytes = uploaded_file.read()
+
+                    # Paso 1 & 2: Carga y Estructura
+                    usar_vision = False
+                    if file_type == "pdf":
+                        progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas bidireccionales del PDF..."), unsafe_allow_html=True)
+                        mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+
+                        if modo_pdf.startswith("IA Visual") or (modo_pdf.startswith("Autodetectar") and len(mapa_formularios) < 8):
+                            usar_vision = True
+                            progress_placeholder.markdown(render_stepper_progress(2, 60, "Analizando imagen del PDF con IA Visual (Vision)..."), unsafe_allow_html=True)
+                            imagenes_png = pdf_processor.renderizar_paginas_png(archivo_bytes, max_paginas=3)
+                            elementos_vision = llm_client.invocar_llm_vision(imagenes_png, datos_empresa)
+                            if elementos_vision:
+                                resultados = pdf_processor.construir_mapa_desde_vision(archivo_bytes, elementos_vision)
+                            else:
+                                resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
                         else:
-                            progress_placeholder.markdown(render_stepper_progress(1, 25, "Leyendo estructura espacial del libro Excel..."), unsafe_allow_html=True)
-                            libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
-                            progress_placeholder.markdown(render_stepper_progress(1, 45, "Analizando celdas vacías y líneas de captura..."), unsafe_allow_html=True)
-                            mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
-
-                        # Paso 3: IA
-                        progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando Gemini 2.0 Flash para mapeo semántico..."), unsafe_allow_html=True)
+                            progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico bidireccional..."), unsafe_allow_html=True)
+                            resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+                    else:
+                        progress_placeholder.markdown(render_stepper_progress(1, 25, "Leyendo estructura espacial del libro Excel..."), unsafe_allow_html=True)
+                        libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
+                        progress_placeholder.markdown(render_stepper_progress(1, 45, "Analizando celdas vacías y líneas de captura..."), unsafe_allow_html=True)
+                        mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
+                        progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico..."), unsafe_allow_html=True)
                         resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
 
-                        # LLM-04: Detectar caché
-                        mapa_purgado_ui = mapper._purgar_mapa(mapa_formularios)
-                        form_hash_ui = mapper._hash_mapa(mapa_purgado_ui)
-                        debug_info = _get_debug_info(form_hash_ui)
+                    # LLM-04: Detectar caché
+                    mapa_purgado_ui = mapper._purgar_mapa(mapa_formularios) if mapa_formularios else []
+                    form_hash_ui = mapper._hash_mapa(mapa_purgado_ui) if mapa_purgado_ui else "vision_mode"
+                    debug_info = _get_debug_info(form_hash_ui)
 
-                        # Paso 4: Escritura
-                        progress_placeholder.markdown(render_stepper_progress(3, 90, "Inyectando datos y preservando estilos nativos..."), unsafe_allow_html=True)
-                        
-                        # ── LLM-05: Panel de Debug con KPI Cards ──────────────────────────────
-                        if debug_info:
-                            with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
-                                c1, c2, c3, c4 = st.columns(4)
-                                with c1:
-                                    st.markdown(render_kpi_card(str(debug_info["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
-                                with c2:
-                                    st.markdown(render_kpi_card(str(debug_info["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
-                                faltantes_list = debug_info.get("campos_faltantes_detectados", [])
-                                with c3:
-                                    st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
-                                with c4:
-                                    st.markdown(render_kpi_card(str(debug_info["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
+                    # Paso 4: Escritura
+                    progress_placeholder.markdown(render_stepper_progress(3, 90, "Inyectando datos y preservando plantilla..."), unsafe_allow_html=True)
 
-                                if faltantes_list:
-                                    st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
+                    resultados_limpios = [r for r in resultados if r.get("hoja") and r.get("campo")] if resultados else []
 
-                                tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
-                                
-                                with tab_payload:
-                                    try:
-                                        payload_dict = json.loads(debug_info["prompt_payload"])
-                                        st.json(payload_dict)
-                                    except Exception:
-                                        st.code(debug_info["prompt_payload"], language="json")
+                    if resultados_limpios:
+                        resultados = _sanitizar_resultados(resultados_limpios)
+                        # Construir DataFrame Arrow-safe (forzar todo a str)
+                        df_resultado = pd.DataFrame.from_records(resultados)
+                        df_resultado = df_resultado.map(lambda x: str(x) if x is not None else "").astype(str)
 
-                                with tab_response:
-                                    try:
-                                        respuesta_dict = json.loads(debug_info["respuesta_llm"])
-                                        st.json(respuesta_dict)
-                                    except Exception:
-                                        st.code(debug_info["respuesta_llm"], language="json")
-                        # ─────────────────────────────────────────────────────────────────────
-                        
-                        if resultados:
-                            resultados = _sanitizar_resultados(resultados)
-                            df_resultado = pd.DataFrame.from_records(resultados)
-                            df_resultado = df_resultado.astype(
-                                {
-                                    "hoja": "string",
-                                    "fila": "Int64",
-                                    "columna": "Int64",
-                                    "valor": "string",
-                                    "ubicacion": "string",
-                                    "campo": "string",
-                                    "requiereMerge": "boolean",
-                                    "celdasAMergear": "Int64",
-                                },
-                                errors="ignore",
-                            )
-
-                            if file_type == "pdf":
-                                bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados, datos_empresa)
-                                file_extension = "pdf"
-                                mime_type = "application/pdf"
-                            else:
-                                bytes_relleno = excel_writer.rellenar_formulario_excel(archivo_bytes, resultados, datos_empresa)
-                                file_extension = "xlsx"
-                                mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                            
-                            progress_placeholder.markdown(render_stepper_progress(3, 100, "¡Formulario diligenciado exitosamente!"), unsafe_allow_html=True)
-
-                            if debug_info and debug_info.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
-                                score_fuzzy = debug_info.get("score_similaridad", 95.0)
-                                st.markdown(f"""
-                                    <div class="iac-alert iac-alert-cache">
-                                        <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
-                                        <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
-                                    </div>
-                                """, unsafe_allow_html=True)
-
-                            st.markdown("""
-                                <div class="iac-alert iac-alert-warning">
-                                    <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
-                                    <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
-                                </div>
-                            """, unsafe_allow_html=True)
-
-                            st.download_button(
-                                f"📥 Descargar Formulario Rellenado (.{file_extension})",
-                                data=bytes_relleno,
-                                file_name=f"{os.path.splitext(file_name)[0]}_diligenciado.{file_extension}",
-                                mime=mime_type,
-                            )
-
-                            st.markdown("### 📍 Coordenadas e Información Inyectada")
-                            if AgGrid is not None:
-                                tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
-                                with tab_aggrid:
-                                    render_aggrid_coincidencias(df_resultado)
-                                with tab_html:
-                                    st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
-                            else:
-                                st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
-
+                        if file_type == "pdf":
+                            bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados, datos_empresa)
+                            reporte_inyeccion = []
+                            file_extension = "pdf"
+                            mime_type = "application/pdf"
                         else:
-                            progress_placeholder.markdown(render_stepper_progress(3, 100, "Proceso finalizado."), unsafe_allow_html=True)
-                            st.info("No se encontraron campos compatibles para rellenar en este formulario.")
-                    except Exception as e:
+                            bytes_relleno, reporte_inyeccion = excel_writer.rellenar_formulario_excel(
+                                archivo_bytes, resultados, datos_empresa
+                            )
+                            file_extension = "xlsx"
+                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+
                         progress_placeholder.empty()
-                        st.error(f"⚠️ Se produjo un error durante el procesamiento: {str(e)}")
-                        with st.expander("Ver detalles técnicos del error"):
-                            st.text(traceback.format_exc())
+
+                        # Guardar en st.session_state para evitar reseteos al hacer click
+                        st.session_state["processed_file_id"] = current_file_id
+                        st.session_state["resultado_bytes"] = bytes_relleno
+                        st.session_state["resultado_reporte_inyeccion"] = reporte_inyeccion
+                        st.session_state["resultado_df"] = df_resultado
+                        st.session_state["resultado_file_name"] = file_name
+                        st.session_state["resultado_extension"] = file_extension
+                        st.session_state["resultado_mime"] = mime_type
+                        st.session_state["resultado_debug"] = debug_info
+                    else:
+                        progress_placeholder.markdown(render_stepper_progress(3, 100, "Proceso finalizado."), unsafe_allow_html=True)
+                        st.info(
+                            "No se encontraron campos compatibles para rellenar en este formulario. "
+                            "Verifica que el perfil de empresa tenga datos y que el formulario PDF "
+                            "contenga etiquetas reconocibles o casillas de entrada."
+                        )
+                except Exception as e:
+                    progress_placeholder.empty()
+                    st.error(f"⚠️ Se produjo un error durante el procesamiento: {str(e)}")
+                    with st.expander("Ver detalles técnicos del error"):
+                        st.text(traceback.format_exc())
+
+                # Renderizado persistente desde st.session_state (No se resetea al hacer click)
+                if st.session_state.get("processed_file_id") == current_file_id and "resultado_bytes" in st.session_state:
+                    bytes_relleno = st.session_state["resultado_bytes"]
+                    df_resultado = st.session_state["resultado_df"]
+                    file_name_out = st.session_state["resultado_file_name"]
+                    file_ext_out = st.session_state["resultado_extension"]
+                    mime_type_out = st.session_state["resultado_mime"]
+                    debug_info_out = st.session_state.get("resultado_debug")
+
+                    if debug_info_out:
+                        with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
+                            c1, c2, c3, c4 = st.columns(4)
+                            with c1:
+                                st.markdown(render_kpi_card(str(debug_info_out["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
+                            with c2:
+                                st.markdown(render_kpi_card(str(debug_info_out["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
+                            faltantes_list = debug_info_out.get("campos_faltantes_detectados", [])
+                            with c3:
+                                st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
+                            with c4:
+                                st.markdown(render_kpi_card(str(debug_info_out["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
+
+                            if faltantes_list:
+                                st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
+
+                            tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
+                            with tab_payload:
+                                try:
+                                    payload_dict = json.loads(debug_info_out["prompt_payload"])
+                                    st.json(payload_dict)
+                                except Exception:
+                                    st.code(debug_info_out["prompt_payload"], language="json")
+                            with tab_response:
+                                try:
+                                    respuesta_dict = json.loads(debug_info_out["respuesta_llm"])
+                                    st.json(respuesta_dict)
+                                except Exception:
+                                    st.code(debug_info_out["respuesta_llm"], language="json")
+
+                    if debug_info_out and debug_info_out.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
+                        score_fuzzy = debug_info_out.get("score_similaridad", 95.0)
+                        st.markdown(f"""
+                            <div class="iac-alert iac-alert-cache">
+                                <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
+                                <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                    st.markdown("""
+                        <div class="iac-alert iac-alert-warning">
+                            <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
+                            <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
+                        </div>
+                    """, unsafe_allow_html=True)
+
+                    st.download_button(
+                        f"📥 Descargar Formulario Rellenado (.{file_ext_out})",
+                        data=bytes_relleno,
+                        file_name=f"{os.path.splitext(file_name_out)[0]}_diligenciado.{file_ext_out}",
+                        mime=mime_type_out,
+                    )
+
+                    # Panel de Auditoría y Verificación Completa
+                    if debug_info_out and "verificacion_auditoria" in debug_info_out:
+                        audit_rep = debug_info_out["verificacion_auditoria"]
+                        cobertura_pct = audit_rep.get("porcentaje_cobertura", 100.0)
+                        total_map = audit_rep.get("total_mapeados", len(df_resultado))
+                        omitidos = audit_rep.get("campos_omitidos", [])
+
+                        st.markdown("### 🔍 Reporte de Auditoría y Verificación de Integridad")
+                        col_m1, col_m2, col_m3 = st.columns(3)
+                        with col_m1:
+                            st.metric("Campos Inyectados", f"{total_map} celdas")
+                        with col_m2:
+                            st.metric("Cobertura de DatosEmpresa", f"{cobertura_pct}%")
+                        with col_m3:
+                            st.metric("Estado de Verificación", "✅ VERIFICADO OK" if not omitidos else "⚠️ REVISIÓN FOCALIZADA")
+
+                        if omitidos:
+                            with st.expander(f"⚠️ Detalle de campos omitidos por la plantilla ({len(omitidos)})"):
+                                st.write("Los siguientes campos de tu perfil de empresa no fueron solicitados en esta plantilla:", omitidos)
+
+                    reporte_inyeccion = st.session_state.get("resultado_reporte_inyeccion", [])
+
+                    st.markdown("### 📍 Coordenadas e Información Inyectada")
+
+                    # Panel de reporte de inyección (nuevo)
+                    if reporte_inyeccion:
+                        df_reporte = pd.DataFrame(reporte_inyeccion)
+                        df_reporte = df_reporte.astype(str).fillna("")
+                        ok   = df_reporte[df_reporte["estado"] == "OK"]
+                        skip = df_reporte[df_reporte["estado"] == "SKIP"]
+                        null = df_reporte[df_reporte["estado"] == "NULL"]
+                        err  = df_reporte[df_reporte["estado"] == "ERROR"]
+
+                        c1, c2, c3, c4 = st.columns(4)
+                        with c1:
+                            st.markdown(render_kpi_card(str(len(ok)),   "Campos escritos",   "#10B981", "✅"), unsafe_allow_html=True)
+                        with c2:
+                            st.markdown(render_kpi_card(str(len(skip)), "Saltados (ocupados)", "#F8B126", "⏭️"), unsafe_allow_html=True)
+                        with c3:
+                            st.markdown(render_kpi_card(str(len(null)), "Sin valor (NULL)",  "#3B82F6", "🔕"), unsafe_allow_html=True)
+                        with c4:
+                            st.markdown(render_kpi_card(str(len(err)),  "Errores",           "#EF4444", "❌"), unsafe_allow_html=True)
+
+                        with st.expander("📋 Ver reporte completo de inyección por campo", expanded=len(err) > 0 or len(skip) > 2):
+                            no_ok = df_reporte[df_reporte["estado"] != "OK"]
+                            if not no_ok.empty:
+                                st.warning(f"⚠️ {len(no_ok)} campos no se escribieron correctamente:")
+                                st.dataframe(
+                                    no_ok[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
+                                    width="stretch",
+                                    height=min(300, len(no_ok) * 40 + 40),
+                                )
+                            else:
+                                st.success("✅ Todos los campos fueron escritos sin problemas.")
+
+                            st.markdown("**Todos los campos:**")
+                            st.dataframe(
+                                df_reporte[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
+                                width="stretch",
+                                height=min(400, len(df_reporte) * 40 + 40),
+                            )
+
+                    if AgGrid is not None:
+                        tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
+                        with tab_aggrid:
+                            render_aggrid_coincidencias(df_resultado)
+                        with tab_html:
+                            st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
+                    else:
+                        st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
 else:
     st.markdown("""
         <div class="iac-card" style="text-align: center; padding: 2.5rem 1.5rem; margin-top: 1rem;">

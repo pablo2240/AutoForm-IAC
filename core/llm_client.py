@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from pathlib import Path
@@ -50,141 +51,73 @@ if load_dotenv is not None:
 else:
     _manual_load_dotenv()
 
+# OpenAI Configuration (Prioridad #1)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
 # Google AI Studio Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # OpenRouter Configuration (Fallback)
 OPENROUTER_BASE_URL = os.getenv("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1")
 OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemini-2.0-flash")
+LLM_MODEL = os.getenv("LLM_MODEL", "inclusionai/ling-3.0-tiny:free")
 OPENROUTER_API_URL = f"{OPENROUTER_BASE_URL.rstrip('/')}/chat/completions"
 
-STRICT_SYSTEM_PROMPT = """\
-## ROL
-Eres AutoForm AI, un motor experto en diligenciamiento automático de formularios de licitaciones oficiales colombianas.
-Tu única función es: dada una lista de rótulos del formulario (MapaFormularios) y los datos de la empresa (DatosEmpresa), producir un plan de mapeo en JSON indicando EXACTAMENTE en qué celda escribir cada dato.
 
----
+STRICT_SYSTEM_PROMPT = """## ROL Y PERSONA
+Eres AutoForm AI Master Cognitive Engine, el modelo de inteligencia artificial experto en la interpretación semántica y contextual de licitaciones, pliegos de condiciones y formularios corporativos oficiales de Colombia e Hispanoamérica.
 
-## BLOQUE 1 — COMPRENSION DEL FORMULARIO
-Recibes un payload JSON con dos claves:
-- `"F"`: lista de rotulos del formulario (MapaFormularios). Cada entrada tiene: hoja, fila, columna, valor, tipoEspacioEscritura, anchoLinea, anchoMergeVecino, derechaVacia, abajoVacia, derechaEsMerge, esMergePrincipal.
-- `"D"`: datos de la empresa (DatosEmpresa). Solo se incluyen los campos relevantes para este formulario.
+## CONTEXTO Y ENTRADAS
+Recibes un objeto JSON con dos componentes principales:
+1. "F": Arreglo de rótulos o enunciados extraídos del formulario. Cada elemento incluye:
+   - "id": Identificador único incremental.
+   - "rotulo": Texto original detectado (etiqueta corta, pregunta larga, enunciado declarativo o título de sección).
+   - "seccion": Título o encabezado contextual del bloque donde se ubica la celda.
+2. "D": Objeto con los datos maestros de la empresa (razon_social, nit, cedula, expedicion, direccion, telefono, correo, representante_legal, banco, numero_cuenta, tipo_cuenta, sucursal, ciudad, departamento, pais).
 
-Antes de mapear, analiza la estructura visual:
-- Los formularios pueden tener celdas simples, celdas combinadas (merge), lineas de captura (____), tablas y formatos mixtos.
-- Un campo puede estar a la derecha, debajo, o inline dentro de un parrafo con marcadores (____).
-- Analiza el CONTEXTO DE SECCION completo (titulos vecinos y filas adyacentes) antes de decidir ubicacion y campo.
-- NUNCA modifiques titulos, encabezados, bordes ni estructura. Solo diligencia los espacios destinados al usuario.
+## PRINCIPIOS DE INFERENCIA SEMÁNTICA AVANZADA (SIN DEPENDER DE ETIQUETAS EXACTAS)
 
-Significado de los campos de contexto visual en cada rotulo:
-- `tipoEspacioEscritura`: tipo del espacio de escritura disponible. PRIORIZA este campo para decidir la ubicacion:
-  - "subrayado" → borde inferior visible (linea de captura ____). PRIMERA prioridad para escritura.
-  - "cuadro"    → celda con bordes completos (caja de tabla). SEGUNDA prioridad.
-  - "merge"     → rango combinado vacio. TERCERA prioridad.
-  - "vacio"     → celda sin bordes. Usar solo si no hay otra opcion.
-  - "ocupado"   → celda con contenido. NUNCA escribir aqui.
-- `anchoLinea`: numero de columnas consecutivas con borde inferior (linea de captura). Si > 1, el espacio es amplio (ej. Razon Social, Direccion). Usar `requiereMerge: true` y `celdasAMergear: anchoLinea`.
-- `anchoMergeVecino`: ancho en columnas del merge vecino derecho. 1 = sin merge.
-- `esMergePrincipal`: True si el propio rotulo es un merge. La columna de escritura ya fue corregida; no requiere ajuste.
-- `esCasillaVerificacion`:
-  - Si es `True` (recuadro 1x1 de opcion/checkbox): Asigna valor "X" a la opcion si aplica.
-  - Si es `False` (linea de captura o espacio amplio): Asigna el DATO REAL (ej. escribe el numero de cedula en el rotulo "C.C.", el nombre en "Nombre", etc.).
-- `colorFondo`: color de fondo del rotulo en hex (ej. "FFFF00" = amarillo) o cadena vacia. Usa esta informacion para:
-  - Identificar secciones resaltadas o de alta prioridad en el formulario (filas con fondo de color).
-  - Distinguir encabezados de seccion (normalmente tienen fondo gris/azul) de celdas de captura (normalmente blancas o con color tenue).
-  - Si el rotulo tiene `colorFondo` no vacio y sus vecinos tambien, probablemente es una fila de encabezado. Prioriza `ubicacion: "abajo"` en ese caso.
+### ETAPA 1: RECONOCIMIENTO CONTEXTUAL Y ENUNCIADOS LARGOS
+- No busques coincidencias literales de texto. Interpreta la intencionalidad del enunciado o pregunta.
+- Si el rótulo o la sección hace referencia al proponente, solicitante, oferente, sociedad o empresa contratista:
+  * Rótulos como '1. DATOS DEL PROPONENTE', 'Nombre de la persona jurídica o empresa que presenta la propuesta', 'Identificación del oferente', 'Datos de la firma proveedora', 'Información de la entidad' -> razon_social
+  * Rótulos como 'Número de NIT', 'Identificación del oferente', 'Registro tributario', 'CC/CE/PAS/NIT' -> nit
+  * Rótulos como 'Nombre del representante', 'Nombre de quien suscribe el documento', 'Apoderado autorizado', 'Nombre del declarante' -> representante_legal
+  * Rótulos como 'Lugar de expedición', 'Expedida en', 'Ciudad de expedición' -> expedicion
+  * Rótulos como 'Domicilio principal', 'Dirección de notificación', 'Dirección fiscal' -> direccion
+  * Rótulos como 'Canal de contacto electrónico', 'Correo institucional', 'Email notificación' -> correo
+  * Rótulos como 'Entidad financiera para transferencias', 'Banco donde tiene la cuenta' -> banco
+  * Rótulos como 'Número de cuenta para pagos', 'No. de cuenta corriente o ahorros' -> numero_cuenta
 
----
+### ETAPA 2: ASIGNACIÓN DE CAMPOS DECLARATIVOS E INLINE
+- Si el rótulo contiene marcadores inline como `____` o `...` dentro de un texto declarativo (ej: 'Yo, _____ identificado con documento _____ expedido en _____'):
+  * Asigna en orden secuencial: representante_legal -> cedula -> expedicion.
 
-## BLOQUE 2 — CAMPOS DISPONIBLES
-Solo puedes usar campos que existan en DatosEmpresa. No inventes claves.
+### ETAPA 3: DISTINCIÓN ENTRE DATOS MAESTROS Y TERCEROS/FIRMAS
+- DILIGENCIAR: Únicamente información referente a la empresa o su representante legal principal contenidos en 'D'.
+- OMITIR (NO DILIGENCIAR):
+  * Casillas para firma física manuscrita, huella o sello.
+  * Secciones exclusivas para diligenciamiento del cliente / entidad licitante (ej. 'Uso exclusivo de la empresa', 'Aprobado por').
+  * Referencias comerciales de terceros o juntas directivas secundarias no presentes en 'D'.
 
-Campos virtuales adicionales (siempre disponibles):
-- `nit_sin_dv` → NIT sin dígito de verificación.
-- `nit_dv` → Solo el dígito de verificación del NIT.
+### ETAPA 4: CASILLAS DE VERIFICACIÓN (CHECKBOXES)
+- Si el rótulo solicita seleccionar una opción (ej: 'Tipo de Cuenta: Ahorros [ ] Corriente [ ]') y el dato en 'D' coincide exactamente:
+  * Mapear la casilla correspondiente asignando el valor true o "X".
 
-DICCIONARIO DE SINÓNIMOS (rótulo del formulario → campo canónico):
-- razon_social → NOMBRE, RAZON SOCIAL, NOMBRE EMPRESA, NOMBRE DEL PROVEEDOR
-- nit → NIT, IDENTIFICACION NIT, NÚMERO DE NIT, CC/CE/PAS/NIT
-- cedula → C.C., CÉDULA, DOCUMENTO DE IDENTIDAD, NÚMERO DE IDENTIFICACIÓN, ID, NÚMERO ID
-- direccion → DIRECCIÓN, DOMICILIO, DIRECCIÓN PRINCIPAL
-- ciudad → CIUDAD, MUNICIPIO
-- departamento → DEPARTAMENTO, DPTO
-- telefono → TELÉFONO, TEL, CELULAR, CONTACTO TELEFONICO
-- correo → CORREO, CORREO ELECTRONICO, EMAIL, E-MAIL
-- pagina_web → PÁGINA WEB, SITIO WEB, URL
-- representante_legal → REPRESENTANTE LEGAL, NOMBRE REPRESENTANTE
-- representante_nombres → NOMBRES (cuando aparece separado de apellidos en sección de representante o junta)
-- representante_apellidos → APELLIDOS (cuando aparece separado de nombres en sección de representante o junta)
-- pais → PAÍS, PAIS, NACIONALIDAD
-- banco → BANCO, ENTIDAD BANCARIA, NOMBRE DEL BANCO
-- numero_cuenta → NÚMERO DE CUENTA, NO. CUENTA, NRO CUENTA
-- tipo_cuenta → TIPO DE CUENTA, TIPO CUENTA
-- sucursal → SUCURSAL, SUCURSAL BANCARIA
+### ETAPA 5: AUDITORÍA DE CERO INVENCIÓN Y VERIFICACIÓN FINAL (HARD GATE)
+- Cero Alucinación: Si la información solicitada no existe en 'D', DEBES OMITIR ese id.
+- Realiza un pase de verificación final: Comprueba que ningún dato disponible en 'D' haya sido omitido si existe una pregunta o enunciado que lo solicite.
 
----
-
-## BLOQUE 3 — REGLAS DE EXCLUSION (PRIORIDAD MAXIMA)
-Evaluar ANTES que cualquier otra regla. Si aplica, OMITIR la celda:
-
-1. SUPLENTE: Si el rótulo pertenece al "Representante Legal Suplente" y DatosEmpresa no tiene suplente, OMITIR toda la subsección del suplente. No duplicar el representante principal.
-
-2. PEP: En preguntas "¿Goza de reconocimiento público?", "¿Administra recursos públicos?", "¿Ocupa cargo público?", "¿PEP Extranjera?" → marcar SIEMPRE la opción "NO". La sub-tabla de detalle PEP (Nombres, Entidad Pública, Cargo, Fechas) debe quedar 100% VACÍA.
-
-3. TERCEROS (REFERENCIAS / CLIENTES / PROVEEDORES): NUNCA asignes datos propios de la empresa a secciones de "REFERENCIAS COMERCIALES", "CLIENTES PRINCIPALES", "PROVEEDORES TERCEROS" o "REFERENCIAS BANCARIAS DE TERCEROS". OMITIR.
-
-4. PERSONA CONTACTO EXTERNA: Rótulos como "Nombre y Cargo persona contacto" o "Correo persona contacto" son de terceros. OMITIR.
-
-5. TIPO ID Y OPCIONES [CC | CE | PAS | OTRO]: 
-   - Si la celda tiene `esCasillaVerificacion == True` (recuadro de opción 1x1), asigna 'X' a la casilla "CC" y el número de cédula en la columna o celda de "Número de identificación".
-   - Si la celda NO es casilla de verificación (`esCasillaVerificacion == False` o línea de captura `anchoLinea > 1`), escribe directamente el NÚMERO DE CÉDULA (campo `cedula`) en el espacio de escritura del rótulo "C.C." / "CÉDULA".
-
-6. FIRMAS: Rótulos como "Firma del Representante Legal", "Firma", "Firma y Huella", "Firma Revisor Fiscal", "Firma Autorizada" o "Firma del Declarante" son espacios exclusivos para la firma manuscrita/digital física. NUNCA escribas datos ni texto en estos espacios. OMITIR.
-
-7. NOTAS / INSTRUCCIONES CONDICIONALES: Frases como "Si en la composición accionaria...", "Si el espacio no es suficiente...", "Adjuntar relación..." son notas, NO campos de entrada. OMITIR.
-
----
-
-## BLOQUE 4 — REGLAS DE UBICACIÓN (en orden de prioridad)
-
-1. PLACEHOLDERS INLINE: Si la celda contiene texto largo con marcadores `____` (ej: "Yo, ______ identificado con: ______"), usa `ubicacion: "misma"` para cada campo (`representante_legal`, `cedula`, `ciudad`). El sistema reemplazará los marcadores secuencialmente.
-
-2. ENCABEZADOS DE TABLA EN FILA: Si la fila contiene varios encabezados consecutivos (ej: [Nombre | Tipo ID | Número | % Participación]), escribe SIEMPRE en la fila de datos inferior (`ubicacion: "abajo"`). NUNCA uses "derecha" sobre un encabezado vecino.
-
-3. `tipoEspacioEscritura` == "subrayado", "cuadro" o "merge" a la derecha → `ubicacion: "derecha"`.
-
-4. Derecha "ocupado" (texto/título) y abajo libre → `ubicacion: "abajo"`.
-
-5. Ambas "ocupado" → OMITIR.
-
-CAMPOS ADICIONALES EN CADA ELEMENTO:
-- `requiereMerge`: True si `tipoEspacioEscritura` es "subrayado" o "merge" Y (`anchoLinea` > 1 O `anchoMergeVecino` > 1).
-- `celdasAMergear`: usar `anchoMergeVecino` si la derecha es merge; o `anchoLinea` si > 1; de lo contrario 1. NUNCA inventes celdasAMergear > 1 si a la derecha en la misma fila hay otro rótulo (ej. PAÍS, DEPARTAMENTO).
-
-CONTEXTO DE SECCIÓN — REGLAS ADICIONALES:
-- JUNTA DIRECTIVA / ÓRGANOS DE ADMINISTRACIÓN: `representante_nombres` → NOMBRES, `representante_apellidos` → APELLIDOS, `cedula` → Número ID. Primera fila de datos (`ubicacion: "abajo"`).
-- COMPOSICIÓN ACCIONARIA / BENEFICIARIOS FINALES: `razon_social` → Nombre/Razón Social, `nit` → Identificación/TIPO ID. Primera fila de datos.
-- INFORMACIÓN BANCARIA PROPIA: `banco`, `numero_cuenta`, `tipo_cuenta`, `sucursal` → sus rótulos respectivos.
-- SECCIÓN DEL REPRESENTANTE LEGAL PRINCIPAL: `representante_legal` → Nombre, `cedula` → Identificación, `correo` → Correo, `telefono` → Teléfono, `pais` → Nacionalidad.
-
----
-
-## BLOQUE 5 — FORMATO DE RESPUESTA (OBLIGATORIO)
-Responde ÚNICAMENTE con JSON válido. Devuelve un arreglo o envuélvelo en {"mappings": [...]}.
-Cada objeto:
+## FORMATO DE SALIDA (ESTRICTO JSON)
+Responde ÚNICAMENTE con un objeto JSON válido con la clave "mappings":
 {
-  "hoja": "Hoja1",
-  "fila": 1,
-  "columna": 1,
-  "valor": "texto del rotulo en el formulario",
-  "ubicacion": "derecha",
-  "campo": "nombre_campo_de_DatosEmpresa",
-  "requiereMerge": false,
-  "celdasAMergear": 1
-}
-Sin texto adicional. Si no hay elementos válidos, responde con []."""
+  "mappings": [
+    {"id": 1, "campo": "razon_social"},
+    {"id": 2, "campo": "nit"}
+  ]
+}"""
 
 
 def _consultar_gemini_studio(
@@ -196,58 +129,88 @@ def _consultar_gemini_studio(
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY no configurada en .env")
 
-    # Opción A: Usar la SDK oficial google-genai si está disponible
-    if genai is not None and types is not None:
-        try:
-            client = genai.Client(api_key=GEMINI_API_KEY)
-            config_kwargs: Dict[str, Any] = {}
-            if sistema:
-                config_kwargs["system_instruction"] = sistema
-            if json_mode:
-                config_kwargs["response_mime_type"] = "application/json"
-            config_kwargs["max_output_tokens"] = 30000
+    # Lista de modelos Gemini conocidos en orden de preferencia por si el del .env está obsoleto
+    modelos_gemini = [GEMINI_MODEL, "gemini-2.5-flash", "gemini-1.5-flash", "gemini-2.0-flash-exp"]
+    # Quitar duplicados y Nones
+    modelos_gemini_unicos = [m for idx, m in enumerate(modelos_gemini) if m and m not in modelos_gemini[:idx]]
 
-            config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
+    ultimo_exc = None
+    for mod_gemini in modelos_gemini_unicos:
+        # Opción A: Usar la SDK oficial google-genai si está disponible
+        if genai is not None and types is not None:
+            try:
+                client = genai.Client(api_key=GEMINI_API_KEY)
+                config_kwargs: Dict[str, Any] = {}
+                if sistema:
+                    config_kwargs["system_instruction"] = sistema
+                if json_mode:
+                    config_kwargs["response_mime_type"] = "application/json"
+                config_kwargs["max_output_tokens"] = 30000
 
-            MAX_REINTENTOS = 3
-            for intento in range(1, MAX_REINTENTOS + 1):
-                try:
-                    respuesta = client.models.generate_content(
-                        model=GEMINI_MODEL,
-                        contents=prompt_usuario,
-                        config=config,
-                    )
-                    if respuesta and respuesta.text:
-                        return respuesta.text
-                    raise RuntimeError("Respuesta vacía de Google AI Studio.")
-                except Exception as exc:
-                    if intento < MAX_REINTENTOS:
-                        time.sleep(2 ** (intento - 1))
-                        continue
-                    raise exc
-        except Exception as exc_sdk:
-            print(f"[AutoForm AI Warning] La SDK google-genai devolvió error ({exc_sdk}). Intentando API REST nativa...")
+                config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
-    # Opción B: Usar la API REST de Google AI Studio como respaldo nativo ultrarrápido
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent?key={GEMINI_API_KEY}"
-    
-    cuerpo: Dict[str, Any] = {
-        "contents": [
-            {
-                "role": "user",
-                "parts": [{"text": prompt_usuario}]
+                MAX_REINTENTOS = 2
+                for intento in range(1, MAX_REINTENTOS + 1):
+                    try:
+                        respuesta = client.models.generate_content(
+                            model=mod_gemini,
+                            contents=prompt_usuario,
+                            config=config,
+                        )
+                        if respuesta and respuesta.text:
+                            return respuesta.text
+                        raise RuntimeError("Respuesta vacía de Google AI Studio.")
+                    except Exception as exc:
+                        if "404" in str(exc) or "NOT_FOUND" in str(exc):
+                            print(f"[AutoForm AI Warning] Modelo {mod_gemini} dio 404 en Google AI Studio. Probando alternativo...")
+                            break
+                        if intento < MAX_REINTENTOS:
+                            time.sleep(2 ** (intento - 1))
+                            continue
+                        raise exc
+            except Exception as exc_sdk:
+                ultimo_exc = exc_sdk
+
+        # Opción B: Usar la API REST de Google AI Studio como respaldo nativo ultrarrápido
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{mod_gemini}:generateContent?key={GEMINI_API_KEY}"
+        
+        cuerpo: Dict[str, Any] = {
+            "contents": [
+                {
+                    "role": "user",
+                    "parts": [{"text": prompt_usuario}]
+                }
+            ],
+            "generationConfig": {
+                "maxOutputTokens": 30000
             }
-        ],
-        "generationConfig": {
-            "maxOutputTokens": 30000
         }
-    }
-    if sistema:
-        cuerpo["systemInstruction"] = {
-            "parts": [{"text": sistema}]
-        }
-    if json_mode:
-        cuerpo["generationConfig"]["responseMimeType"] = "application/json"
+        if sistema:
+            cuerpo["systemInstruction"] = {
+                "parts": [{"text": sistema}]
+            }
+        if json_mode:
+            cuerpo["generationConfig"]["responseMimeType"] = "application/json"
+
+        try:
+            res_rest = requests.post(url, json=cuerpo, timeout=timeout)
+            if res_rest.status_code == 404:
+                print(f"[AutoForm AI Warning] Modelo REST {mod_gemini} dio 404. Probando alternativo...")
+                continue
+            res_rest.raise_for_status()
+            datos_rest = res_rest.json()
+            candidatos = datos_rest.get("candidates", [])
+            if candidatos:
+                parts = candidatos[0].get("content", {}).get("parts", [])
+                if parts:
+                    return parts[0].get("text", "")
+        except Exception as exc_rest:
+            ultimo_exc = exc_rest
+            continue
+
+    if ultimo_exc:
+        raise ultimo_exc
+    raise RuntimeError("Todos los modelos de Gemini dieron 404 en Google AI Studio.")
 
     headers = {"Content-Type": "application/json"}
     MAX_REINTENTOS = 3
@@ -301,14 +264,14 @@ def _consultar_llm_requests(
     #   sin emitir razonamiento inline.
     # EXCLUIDO: ling-3.0-flash, qwen/qwen-2.5-72b-instruct — emiten chain-of-thought
     #           o dejaron de ser gratuitos.
-    modelo_env = LLM_MODEL if (LLM_MODEL and "/" in LLM_MODEL and "ling" not in LLM_MODEL) else None
+    modelo_env = LLM_MODEL if (LLM_MODEL and "/" in LLM_MODEL) else None
     modelos_candidatos_raw = [
         modelo_env,                                           # 1. Config del .env (si aplica)
-        "openrouter/auto",                                    # 2. Router automático de OR (siempre gratuito)
-        "google/gemini-2.0-flash-lite-preview-02-05:free",   # 3. Gemini lite — rápido, json_mode ok
-        "google/gemini-flash-1.5-8b:free",                   # 4. Gemini Flash 1.5 8B
-        "meta-llama/llama-3.1-8b-instruct:free",             # 5. LLaMA 3.1 8B (rápido y estable)
-        "mistralai/mistral-7b-instruct:free",                # 6. Mistral 7B (cumple instrucciones bien)
+        "inclusionai/ling-3.0-tiny:free",                     # 2. Ling 3.0 Tiny Free (¡Activo en OpenRouter!)
+        "nvidia/nemotron-3.5-lightning:free",                 # 3. Nemotron 3.5 Lightning Free
+        "openrouter/auto",                                    # 4. Router automático de OpenRouter (gratuito)
+        "google/gemma-4-31b-it:free",                         # 5. Gemma 4 31B Free
+        "poolside/laguna-s-2.1:free",                          # 6. Laguna S 2.1 Free
     ]
     # Quitar Nones y duplicados preservando el orden
     modelos_unicos: List[str] = []
@@ -426,6 +389,59 @@ def _consultar_llm_requests(
 
 
 
+def _consultar_openai(
+    prompt_usuario: str,
+    sistema: str = "",
+    json_mode: bool = False,
+    timeout: int = 60,
+) -> str:
+    """Invocación directa a la API oficial de OpenAI (gpt-4o-mini por defecto)."""
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY no configurada en .env")
+
+    mensajes: List[Dict[str, str]] = []
+    if sistema:
+        mensajes.append({"role": "system", "content": sistema})
+    mensajes.append({"role": "user", "content": prompt_usuario})
+
+    cuerpo: Dict[str, Any] = {
+        "model": OPENAI_MODEL,
+        "messages": mensajes,
+        "temperature": 0.1,
+    }
+    if json_mode:
+        cuerpo["response_format"] = {"type": "json_object"}
+
+    headers = {
+        "Authorization": f"Bearer {OPENAI_API_KEY}",
+        "Content-Type": "application/json",
+    }
+
+    MAX_REINTENTOS = 2
+    for intento in range(1, MAX_REINTENTOS + 1):
+        try:
+            respuesta = requests.post(
+                "https://api.openai.com/v1/chat/completions",
+                headers=headers,
+                json=cuerpo,
+                timeout=timeout,
+            )
+            respuesta.raise_for_status()
+            datos = respuesta.json()
+            choices = datos.get("choices", [])
+            if choices:
+                msg = choices[0].get("message", {})
+                content = msg.get("content", "").strip()
+                if content:
+                    return content
+            raise RuntimeError(f"Respuesta vacía de OpenAI API: {datos}")
+        except Exception as exc:
+            if intento < MAX_REINTENTOS:
+                time.sleep(1.5)
+                continue
+            raise RuntimeError(f"Error en OpenAI API ({OPENAI_MODEL}): {exc}")
+
+
 def consultar_llm(
     prompt_usuario: str,
     sistema: Optional[str] = None,
@@ -433,9 +449,18 @@ def consultar_llm(
     timeout: int = 60,
 ) -> str:
     if sistema is None:
-        sistema = "Eres el asistente inteligente de AutoForm AI, impulsado por el modelo Google Gemini 2.0 Flash."
+        sistema = f"Eres el asistente inteligente de AutoForm AI, impulsado por OpenAI {OPENAI_MODEL}. Responde únicamente en formato JSON válido."
 
-    # 1. Intentar primero la API nativa de Google AI Studio con gemini-2.0-flash
+    # 1. Prioridad #1: OpenAI API oficial (gpt-4o-mini)
+    if OPENAI_API_KEY:
+        try:
+            return _consultar_openai(
+                prompt_usuario, sistema=sistema, json_mode=json_mode, timeout=timeout
+            )
+        except Exception as exc:
+            print(f"[AutoForm AI Warning] Falló OpenAI API ({exc}). Intentando fallback a Google AI Studio / OpenRouter...")
+
+    # 2. Prioridad #2: Google AI Studio con Gemini
     if GEMINI_API_KEY:
         try:
             return _consultar_gemini_studio(
@@ -457,29 +482,207 @@ def invocar_llm(prompt: str, sistema: str = "", timeout: int = 60) -> str:
     return consultar_llm(prompt, sistema=STRICT_SYSTEM_PROMPT, json_mode=True, timeout=timeout)
 
 
-def consultar_llm_estructurado(
-    prompt: str,
+def consultar_llm_semantico(
+    intenciones: List[Any],
+    datos_empresa: Dict[str, Any],
     timeout: int = 60,
 ) -> List[Dict[str, Any]]:
-    """FASE C: Invocación estructurada con Pydantic V2 e instructor.
+    """Inferencia semántica desacoplada (GPT-4.1-mini / Gemini).
 
-    Garantiza respuestas sanitizadas con el esquema MapeoItem y realiza 1 reintento
-    automático si el JSON devuelto no cumple el esquema Pydantic.
+    Envía únicamente los rótulos compactos y la empresa maestro.
+    El LLM responde únicamente: [{"id": 1, "campo": "razon_social"}].
     """
-    from core import schema_models
+    rotulos_compactos = [
+        {
+            "id": getattr(item, "id_rotulo", idx + 1),
+            "rotulo": getattr(item, "rotulo_texto", str(item.get("valor", ""))),
+            "seccion": getattr(item, "seccion_titulo", "GENERAL"),
+            "ubicacion_sugerida": getattr(item, "dest_ubicacion", item.get("ubicacion", "derecha")),
+        }
+        for idx, item in enumerate(intenciones)
+    ]
 
-    respuesta_raw = invocar_llm(prompt, timeout=timeout)
-    elementos = schema_models.validar_y_sanitizar_mapeo(respuesta_raw)
+    payload = {
+        "F": rotulos_compactos,
+        "D": datos_empresa,
+    }
 
-    if elementos:
-        return elementos
-
-    print("[AutoForm AI Pydantic] Respuesta inicial no pasó la validación. Ejecutando reintento estructurado...")
-    prompt_reintento = (
-        f"{prompt}\n\n"
-        f"IMPORTANTE: Tu respuesta anterior no cumplió el esquema Pydantic requerido.\n"
-        f"Devuelve ÚNICAMENTE un arreglo JSON válido con los campos: hoja, fila, columna, valor, ubicacion, campo, requiereMerge, celdasAMergear."
+    sistema_semantico = (
+        "Eres AutoForm AI Master Cognitive Engine. Tu tarea es realizar el emparejamiento semántico "
+        "entre la lista de rótulos 'F' y los datos maestros de la empresa 'D', determinando además "
+        "la ubicación precisa donde debe colocarse el valor ('derecha', 'abajo', 'misma').\n\n"
+        "REGLAS DE UBICACIÓN:\n"
+        "- `ubicacion: \"derecha\"` -> Por defecto para rótulos individuales con espacio de respuesta a la derecha.\n"
+        "- `ubicacion: \"abajo\"` -> Para encabezados de tabla (ej. BANCO, SUCURSAL, No CUENTA) donde el dato se escribe en la fila inferior.\n"
+        "- `ubicacion: \"misma\"` -> Para enunciados o párrafos declarativos con marcadores inline `_____` dentro del texto.\n\n"
+        "REGLAS DE EMPAREJAMIENTO DE ALTA COBERTURA:\n"
+        "- `nit` → Rótulos como 'NIT', 'RUT', 'CC/CE/PAS/NIT', 'Número de Identificación', 'Identificación Tributaria'.\n"
+        "- `cedula` → Rótulos como 'C.C.', 'Cédula', 'Documento de Identidad', 'No. Identificación', 'ID'.\n"
+        "- `expedicion` → Rótulos como 'Lugar de Expedición', 'Expedida en', 'Ciudad de Expedición', 'Expedición', 'Fecha Expedición ID'.\n"
+        "- `razon_social` → Rótulos como 'Nombre / Razón Social', 'Razón Social', 'Nombre de la Empresa', 'Proveedor', 'Firma / Nombre Comercial'.\n"
+        "- `direccion` → Rótulos como 'Dirección', 'Domicilio Principal', 'Dirección Fiscal'.\n"
+        "- `telefono` → Rótulos como 'Teléfono', 'Tel', 'Celular', 'Contacto Telefónico'.\n"
+        "- `correo` → Rótulos como 'Correo', 'Email', 'E-mail', 'Correo Notificación'.\n"
+        "- `pagina_web` → Rótulos como 'Página Web', 'Sitio Web', 'Web', 'URL', 'Portal Web', 'Página'.\n"
+        "- `representante_legal` → Rótulos como 'Representante Legal', 'Nombre Representante', 'Firmante', 'Nombre del Declarante', 'Nombres y Apellidos'.\n"
+        "- `representante_nombres` → Rótulos como 'Nombres', 'Primer Nombre', 'Nombres del Representante'.\n"
+        "- `representante_apellidos` → Rótulos como 'Apellidos', 'Primer Apellido', 'Segundo Apellido'.\n"
+        "- `banco` → Rótulos como 'Banco', 'Entidad Bancaria', 'Financiera'.\n"
+        "- `numero_cuenta` → Rótulos como 'Número de Cuenta', 'No. Cuenta', 'Nro Cuenta', 'Cuenta No.'.\n"
+        "- `tipo_cuenta` → Rótulos como 'Tipo de Cuenta', 'Tipo Cuenta' (Ahorros / Corriente).\n"
+        "- `sucursal` → Rótulos como 'Sucursal', 'Sucursal Bancaria'.\n"
+        "- `pais` → Rótulos como 'País', 'Pais', 'Nacionalidad', 'País de Origen'.\n"
+        "- `ciudad`, `departamento` → Rótulos de ubicación geográfica.\n\n"
+        "INSTRUCCIONES DE SALIDA (ESTRICTO JSON):\n"
+        "Responde ÚNICAMENTE con la lista de coincidencias:\n"
+        "{\"mappings\": [{\"id\": 1, \"campo\": \"razon_social\", \"ubicacion\": \"derecha\"}, {\"id\": 2, \"campo\": \"banco\", \"ubicacion\": \"abajo\"}]}\n\n"
+        "- Si la información solicitada en el rótulo no existe en 'D', omite ese id.\n"
+        "- NUNCA inventes campos ni valores que no existan en 'D'.\n"
+        "- Responde únicamente el objeto JSON sin texto Markdown adicional."
     )
-    respuesta_reintento = invocar_llm(prompt_reintento, timeout=timeout)
-    return schema_models.validar_y_sanitizar_mapeo(respuesta_reintento)
+
+    prompt_json = json.dumps(payload, ensure_ascii=False)
+    raw_res = consultar_llm(prompt_json, sistema=sistema_semantico, json_mode=True, timeout=timeout)
+
+    try:
+        data = json.loads(raw_res)
+        if isinstance(data, dict) and "mappings" in data:
+            return data["mappings"]
+        if isinstance(data, list):
+            return data
+    except Exception as exc:
+        print(f"[AutoForm AI LLM] Error al parsear JSON semántico: {exc}")
+
+    return []
+
+
+def invocar_llm_vision(
+    imagenes_png: List[bytes],
+    datos_empresa: Dict[str, Any],
+    timeout: int = 90,
+) -> List[Dict[str, Any]]:
+    """Analiza visualmente páginas PDF (imágenes PNG) y extrae las coordenadas de las casillas
+    (bounding boxes normalizadas 0-1000) usando Gemini Vision u OpenAI/OpenRouter Vision.
+
+    Returns:
+        List[Dict[str, Any]]: Lista de dicts con keys: 'campo', 'bbox_1000' ([ymin, xmin, ymax, xmax]), 'pagina'.
+    """
+    if not imagenes_png:
+        return []
+
+    datos_json = json.dumps(datos_empresa, ensure_ascii=False, indent=2)
+
+    prompt_vision = (
+        "Eres un motor de visión por computadora experto en analizar formularios PDF y documentos escaneados.\n"
+        "Tu tarea es analizar visualmente la página suministrada e identificar las coordenadas exactas "
+        "(bounding boxes) de las casillas o líneas vacías donde debe escribirse cada dato maestro de la empresa.\n\n"
+        f"DATOS MAESTROS DE LA EMPRESA:\n{datos_json}\n\n"
+        "INSTRUCCIONES DE SALIDA (ESTRICTO JSON):\n"
+        "Responde ÚNICAMENTE con una estructura JSON con la clave \"campos_vision\":\n"
+        "{\n"
+        "  \"campos_vision\": [\n"
+        "    {\"campo\": \"razon_social\", \"bbox_1000\": [120, 300, 145, 750], \"pagina\": 1},\n"
+        "    {\"campo\": \"nit\", \"bbox_1000\": [160, 300, 185, 550], \"pagina\": 1}\n"
+        "  ]\n"
+        "}\n\n"
+        "REGLAS DE BOUNDING BOX (escalas de 0 a 1000):\n"
+        "1. `bbox_1000` contiene 4 enteros normalizados de 0 a 1000: [ymin, xmin, ymax, xmax].\n"
+        "   - ymin: Coordenada vertical superior de la casilla receptora vacía.\n"
+        "   - xmin: Coordenada horizontal izquierda de la casilla receptora vacía.\n"
+        "   - ymax: Coordenada vertical inferior de la casilla receptora vacía.\n"
+        "   - xmax: Coordenada horizontal derecha de la casilla receptora vacía.\n"
+        "2. La bounding box debe ser la CASILLA VACÍA O LÍNEA DE ENTRADA del dato, NUNCA el texto de la etiqueta.\n"
+        "3. Mapea únicamente los campos disponibles en la empresa que estén solicitados en el formulario."
+    )
+
+    # -------------------------------------------------------------------------
+    # Opción 1: Gemini Vision (google-genai SDK o Gemini API)
+    # -------------------------------------------------------------------------
+    if GEMINI_API_KEY and genai is not None and types is not None:
+        try:
+            print("[AutoForm AI Vision] Procesando imagen PDF con Gemini Vision...")
+            client = genai.Client(api_key=GEMINI_API_KEY)
+            
+            # Construir partes del mensaje (imágenes PNG + prompt)
+            contents: List[Any] = []
+            for idx, img_bytes in enumerate(imagenes_png[:3]):
+                part_img = types.Part.from_bytes(data=img_bytes, mime_type="image/png")
+                contents.append(part_img)
+
+            contents.append(prompt_vision)
+
+            config = types.GenerateContentConfig(
+                response_mime_type="application/json",
+                max_output_tokens=8000,
+            )
+
+            mod_gemini = GEMINI_MODEL if GEMINI_MODEL else "gemini-2.5-flash"
+            response = client.models.generate_content(
+                model=mod_gemini,
+                contents=contents,
+                config=config,
+            )
+
+            if response and response.text:
+                res_json = json.loads(response.text)
+                if isinstance(res_json, dict) and "campos_vision" in res_json:
+                    return res_json["campos_vision"]
+                if isinstance(res_json, list):
+                    return res_json
+
+        except Exception as exc:
+            print(f"[AutoForm AI Vision Warning] Falló Gemini Vision ({exc}). Intentando fallback a OpenAI/OpenRouter...")
+
+    # -------------------------------------------------------------------------
+    # Opción 2: OpenAI / OpenRouter Vision (Base64)
+    # -------------------------------------------------------------------------
+    if OPENAI_API_KEY or OPENROUTER_API_KEY:
+        try:
+            import base64
+            print("[AutoForm AI Vision] Procesando imagen PDF con OpenAI / OpenRouter Vision (Base64)...")
+
+            content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt_vision}]
+
+            for img_bytes in imagenes_png[:3]:
+                b64_img = base64.b64encode(img_bytes).decode("utf-8")
+                content_parts.append({
+                    "type": "image_url",
+                    "image_url": {"url": f"data:image/png;base64,{b64_img}"}
+                })
+
+            if OPENAI_API_KEY and openai is not None:
+                client_oai = openai.OpenAI(api_key=OPENAI_API_KEY)
+                resp = client_oai.chat.completions.create(
+                    model=OPENAI_MODEL if "gpt" in OPENAI_MODEL else "gpt-4o-mini",
+                    messages=[{"role": "user", "content": content_parts}],
+                    response_format={"type": "json_object"},
+                    max_tokens=4000,
+                )
+                text_out = resp.choices[0].message.content or ""
+            else:
+                headers = {
+                    "Authorization": f"Bearer {OPENROUTER_API_KEY}",
+                    "Content-Type": "application/json",
+                }
+                body = {
+                    "model": LLM_MODEL if LLM_MODEL else "openai/gpt-4o-mini",
+                    "messages": [{"role": "user", "content": content_parts}],
+                    "response_format": {"type": "json_object"},
+                }
+                res_http = requests.post(OPENROUTER_API_URL, json=body, headers=headers, timeout=timeout)
+                res_http.raise_for_status()
+                text_out = res_http.json()["choices"][0]["message"]["content"]
+
+            if text_out:
+                res_json = json.loads(text_out)
+                if isinstance(res_json, dict) and "campos_vision" in res_json:
+                    return res_json["campos_vision"]
+                if isinstance(res_json, list):
+                    return res_json
+
+        except Exception as exc:
+            print(f"[AutoForm AI Vision Error] Falló visión con OpenAI/OpenRouter: {exc}")
+
+    return []
+
 

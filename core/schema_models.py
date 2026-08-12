@@ -13,6 +13,22 @@ from typing import Any, Dict, List, Literal, Optional, Union
 from pydantic import BaseModel, Field, field_validator
 
 
+class MapeoSemanticoItem(BaseModel):
+    """Mapeo semántico ultracompacto devuelto por el LLM (id_rotulo -> campo + ubicacion)."""
+
+    id: int = Field(ge=1, description="ID del rótulo")
+    campo: str = Field(description="Clave exacta de DatosEmpresa que satisface la solicitud del rótulo")
+    ubicacion: Optional[Literal["derecha", "abajo", "misma"]] = Field(
+        default="derecha", description="Ubicación elegida por el modelo para escribir el valor ('derecha', 'abajo', 'misma')"
+    )
+
+
+class PlanMapeoSemantico(BaseModel):
+    """Lista de emparejamientos semánticos."""
+
+    mappings: List[MapeoSemanticoItem] = Field(default_factory=list)
+
+
 class MapeoItem(BaseModel):
     """Esquema Pydantic V2 para una celda de formulario asignada."""
 
@@ -59,6 +75,51 @@ class PlanMapeoFormulario(BaseModel):
     )
 
 
+def _extraer_json_robusto(texto: str) -> Any:
+    """Extrae y parsea JSON de respuestas LLM, incluso si incluyen razonamiento previo (Chain-of-Thought)."""
+    texto_limpio = texto.strip()
+
+    # 1. Parseo directo del texto completo
+    try:
+        return json.loads(texto_limpio)
+    except Exception:
+        pass
+
+    # 2. Bloques Markdown ```json ... ``` o ``` ... ```
+    for m in re.finditer(r'```(?:json)?\s*(.*?)\s*```', texto, re.DOTALL | re.IGNORECASE):
+        try:
+            return json.loads(m.group(1).strip())
+        except Exception:
+            pass
+
+    # 3. Búsqueda desde el último '[' o '{' (Búsqueda Inversa para CoT/Reasoning Models)
+    for char_open, char_close in [('[', ']'), ('{', '}')]:
+        idx_open = texto_limpio.rfind(char_open)
+        if idx_open != -1:
+            fragmento = texto_limpio[idx_open:]
+            try:
+                return json.loads(fragmento)
+            except Exception:
+                idx_close = fragmento.rfind(char_close)
+                if idx_close != -1:
+                    try:
+                        return json.loads(fragmento[:idx_close + 1])
+                    except Exception:
+                        pass
+
+    # 4. Primera '[' o '{' hasta última ']' o '}'
+    for char_open, char_close in [('[', ']'), ('{', '}')]:
+        idx_open = texto_limpio.find(char_open)
+        idx_close = texto_limpio.rfind(char_close)
+        if idx_open != -1 and idx_close > idx_open:
+            try:
+                return json.loads(texto_limpio[idx_open:idx_close + 1])
+            except Exception:
+                pass
+
+    raise ValueError("No se pudo extraer una estructura JSON de la respuesta.")
+
+
 def validar_y_sanitizar_mapeo(
     payload_raw: Union[str, List[Dict[str, Any]], Dict[str, Any]]
 ) -> List[Dict[str, Any]]:
@@ -76,38 +137,35 @@ def validar_y_sanitizar_mapeo(
             datos_dict = payload_raw["mappings"]
         elif "resultado" in payload_raw and isinstance(payload_raw["resultado"], list):
             datos_dict = payload_raw["resultado"]
+        elif "F" in payload_raw and isinstance(payload_raw["F"], list):
+            datos_dict = payload_raw["F"]
         else:
             datos_dict = [payload_raw]
     elif isinstance(payload_raw, str):
-        cadena_limpia = payload_raw.strip()
-        # Remover bloques de código Markdown ```json ... ```
-        cadena_limpia = re.sub(r"^```(?:json)?\s*", "", cadena_limpia, flags=re.IGNORECASE)
-        cadena_limpia = re.sub(r"\s*```$", "", cadena_limpia)
-        cadena_limpia = cadena_limpia.strip()
-
         try:
-            parsed = json.loads(cadena_limpia)
+            parsed = _extraer_json_robusto(payload_raw)
             return validar_y_sanitizar_mapeo(parsed)
-        except json.JSONDecodeError:
-            # Fallback regex para extraer array de objetos si hay caracteres extra
-            match = re.search(r"\[\s*\{.*\}\s*\]", cadena_limpia, re.DOTALL)
-            if match:
-                try:
-                    parsed = json.loads(match.group(0))
-                    return validar_y_sanitizar_mapeo(parsed)
-                except Exception:
-                    pass
-            print(f"[AutoForm AI Pydantic] Error: No se pudo parsear el JSON ({cadena_limpia[:100]}...)")
+        except Exception:
+            print(f"[AutoForm AI Pydantic] Error: No se pudo parsear el JSON ({payload_raw[:100]}...)")
             return []
 
-    # Validar cada objeto individualmente con MapeoItem de Pydantic
+    # Validar cada objeto individualmente con MapeoSemanticoItem o MapeoItem de Pydantic
     elementos_validos: List[Dict[str, Any]] = []
     for item in datos_dict:
         if isinstance(item, dict):
             try:
-                modelo = MapeoItem.model_validate(item)
-                elementos_validos.append(modelo.model_dump())
+                if "hoja" in item and "fila" in item and "columna" in item:
+                    modelo = MapeoItem.model_validate(item)
+                    elementos_validos.append(modelo.model_dump())
+                elif "id" in item or "campo" in item:
+                    modelo = MapeoSemanticoItem.model_validate(item)
+                    elementos_validos.append(modelo.model_dump())
+                else:
+                    elementos_validos.append(item)
             except Exception as exc:
-                print(f"[AutoForm AI Pydantic Warning] Item omitido por error de validación ({exc}): {item}")
+                if "id" in item and "campo" in item:
+                    elementos_validos.append(item)
+                else:
+                    print(f"[AutoForm AI Pydantic Warning] Item omitido por error de validación ({exc}): {item}")
 
     return elementos_validos

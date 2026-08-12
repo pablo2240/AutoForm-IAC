@@ -73,7 +73,7 @@
 ### FASE 1 — Extracción
 
 - [ ] **[PARSER-09]** Agregar soporte para **tablas definidas como `Table` de Excel** (`openpyxl.worksheet.table`). Detectarlas y exportar sus rangos como contexto adicional al LLM.
-- [ ] **[PARSER-10]** Implementar **módulo de inspección de PDF** (`pdf_processor.py`) con extracción de texto con coordenadas `(x, y, ancho, alto)`, usando `pdfplumber`, para la Fase 2 de soporte PDF.
+- [x] **[PARSER-10]** Implementar **módulo de inspección de PDF** (`pdf_processor.py`) con extracción de texto con coordenadas `(x, y, ancho, alto)`, usando `pdfplumber`, para la Fase 2 de soporte PDF.
 
 ---
 
@@ -99,7 +99,17 @@
 - [x] **[APP-02]** Implementar **soporte para múltiples perfiles de empresa** (`datos_empresa_*.json`). Permitir al usuario seleccionar el perfil activo desde la UI antes de procesar.
 - [ ] **[APP-03]** Agregar **autenticación básica por contraseña** en Streamlit para proteger el acceso a la aplicación y a las claves API configuradas en `.env`.
 
+
 ---
+
+## 🔴 Motor Dinámico y Universal de Procesamiento de Formularios Excel (Agnóstico a Coordenadas)
+
+- [ ] **[DINAMICO-01]** Detección dinámica de inicio y fin de línea de captura (`excel_parser.py`): Escanear desde el rótulo omitiendo espaciadores sin borde hasta la primera celda con borde inferior (`c_inicio`) y calcular el final de la traza continua (`c_fin`).
+- [ ] **[DINAMICO-02]** Combinación acotada por línea de captura (`excel_writer.py`): Ejecutar `merge_cells` de `c_inicio` a `c_fin` únicamente sobre la traza continua de la línea, sin alterar el resto de celdas.
+- [ ] **[DINAMICO-03]** Filtrado estricto de fondos de rótulo (`excel_writer.py`): Omitir el copiado de fondos de color/gris de celdas origen para mantener casillas blancas nítidas.
+- [ ] **[DINAMICO-04]** Preservación absoluta de dimensiones (`excel_writer.py`): PROHIBIDO alterar `row_dimensions` (altos) o `column_dimensions` (anchos). Respetar 100% el diseño original.
+- [ ] **[DINAMICO-05]** Inferencia semántica por patrones universales (`STRICT_SYSTEM_PROMPT`): Integración de los 5 patrones visuales (línea amplia, espacio intermedio, tablas debajo, párrafos inline, campos declarativos) sin harcodear filas ni columnas.
+- [ ] **[DINAMICO-06]** Protocolo de Auditoría y Validación Final Independiente: Re-inspección de todos los campos detectados, verificación de disponibilidad de datos y confirmación de que no se distorsionó la plantilla antes del resultado final.
 
 > **Total de tareas identificadas:** 28
 > 🟢 Alta: 9 | 🟡 Media: 8 | 🔵 Baja: 11

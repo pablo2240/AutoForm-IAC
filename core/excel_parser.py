@@ -120,42 +120,65 @@ def _calcular_tipo_espacio(
 # PARSER-02: Detección de líneas de captura divididas entre celdas consecutivas
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _calcular_ancho_linea_captura(
+def _calcular_rango_linea_captura(
     hoja: Worksheet,
     fila: int,
     col_inicio: int,
     mapa_merges: Dict[Tuple[int, int], Any],
-) -> int:
-    """Escanea hacia la derecha desde col_inicio contando celdas que forman
-    una línea de captura continua (vacías con borde inferior, o merge vacío).
+) -> Tuple[int, int, int]:
+    """Escanea dinámicamente hacia la derecha omitiendo celdas espaciadoras sin borde
+    para ubicar el inicio exacto (c_inicio) y el fin (c_fin) de una línea de captura continua.
 
-    Escanea sin límite de ancho arbitrario para cubrir 100% de la línea de captura,
-    deteniéndose de forma eficiente (break) tan pronto como termina la casilla.
+    Returns:
+        Tuple[col_inicio_real, col_fin_real, ancho_linea]
     """
     max_col = hoja.max_column or 1
-    ancho   = 0
-    col     = col_inicio
+    col_actual = col_inicio
+    
+    # 1. Saltar celdas espaciadoras vacías sin borde si la línea empieza más a la derecha
+    espacios_saltados = 0
+    while col_actual <= max_col and espacios_saltados < 4:
+        if not _celda_vacia(hoja, fila, col_actual):
+            break
+        
+        bordes = _analizar_bordes_celda(hoja, fila, col_actual)
+        rango = mapa_merges.get((fila, col_actual))
+        
+        if bordes["bottom"] or rango is not None:
+            break
+            
+        col_actual += 1
+        espacios_saltados += 1
 
-    while col <= max_col:
-        es_vacia = _celda_vacia(hoja, fila, col)
-        rango = mapa_merges.get((fila, col))
+    if col_actual > max_col or not _celda_vacia(hoja, fila, col_actual):
+        col_actual = col_inicio
 
-        if not es_vacia:
-            break  # Celda con contenido: fin de la línea
+    c_inicio_real = col_actual
+    c_fin_real = col_actual
+    ancho = 0
 
+    while col_actual <= max_col:
+        if not _celda_vacia(hoja, fila, col_actual):
+            break
+            
+        rango = mapa_merges.get((fila, col_actual))
         if rango is not None:
-            ancho += rango.max_col - col + 1
-            break  # Un merge siempre es el espacio completo; detenerse aquí
-
-        # Celda vacía normal: debe tener borde inferior para contar como captura
-        bordes = _analizar_bordes_celda(hoja, fila, col)
+            c_fin_real = rango.max_col
+            ancho += (rango.max_col - col_actual + 1)
+            break
+            
+        bordes = _analizar_bordes_celda(hoja, fila, col_actual)
         if bordes["bottom"]:
+            c_fin_real = col_actual
             ancho += 1
-            col   += 1
+            col_actual += 1
         else:
-            break  # Sin borde inferior: fin de la línea de captura
+            break
 
-    return max(1, ancho)
+    if ancho == 0:
+        return (col_inicio, col_inicio, 1)
+
+    return (c_inicio_real, c_fin_real, max(1, ancho))
 
 
 import re
@@ -405,13 +428,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 else:
                     tipo_espacio_escritura = tipo_abajo
 
-                # ── PARSER-02: Ancho real de la línea de captura ────────────
-                if tipo_derecha in ("subrayado", "cuadro", "merge", "vacio"):
-                    ancho_linea = _calcular_ancho_linea_captura(
-                        hoja, fila, derecha_columna, mapa_merges
-                    )
-                else:
-                    ancho_linea = 1
+                # ── PARSER-02: Rango dinámico y ancho real de la línea de captura ────
+                c_inicio_linea, c_fin_linea, ancho_linea = _calcular_rango_linea_captura(
+                    hoja, fila, derecha_columna, mapa_merges
+                )
 
                 # ── PARSER-04: Ancho del rango combinado del vecino derecho ───
                 if rango_derecha is not None:
@@ -446,7 +466,9 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "abajoConBordeInferior":   abajo_con_borde_inferior,
                         "abajoConBordeTodo":       abajo_con_borde_todo,
                         "tipoEspacioEscritura": tipo_espacio_escritura,
-                        "anchoLinea": ancho_linea,
+                        "inicioLineaCol": c_inicio_linea,
+                        "finLineaCol":    c_fin_linea,
+                        "anchoLinea":     ancho_linea,
                         "anchoMergeVecino": ancho_merge_vecino,
                         "esMergePrincipal": es_merge_principal,
                         "coordMerge":       coord_merge,
