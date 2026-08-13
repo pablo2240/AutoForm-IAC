@@ -112,6 +112,7 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "telefono": "",
         "correo": "",
         "cedula": "",
+        "expedicion": "",
         "ciudad": "",
         "departamento": "",
         "pagina_web": "",

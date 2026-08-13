@@ -431,6 +431,8 @@ with st.sidebar:
             nit = st.text_input("NIT", value=datos_empresa.get("nit", ""))
             representante_legal = st.text_input("Representante Legal", value=datos_empresa.get("representante_legal", ""))
             cedula = st.text_input("Cédula Representante", value=datos_empresa.get("cedula", ""))
+            expedicion = st.text_input("Ciudad de Expedición (Cédula)", value=datos_empresa.get("expedicion", ""),
+                                       help="Ciudad donde fue expedida la cédula del representante legal. Ej: Medellín")
             rep_nombres = st.text_input("Nombres Rep.", value=datos_empresa.get("representante_nombres", ""))
             rep_apellidos = st.text_input("Apellidos Rep.", value=datos_empresa.get("representante_apellidos", ""))
 
@@ -460,6 +462,7 @@ with st.sidebar:
                 "telefono": telefono,
                 "correo": correo,
                 "cedula": cedula,
+                "expedicion": expedicion,
                 "ciudad": ciudad,
                 "departamento": departamento,
                 "pagina_web": pagina_web,
