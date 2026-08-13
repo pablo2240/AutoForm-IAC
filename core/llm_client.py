@@ -91,7 +91,8 @@ Recibes un objeto JSON con dos componentes principales:
 - No busques coincidencias literales de texto. Interpreta la intencionalidad del enunciado o pregunta.
 - Si el rótulo o la sección hace referencia al proponente, solicitante, oferente, sociedad o empresa contratista:
   * Rótulos como '1. DATOS DEL PROPONENTE', 'Nombre de la persona jurídica o empresa que presenta la propuesta', 'Identificación del oferente', 'Datos de la firma proveedora', 'Información de la entidad' -> razon_social
-  * Rótulos como 'Número de NIT', 'Identificación del oferente', 'Registro tributario', 'CC/CE/PAS/NIT' -> nit
+  * Rótulos como 'Número de NIT', 'Identificación tributaria', 'Registro tributario', 'RUT', 'NIT No.' -> nit
+  * Rótulos como 'C.C.', 'C.C. No.', 'No. C.C.', 'Cédula', 'Cédula de ciudadanía', 'Documento de Identidad', 'No. de Documento', 'CC/CE/PAS', 'Identificación del representante' -> cedula
   * Rótulos como 'Nombre del representante legal', 'Nombre completo del representante', 'Apoderado autorizado' -> representante_legal
   * Rótulos que pidan específicamente Nombres del representante (ej. 'Primer Nombre', 'Nombres del Representante') -> representante_nombres
   * Rótulos que pidan específicamente Apellidos del representante (ej. 'Apellidos del Representante', 'Primer Apellido') -> representante_apellidos
@@ -132,9 +133,13 @@ Ejemplo 2 (Texto Declarativo Inline con Guiones):
 Rótulo: {"id": 5, "rotulo": "Yo, _____ identificado con C.C. No. _____ expedida en _____", "seccion": "DECLARACIÓN JURAMENTADA"}
 Asignación: {"id": 5, "campo": "representante_legal"}
 
-Ejemplo 3 (Identificación Tributaria):
-Rótulo: {"id": 8, "rotulo": "NIT / CÉDULA DE CIUDADANÍA NO.:", "seccion": "DATOS TRIBUTARIOS"}
-Asignación: {"id": 8, "campo": "nit"}
+Ejemplo 3 (Cédula de Ciudadanía / C.C.):
+Rótulo: {"id": 8, "rotulo": "C.C. No. / Documento de Identidad:", "seccion": "DATOS DEL REPRESENTANTE LEGAL"}
+Asignación: {"id": 8, "campo": "cedula"}
+
+Ejemplo 4 (NIT Empresa):
+Rótulo: {"id": 9, "rotulo": "NIT / Identificación Tributaria No.:", "seccion": "DATOS TRIBUTARIOS EMPRESA"}
+Asignación: {"id": 9, "campo": "nit"}
 
 ## FORMATO DE SALIDA (ESTRICTO JSON — SIN UBICACION)
 Tu única tarea es emparejar rótulos con claves del perfil de empresa.
@@ -143,9 +148,11 @@ Responde ÚNICAMENTE con un objeto JSON válido con la clave "mappings":
 {
   "mappings": [
     {"id": 1, "campo": "razon_social"},
-    {"id": 2, "campo": "nit"}
+    {"id": 2, "campo": "nit"},
+    {"id": 3, "campo": "cedula"}
   ]
 }"""
+
 
 
 

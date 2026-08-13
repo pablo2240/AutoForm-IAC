@@ -77,7 +77,7 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         # Omitir rótulos que sean instrucciones de anexos o listas de documentos a presentar
         if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
             continue
-        if re.search(r"^\s*\d+[\.\)]\s*(?:copia|fotocopia|adjuntar|c[eé]dula|rut|certificado)", txt_rotulo, re.IGNORECASE):
+        if re.search(r"^\s*\d+[\.\)]\s*(?:copia\s+de|fotocopia\s+de|adjuntar|anexo|certificado|certificaci[oó]n)", txt_rotulo, re.IGNORECASE):
             continue
 
         purgado.append({
@@ -582,26 +582,58 @@ def _validar_hard_gates_mapeo(
                 print(f"[AutoForm AI Hard-Gate] Razón Social recuperada automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
-    # Regla 2: NIT
-    if "nit" not in campos_mapeados and datos_empresa.get("nit"):
+    # Regla 3: Cédula / C.C.
+    if "cedula" not in campos_mapeados and datos_empresa.get("cedula"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
-            if re.search(r"\bnit\b|n\.i\.t|identificaci[oó]n\s+tributaria|r\.u\.t", val_str):
+            if re.search(r"\bc\.?c\.?\b|c[eé]dula|doc(?:umento)?\s+(?:de\s+)?identida[dn]|no\.\s*c\.?c\.?|identificaci[oó]n\s+(?:del\s+)?representante", val_str):
                 mapeo_resultado.append({
                     "hoja": elem.get("hoja", ""),
                     "fila": int(elem.get("fila", 1)),
                     "columna": int(elem.get("columna", 1)),
                     "valor": elem.get("valor", ""),
-                    "ubicacion": "derecha",
-                    "campo": "nit",
+                    "ubicacion": _calcular_ubicacion_fisica(
+                        val_rotulo=elem.get("valor", ""),
+                        derecha_vacia=bool(elem.get("derechaVacia", True)),
+                        abajo_vacia=bool(elem.get("abajoVacia", False)),
+                        derecha_es_merge=bool(elem.get("derechaEsMerge", False)),
+                        tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+                    ),
+                    "campo": "cedula",
                     "requiereMerge": False,
                     "celdasAMergear": 1,
                     "anchoLinea": 1,
                 })
-                print(f"[AutoForm AI Hard-Gate] NIT recuperado automáticamente para el rótulo '{elem.get('valor')}'")
+                print(f"[AutoForm AI Hard-Gate] Cédula / C.C. recuperada automáticamente para el rótulo '{elem.get('valor')}'")
+                break
+
+    # Regla 4: Expedición de Cédula
+    if "expedicion" not in campos_mapeados and datos_empresa.get("expedicion"):
+        for elem in mapa_formularios:
+            val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"expedida\s+en|lugar\s+de\s+expedici[oó]n|ciudad\s+de\s+expedici[oó]n|\bexpedici[oó]n\b", val_str):
+                mapeo_resultado.append({
+                    "hoja": elem.get("hoja", ""),
+                    "fila": int(elem.get("fila", 1)),
+                    "columna": int(elem.get("columna", 1)),
+                    "valor": elem.get("valor", ""),
+                    "ubicacion": _calcular_ubicacion_fisica(
+                        val_rotulo=elem.get("valor", ""),
+                        derecha_vacia=bool(elem.get("derechaVacia", True)),
+                        abajo_vacia=bool(elem.get("abajoVacia", False)),
+                        derecha_es_merge=bool(elem.get("derechaEsMerge", False)),
+                        tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+                    ),
+                    "campo": "expedicion",
+                    "requiereMerge": False,
+                    "celdasAMergear": 1,
+                    "anchoLinea": 1,
+                })
+                print(f"[AutoForm AI Hard-Gate] Expedición de Cédula recuperada automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
     return mapeo_resultado
+
 
 
 

@@ -45,6 +45,32 @@
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 13,
+        "columna": 18,
+        "inicioLineaCol": 22,
+        "finLineaCol": 25,
+        "valor": "CIUDAD:",
+        "ubicacion": "derecha",
+        "campo": "ciudad",
+        "requiereMerge": true,
+        "celdasAMergear": 4,
+        "anchoLinea": 4
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 13,
+        "columna": 26,
+        "inicioLineaCol": 31,
+        "finLineaCol": 37,
+        "valor": "DEPARTAMENTO",
+        "ubicacion": "derecha",
+        "campo": "departamento",
+        "requiereMerge": true,
+        "celdasAMergear": 7,
+        "anchoLinea": 7
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
         "fila": 15,
         "columna": 2,
         "inicioLineaCol": 10,
@@ -188,19 +214,6 @@
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 60,
-        "columna": 2,
-        "inicioLineaCol": 9,
-        "finLineaCol": 9,
-        "valor": "NOMBRES Y APELLIDOS",
-        "ubicacion": "derecha",
-        "campo": "representante_legal",
-        "requiereMerge": true,
-        "celdasAMergear": 7,
-        "anchoLinea": 1
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
         "fila": 98,
         "columna": 2,
         "inicioLineaCol": 3,
@@ -227,29 +240,16 @@
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 13,
-        "columna": 18,
-        "inicioLineaCol": 22,
-        "finLineaCol": 25,
-        "valor": "CIUDAD:",
-        "ubicacion": "derecha",
-        "campo": "ciudad",
-        "requiereMerge": true,
-        "celdasAMergear": 4,
-        "anchoLinea": 4
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 13,
-        "columna": 26,
-        "inicioLineaCol": 31,
+        "fila": 98,
+        "columna": 30,
+        "inicioLineaCol": 33,
         "finLineaCol": 37,
-        "valor": "DEPARTAMENTO",
+        "valor": "expedido en:",
         "ubicacion": "derecha",
-        "campo": "departamento",
+        "campo": "expedicion",
         "requiereMerge": true,
-        "celdasAMergear": 7,
-        "anchoLinea": 7
+        "celdasAMergear": 5,
+        "anchoLinea": 5
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
@@ -263,19 +263,6 @@
         "requiereMerge": true,
         "celdasAMergear": 15,
         "anchoLinea": 15
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 29,
-        "columna": 13,
-        "inicioLineaCol": 27,
-        "finLineaCol": 27,
-        "valor": "NOMBRE Y APELLIDOS",
-        "ubicacion": "derecha",
-        "campo": "representante_apellidos",
-        "requiereMerge": true,
-        "celdasAMergear": 11,
-        "anchoLinea": 1
       }
     ]
   }
