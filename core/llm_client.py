@@ -80,7 +80,9 @@ Recibes un objeto JSON con dos componentes principales:
   * Rótulos como 'Nombre del representante legal', 'Nombre completo del representante', 'Apoderado autorizado' -> representante_legal
   * Rótulos que pidan específicamente Nombres del representante (ej. 'Primer Nombre', 'Nombres del Representante') -> representante_nombres
   * Rótulos que pidan específicamente Apellidos del representante (ej. 'Apellidos del Representante', 'Primer Apellido') -> representante_apellidos
-  * Rótulos como 'Lugar de expedición', 'Expedida en', 'Ciudad de expedición' -> expedicion
+  * Rótulos como 'Lugar de expedición', 'Expedida en', 'Ciudad de expedición', 'Lugar expedición ID' -> expedicion (CIUDAD/LUGAR).
+  * REGLA ESTRICTA DE EXCLUSIÓN PARA FECHA: Rótulos que pidan 'FECHA DE EXPEDICIÓN', 'Fecha expedición ID', 'Día / Mes / Año expedición' NUNCA deben asignarse a 'expedicion' (que contiene una ciudad/lugar como 'Envigado', no una fecha). Omitir dichos rótulos de fecha de expedición.
+
   * Rótulos como 'Domicilio principal', 'Dirección de notificación', 'Dirección fiscal' -> direccion
   * Rótulos como 'Canal de contacto electrónico', 'Correo institucional', 'Email notificación' -> correo
   * Rótulos como 'Entidad financiera para transferencias', 'Banco donde tiene la cuenta' -> banco

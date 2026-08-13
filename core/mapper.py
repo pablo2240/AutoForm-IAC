@@ -686,11 +686,15 @@ def _validar_hard_gates_mapeo(
                 print(f"[AutoForm AI Hard-Gate] Cédula / C.C. recuperada automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
-    # Regla 4: Expedición de Cédula
+    # Regla 4: Expedición de Cédula (Lugar / Ciudad — Excluir fechas)
     if "expedicion" not in campos_mapeados and datos_empresa.get("expedicion"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
+            # Omitir si el rótulo solicita la FECHA de expedición
+            if re.search(r"fecha|dia|d[ií]a|mes|a[ñn]o|dd|mm|aaaa|yy", val_str):
+                continue
             if re.search(r"expedida\s+en|lugar\s+de\s+expedici[oó]n|ciudad\s+de\s+expedici[oó]n|\bexpedici[oó]n\b", val_str):
+
                 mapeo_resultado.append({
                     "hoja": elem.get("hoja", ""),
                     "fila": int(elem.get("fila", 1)),
@@ -736,7 +740,19 @@ def _validar_hard_gates_mapeo(
                 print(f"[AutoForm AI Hard-Gate] Representante Legal recuperado automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
-    return mapeo_resultado
+    # Filtro de Seguridad Final para Expedición:
+    # No permitir la inyección del lugar de expedición en rótulos que soliciten la FECHA de expedición
+    mapeo_limpio = []
+    for item in mapeo_resultado:
+        if item.get("campo") == "expedicion":
+            val_rotulo = str(item.get("valor", "")).strip().lower()
+            if re.search(r"fecha|dia|d[ií]a|mes|a[ñn]o|dd|mm|aaaa|yy", val_rotulo):
+                print(f"[AutoForm AI Mapper Safety] Omitida asignación de 'expedicion' (lugar/ciudad 'Envigado') al rótulo de fecha: '{item.get('valor')}'")
+                continue
+        mapeo_limpio.append(item)
+
+    return mapeo_limpio
+
 
 
 
