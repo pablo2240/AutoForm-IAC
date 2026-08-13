@@ -185,6 +185,8 @@ def _consultar_gemini_studio(
                 if json_mode:
                     config_kwargs["response_mime_type"] = "application/json"
                 config_kwargs["max_output_tokens"] = 30000
+                config_kwargs["temperature"] = 0.0
+
 
                 config = types.GenerateContentConfig(**config_kwargs) if config_kwargs else None
 
@@ -221,8 +223,10 @@ def _consultar_gemini_studio(
                 }
             ],
             "generationConfig": {
-                "maxOutputTokens": 30000
+                "maxOutputTokens": 30000,
+                "temperature": 0.0
             }
+
         }
         if sistema:
             cuerpo["systemInstruction"] = {
