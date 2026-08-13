@@ -757,17 +757,17 @@ if uploaded_file is not None:
                 help="El modo híbrido usa el motor local ultra-rápido para PDFs estándar y conmuta automáticamente a IA Visual si el PDF es escaneado o complejo."
             )
 
+        # HITO 3: Hash MD5 del binario del archivo — clave determinista de sesión (calculado fuera del botón)
+        uploaded_file.seek(0)
+        _archivo_bytes_md5 = uploaded_file.read()
+        import hashlib as _hl
+        file_md5 = _hl.md5(_archivo_bytes_md5).hexdigest()
+        current_file_id = f"md5:{file_md5}_{modo_pdf}" if file_type == "pdf" else f"md5:{file_md5}"
+
         if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
             if file_type in ["xlsx", "xls", "pdf"]:
                 if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY") and not os.getenv("OPENAI_API_KEY"):
                     st.error("Configura GEMINI_API_KEY, OPENAI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
-
-                # HITO 3: Hash MD5 del binario del archivo — clave determinista de sesión
-                uploaded_file.seek(0)
-                _archivo_bytes_md5 = uploaded_file.read()
-                import hashlib as _hl
-                file_md5 = _hl.md5(_archivo_bytes_md5).hexdigest()
-                current_file_id = f"md5:{file_md5}_{modo_pdf}" if file_type == "pdf" else f"md5:{file_md5}"
 
                 progress_placeholder = st.empty()
                 progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
@@ -858,141 +858,142 @@ if uploaded_file is not None:
                     with st.expander("Ver detalles técnicos del error"):
                         st.text(traceback.format_exc())
 
-                # Renderizado persistente desde st.session_state (No se resetea al hacer click)
-                if st.session_state.get("processed_file_id") == current_file_id and "resultado_bytes" in st.session_state:
-                    bytes_relleno = st.session_state["resultado_bytes"]
-                    df_resultado = st.session_state["resultado_df"]
-                    file_name_out = st.session_state["resultado_file_name"]
-                    file_ext_out = st.session_state["resultado_extension"]
-                    mime_type_out = st.session_state["resultado_mime"]
-                    debug_info_out = st.session_state.get("resultado_debug")
+        # Renderizado persistente desde st.session_state (Fuera de st.button, no se resetea al hacer click en descargar)
+        if st.session_state.get("processed_file_id") == current_file_id and "resultado_bytes" in st.session_state:
+            bytes_relleno = st.session_state["resultado_bytes"]
+            df_resultado = st.session_state["resultado_df"]
+            file_name_out = st.session_state["resultado_file_name"]
+            file_ext_out = st.session_state["resultado_extension"]
+            mime_type_out = st.session_state["resultado_mime"]
+            debug_info_out = st.session_state.get("resultado_debug")
 
-                    if debug_info_out:
-                        with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
-                            c1, c2, c3, c4 = st.columns(4)
-                            with c1:
-                                st.markdown(render_kpi_card(str(debug_info_out["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
-                            with c2:
-                                st.markdown(render_kpi_card(str(debug_info_out["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
-                            faltantes_list = debug_info_out.get("campos_faltantes_detectados", [])
-                            with c3:
-                                st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
-                            with c4:
-                                st.markdown(render_kpi_card(str(debug_info_out["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
+            if debug_info_out:
+                with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
+                    c1, c2, c3, c4 = st.columns(4)
+                    with c1:
+                        st.markdown(render_kpi_card(str(debug_info_out["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
+                    with c2:
+                        st.markdown(render_kpi_card(str(debug_info_out["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
+                    faltantes_list = debug_info_out.get("campos_faltantes_detectados", [])
+                    with c3:
+                        st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
+                    with c4:
+                        st.markdown(render_kpi_card(str(debug_info_out["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
 
-                            if faltantes_list:
-                                st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
+                    if faltantes_list:
+                        st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
 
-                            tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
-                            with tab_payload:
-                                try:
-                                    payload_dict = json.loads(debug_info_out["prompt_payload"])
-                                    st.json(payload_dict)
-                                except Exception:
-                                    st.code(debug_info_out["prompt_payload"], language="json")
-                            with tab_response:
-                                try:
-                                    respuesta_dict = json.loads(debug_info_out["respuesta_llm"])
-                                    st.json(respuesta_dict)
-                                except Exception:
-                                    st.code(debug_info_out["respuesta_llm"], language="json")
+                    tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
+                    with tab_payload:
+                        try:
+                            payload_dict = json.loads(debug_info_out["prompt_payload"])
+                            st.json(payload_dict)
+                        except Exception:
+                            st.code(debug_info_out["prompt_payload"], language="json")
+                    with tab_response:
+                        try:
+                            respuesta_dict = json.loads(debug_info_out["respuesta_llm"])
+                            st.json(respuesta_dict)
+                        except Exception:
+                            st.code(debug_info_out["respuesta_llm"], language="json")
 
-                    if debug_info_out and debug_info_out.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
-                        score_fuzzy = debug_info_out.get("score_similaridad", 95.0)
-                        st.markdown(f"""
-                            <div class="iac-alert iac-alert-cache">
-                                <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
-                                <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
-                            </div>
-                        """, unsafe_allow_html=True)
+            if debug_info_out and debug_info_out.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
+                score_fuzzy = debug_info_out.get("score_similaridad", 95.0)
+                st.markdown(f"""
+                    <div class="iac-alert iac-alert-cache">
+                        <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
+                        <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
+                    </div>
+                """, unsafe_allow_html=True)
 
-                    st.markdown("""
-                        <div class="iac-alert iac-alert-warning">
-                            <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
-                            <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
-                        </div>
-                    """, unsafe_allow_html=True)
+            st.markdown("""
+                <div class="iac-alert iac-alert-warning">
+                    <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
+                    <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
+                </div>
+            """, unsafe_allow_html=True)
 
-                    st.download_button(
-                        f"📥 Descargar Formulario Rellenado (.{file_ext_out})",
-                        data=bytes_relleno,
-                        file_name=f"{os.path.splitext(file_name_out)[0]}_diligenciado.{file_ext_out}",
-                        mime=mime_type_out,
+            st.download_button(
+                f"📥 Descargar Formulario Rellenado (.{file_ext_out})",
+                data=bytes_relleno,
+                file_name=f"{os.path.splitext(file_name_out)[0]}_diligenciado.{file_ext_out}",
+                mime=mime_type_out,
+            )
+
+            # Panel de Auditoría y Verificación Completa
+            if debug_info_out and "verificacion_auditoria" in debug_info_out:
+                audit_rep = debug_info_out["verificacion_auditoria"]
+                cobertura_pct = audit_rep.get("porcentaje_cobertura", 100.0)
+                total_map = audit_rep.get("total_mapeados", len(df_resultado))
+                omitidos = audit_rep.get("campos_omitidos", [])
+
+                st.markdown("### 🔍 Reporte de Auditoría y Verificación de Integridad")
+                col_m1, col_m2, col_m3 = st.columns(3)
+                with col_m1:
+                    st.metric("Campos Inyectados", f"{total_map} celdas")
+                with col_m2:
+                    st.metric("Cobertura de DatosEmpresa", f"{cobertura_pct}%")
+                with col_m3:
+                    st.metric("Estado de Verificación", "✅ VERIFICADO OK" if not omitidos else "⚠️ REVISIÓN FOCALIZADA")
+
+                if omitidos:
+                    with st.expander(f"⚠️ Detalle de campos omitidos por la plantilla ({len(omitidos)})"):
+                        st.write("Los siguientes campos de tu perfil de empresa no fueron solicitados en esta plantilla:", omitidos)
+
+            reporte_inyeccion = st.session_state.get("resultado_reporte_inyeccion", [])
+
+            st.markdown("### 📍 Coordenadas e Información Inyectada")
+
+            # Panel de reporte de inyección (nuevo)
+            if reporte_inyeccion:
+                df_reporte = pd.DataFrame(reporte_inyeccion)
+                df_reporte = df_reporte.astype(str).fillna("")
+                ok   = df_reporte[df_reporte["estado"] == "OK"]
+                skip = df_reporte[df_reporte["estado"] == "SKIP"]
+                null = df_reporte[df_reporte["estado"] == "NULL"]
+                err  = df_reporte[df_reporte["estado"] == "ERROR"]
+
+                preserved = df_reporte[df_reporte["estado"] == "PRESERVED"]
+                c1, c2, c3, c4, c5 = st.columns(5)
+                with c1:
+                    st.markdown(render_kpi_card(str(len(ok)),        "Escritos OK",        "#10B981", "OK"), unsafe_allow_html=True)
+                with c2:
+                    st.markdown(render_kpi_card(str(len(preserved)), "Preservados",        "#6366F1", "OK"), unsafe_allow_html=True)
+                with c3:
+                    st.markdown(render_kpi_card(str(len(skip)),      "Saltados (ocupados)", "#F8B126", "!"), unsafe_allow_html=True)
+                with c4:
+                    st.markdown(render_kpi_card(str(len(null)),      "Sin valor (NULL)",   "#3B82F6", "?"), unsafe_allow_html=True)
+                with c5:
+                    st.markdown(render_kpi_card(str(len(err)),       "Errores",            "#EF4444", "X"), unsafe_allow_html=True)
+
+                with st.expander("Ver reporte completo de inyeccion por campo", expanded=len(err) > 0 or len(skip) > 2):
+                    no_ok = df_reporte[~df_reporte["estado"].isin(["OK", "PRESERVED"])]
+                    if not no_ok.empty:
+                        st.warning(f"⚠️ {len(no_ok)} campos no se escribieron correctamente:")
+                        st.dataframe(
+                            no_ok[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
+                            width="stretch",
+                            height=min(300, len(no_ok) * 40 + 40),
+                        )
+                    else:
+                        st.success("✅ Todos los campos fueron escritos sin problemas.")
+
+                    st.markdown("**Todos los campos:**")
+                    st.dataframe(
+                        df_reporte[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
+                        width="stretch",
+                        height=min(400, len(df_reporte) * 40 + 40),
                     )
 
-                    # Panel de Auditoría y Verificación Completa
-                    if debug_info_out and "verificacion_auditoria" in debug_info_out:
-                        audit_rep = debug_info_out["verificacion_auditoria"]
-                        cobertura_pct = audit_rep.get("porcentaje_cobertura", 100.0)
-                        total_map = audit_rep.get("total_mapeados", len(df_resultado))
-                        omitidos = audit_rep.get("campos_omitidos", [])
+            if AgGrid is not None:
+                tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
+                with tab_aggrid:
+                    render_aggrid_coincidencias(df_resultado)
+                with tab_html:
+                    st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
+            else:
+                st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
 
-                        st.markdown("### 🔍 Reporte de Auditoría y Verificación de Integridad")
-                        col_m1, col_m2, col_m3 = st.columns(3)
-                        with col_m1:
-                            st.metric("Campos Inyectados", f"{total_map} celdas")
-                        with col_m2:
-                            st.metric("Cobertura de DatosEmpresa", f"{cobertura_pct}%")
-                        with col_m3:
-                            st.metric("Estado de Verificación", "✅ VERIFICADO OK" if not omitidos else "⚠️ REVISIÓN FOCALIZADA")
-
-                        if omitidos:
-                            with st.expander(f"⚠️ Detalle de campos omitidos por la plantilla ({len(omitidos)})"):
-                                st.write("Los siguientes campos de tu perfil de empresa no fueron solicitados en esta plantilla:", omitidos)
-
-                    reporte_inyeccion = st.session_state.get("resultado_reporte_inyeccion", [])
-
-                    st.markdown("### 📍 Coordenadas e Información Inyectada")
-
-                    # Panel de reporte de inyección (nuevo)
-                    if reporte_inyeccion:
-                        df_reporte = pd.DataFrame(reporte_inyeccion)
-                        df_reporte = df_reporte.astype(str).fillna("")
-                        ok   = df_reporte[df_reporte["estado"] == "OK"]
-                        skip = df_reporte[df_reporte["estado"] == "SKIP"]
-                        null = df_reporte[df_reporte["estado"] == "NULL"]
-                        err  = df_reporte[df_reporte["estado"] == "ERROR"]
-
-                        preserved = df_reporte[df_reporte["estado"] == "PRESERVED"]
-                        c1, c2, c3, c4, c5 = st.columns(5)
-                        with c1:
-                            st.markdown(render_kpi_card(str(len(ok)),        "Escritos OK",        "#10B981", "OK"), unsafe_allow_html=True)
-                        with c2:
-                            st.markdown(render_kpi_card(str(len(preserved)), "Preservados",        "#6366F1", "OK"), unsafe_allow_html=True)
-                        with c3:
-                            st.markdown(render_kpi_card(str(len(skip)),      "Saltados (ocupados)", "#F8B126", "!"), unsafe_allow_html=True)
-                        with c4:
-                            st.markdown(render_kpi_card(str(len(null)),      "Sin valor (NULL)",   "#3B82F6", "?"), unsafe_allow_html=True)
-                        with c5:
-                            st.markdown(render_kpi_card(str(len(err)),       "Errores",            "#EF4444", "X"), unsafe_allow_html=True)
-
-                        with st.expander("Ver reporte completo de inyeccion por campo", expanded=len(err) > 0 or len(skip) > 2):
-                            no_ok = df_reporte[~df_reporte["estado"].isin(["OK", "PRESERVED"])]
-                            if not no_ok.empty:
-                                st.warning(f"⚠️ {len(no_ok)} campos no se escribieron correctamente:")
-                                st.dataframe(
-                                    no_ok[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
-                                    width="stretch",
-                                    height=min(300, len(no_ok) * 40 + 40),
-                                )
-                            else:
-                                st.success("✅ Todos los campos fueron escritos sin problemas.")
-
-                            st.markdown("**Todos los campos:**")
-                            st.dataframe(
-                                df_reporte[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
-                                width="stretch",
-                                height=min(400, len(df_reporte) * 40 + 40),
-                            )
-
-                    if AgGrid is not None:
-                        tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
-                        with tab_aggrid:
-                            render_aggrid_coincidencias(df_resultado)
-                        with tab_html:
-                            st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
-                    else:
-                        st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
 else:
     st.markdown("""
         <div class="iac-card" style="text-align: center; padding: 2.5rem 1.5rem; margin-top: 1rem;">
