@@ -58,71 +58,6 @@
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 13,
-        "columna": 18,
-        "inicioLineaCol": 22,
-        "finLineaCol": 25,
-        "valor": "CIUDAD:",
-        "ubicacion": "derecha",
-        "campo": "ciudad",
-        "requiereMerge": true,
-        "celdasAMergear": 4,
-        "anchoLinea": 4
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 13,
-        "columna": 26,
-        "inicioLineaCol": 31,
-        "finLineaCol": 37,
-        "valor": "DEPARTAMENTO",
-        "ubicacion": "derecha",
-        "campo": "departamento",
-        "requiereMerge": true,
-        "celdasAMergear": 7,
-        "anchoLinea": 7
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 15,
-        "columna": 2,
-        "inicioLineaCol": 10,
-        "finLineaCol": 17,
-        "valor": "TELEFONOS:",
-        "ubicacion": "derecha",
-        "campo": "telefono",
-        "requiereMerge": true,
-        "celdasAMergear": 8,
-        "anchoLinea": 8
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 15,
-        "columna": 18,
-        "inicioLineaCol": 23,
-        "finLineaCol": 28,
-        "valor": "PAGINA WEB:",
-        "ubicacion": "derecha",
-        "campo": "pagina_web",
-        "requiereMerge": true,
-        "celdasAMergear": 6,
-        "anchoLinea": 6
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
-        "fila": 15,
-        "columna": 30,
-        "inicioLineaCol": 32,
-        "finLineaCol": 37,
-        "valor": "PAIS",
-        "ubicacion": "derecha",
-        "campo": "pais",
-        "requiereMerge": true,
-        "celdasAMergear": 6,
-        "anchoLinea": 6
-      },
-      {
-        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
         "fila": 17,
         "columna": 2,
         "inicioLineaCol": 10,
@@ -159,6 +94,45 @@
         "requiereMerge": false,
         "celdasAMergear": 1,
         "anchoLinea": 1
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 13,
+        "columna": 18,
+        "inicioLineaCol": 22,
+        "finLineaCol": 25,
+        "valor": "CIUDAD:",
+        "ubicacion": "derecha",
+        "campo": "ciudad",
+        "requiereMerge": true,
+        "celdasAMergear": 4,
+        "anchoLinea": 4
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 13,
+        "columna": 26,
+        "inicioLineaCol": 31,
+        "finLineaCol": 37,
+        "valor": "DEPARTAMENTO",
+        "ubicacion": "derecha",
+        "campo": "departamento",
+        "requiereMerge": true,
+        "celdasAMergear": 7,
+        "anchoLinea": 7
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 15,
+        "columna": 30,
+        "inicioLineaCol": 32,
+        "finLineaCol": 37,
+        "valor": "PAIS",
+        "ubicacion": "derecha",
+        "campo": "pais",
+        "requiereMerge": true,
+        "celdasAMergear": 6,
+        "anchoLinea": 6
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
@@ -214,6 +188,19 @@
       },
       {
         "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 29,
+        "columna": 2,
+        "inicioLineaCol": 13,
+        "finLineaCol": 13,
+        "valor": "IDENTIFICACION",
+        "ubicacion": "derecha",
+        "campo": "cedula",
+        "requiereMerge": true,
+        "celdasAMergear": 14,
+        "anchoLinea": 1
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
         "fila": 98,
         "columna": 2,
         "inicioLineaCol": 3,
@@ -250,6 +237,32 @@
         "requiereMerge": true,
         "celdasAMergear": 5,
         "anchoLinea": 5
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 15,
+        "columna": 2,
+        "inicioLineaCol": 10,
+        "finLineaCol": 17,
+        "valor": "TELEFONOS:",
+        "ubicacion": "derecha",
+        "campo": "telefono",
+        "requiereMerge": true,
+        "celdasAMergear": 8,
+        "anchoLinea": 8
+      },
+      {
+        "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+        "fila": 15,
+        "columna": 18,
+        "inicioLineaCol": 23,
+        "finLineaCol": 28,
+        "valor": "PAGINA WEB:",
+        "ubicacion": "derecha",
+        "campo": "pagina_web",
+        "requiereMerge": true,
+        "celdasAMergear": 6,
+        "anchoLinea": 6
       }
     ]
   }

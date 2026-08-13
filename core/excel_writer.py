@@ -31,7 +31,34 @@ def _celda_en_merge(hoja: Worksheet, fila: int, columna: int) -> Optional[Any]:
     return None
 
 
+def _calcular_max_columna_real(ws: Worksheet) -> int:
+    """Calcula el índice máximo de columna que posee contenido o bordes reales en el formulario,
+    evitando que openpyxl reporte un ws.max_column inflado por columnas vacías con estilos a la derecha.
+    """
+    max_c = 1
+    max_filas = min(ws.max_row or 1, 150)
+    max_cols_eval = min(ws.max_column or 1, 80)
+
+    for r in range(1, max_filas + 1):
+        for c in range(1, max_cols_eval + 1):
+            celda = ws.cell(row=r, column=c)
+            if celda.value is not None and str(celda.value).strip():
+                if c > max_c:
+                    max_c = c
+            elif celda.border:
+                b = celda.border
+                if ((b.left and b.left.style and b.left.style != "none") or
+                    (b.right and b.right.style and b.right.style != "none") or
+                    (b.top and b.top.style and b.top.style != "none") or
+                    (b.bottom and b.bottom.style and b.bottom.style != "none")):
+                    if c > max_c:
+                        max_c = c
+
+    return max(max_c, min(ws.max_column or 1, 38))
+
+
 def _buscar_campo_anidado(obj: Any, campo: str) -> Any:
+
     if isinstance(obj, dict):
         if campo in obj:
             return obj[campo]
@@ -268,11 +295,14 @@ def rellenar_formulario_excel(
             columna_destino = columna_origen
 
         elif ubicacion == "derecha":
-            max_col_sheet = ws.max_column or 0
+            max_col_real = _calcular_max_columna_real(ws)
             max_col_origen = rango_origen.max_col if rango_origen is not None else columna_origen
 
-            # Si el rótulo llega al extremo derecho del formulario (sin espacio a la derecha), escribir ABAJO
-            if max_col_origen >= max_col_sheet - 1:
+            # Si el rótulo llega al extremo derecho del formulario o es un merge ancho (>=15 columnas), escribir ABAJO
+            es_borde_derecho = (max_col_origen >= max_col_real - 1)
+            es_merge_ancho = (rango_origen is not None and (rango_origen.max_col - rango_origen.min_col + 1) >= 15)
+
+            if es_borde_derecho or es_merge_ancho:
                 ubicacion = "abajo"
                 if rango_origen is not None:
                     fila_destino = rango_origen.max_row + 1
@@ -286,6 +316,7 @@ def rellenar_formulario_excel(
                     columna_destino = rango_origen.max_col + 1
                 else:
                     columna_destino = columna_origen + 1
+
 
 
         elif ubicacion == "abajo":

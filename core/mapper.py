@@ -65,10 +65,49 @@ _PATRON_DOCUMENTOS_ANEXAR = re.compile(
 )
 
 
+def _es_titulo_seccion(texto: str) -> bool:
+    """Determina si un rótulo es un título decorativo de sección y no un campo de entrada."""
+    t_clean = texto.strip()
+    if not t_clean:
+        return False
+
+    # Rótulos que terminan en dos puntos son indicaciones directas de entrada
+    if t_clean.endswith(":"):
+        return False
+
+    # 1. Empieza con número o número romano + punto/paréntesis + texto (ej. "3. DATOS DEL REPRESENTANTE LEGAL")
+    if re.search(r"^\s*\d+[\.\)]\s*[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-]{4,}$", t_clean):
+        return True
+    if re.search(r"^\s*(?:I|II|III|IV|V|VI|VII|VIII|IX|X)+\.?\s+[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-]{4,}$", t_clean):
+        return True
+
+    # 2. Enunciados en mayúsculas sostenidas que son títulos típicos de bloque
+    titulos_tipicos = [
+        r"^\s*REPRESENTANTE\s+LEGAL\s*$",
+        r"^\s*DATOS\s+DE\s+LA\s+EMPRESA\s*$",
+        r"^\s*DATOS\s+DEL\s+REPRESENTANTE\s+(?:LEGAL)?\s*$",
+        r"^\s*DATOS\s+GENERALES\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+GENERAL\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+B[AÁ]SICA\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+FINANCIERA\s*$",
+        r"^\s*REFERENCIAS\s+BANCARIAS\s*$",
+        r"^\s*DATOS\s+TRIBUTARIOS\s*$",
+    ]
+    for pat in titulos_tipicos:
+        if re.match(pat, t_clean):
+            return True
+
+    # 3. Frases en mayúsculas de tipo "DATOS..."
+    if re.match(r"^\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N)\s+(?:GENERALES|B[AÁ]SICOS|DE|DEL|DE\s+LA)\s+[A-ZÁÉÍÓÚÑ\s]{4,}$", t_clean):
+        return True
+
+    return False
+
+
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N).
 
-    Filtra automáticamente enunciados que correspondan a listas de requisitos o anexos a presentar.
+    Filtra automáticamente enunciados que correspondan a listas de requisitos o títulos decorativos.
     """
     purgado = []
     for idx, entrada in enumerate(mapa):
@@ -78,6 +117,11 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
             continue
         if re.search(r"^\s*\d+[\.\)]\s*(?:copia\s+de|fotocopia\s+de|adjuntar|anexo|certificado|certificaci[oó]n)", txt_rotulo, re.IGNORECASE):
+            continue
+
+        # Omitir títulos decorativos de sección (ej. "3. DATOS DEL REPRESENTANTE LEGAL")
+        if _es_titulo_seccion(txt_rotulo):
+            print(f"[AutoForm AI Mapper Filter] Omitido título decorativo de sección: '{txt_rotulo}'")
             continue
 
         purgado.append({
@@ -90,6 +134,7 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
             "anchoLinea": entrada.get("anchoLinea", 1),
         })
     return purgado
+
 
 
 
