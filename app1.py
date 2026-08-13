@@ -393,8 +393,9 @@ st.markdown("""
             <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
         </div>
         <div class="iac-badge">
-            <span>●</span> MOTOR GEMINI 2.0 FLASH ACTIVE
+            <span>●</span> MOTOR OPENAI GPT-4o ACTIVE
         </div>
+
     </div>
 """, unsafe_allow_html=True)
 
@@ -752,7 +753,8 @@ if uploaded_file is not None:
                 [
                     "Autodetectar (Híbrido - Recomendado)",
                     "Heurístico Local (Ray-Casting Bidireccional)",
-                    "IA Visual (Gemini / GPT Vision)"
+                    "IA Visual (OpenAI GPT-4o Vision)"
+
                 ],
                 help="El modo híbrido usa el motor local ultra-rápido para PDFs estándar y conmuta automáticamente a IA Visual si el PDF es escaneado o complejo."
             )
@@ -766,8 +768,9 @@ if uploaded_file is not None:
 
         if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
             if file_type in ["xlsx", "xls", "pdf"]:
-                if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY") and not os.getenv("OPENAI_API_KEY"):
-                    st.error("Configura GEMINI_API_KEY, OPENAI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
+                if not os.getenv("OPENAI_API_KEY"):
+                    st.error("Configura OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
+
 
                 progress_placeholder = st.empty()
                 progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
