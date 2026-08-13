@@ -209,15 +209,22 @@ def rellenar_formulario_excel(
     bytes_excel: bytes,
     plan_mapeo: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
+    celdas_prellenadas: Optional[Dict] = None,
 ) -> Tuple[bytes, List[Dict[str, Any]]]:
     """Escribe el plan de mapeo en el Excel conservando estilos originales.
 
+    Soporta Reprocesamiento Incremental mediante el parámetro `celdas_prellenadas`:
+    Si se provee, las coordenadas que ya contienen el valor correcto se marcan como
+    PRESERVED sin tocar el archivo, garantizando que ningún dato ya diligenciado
+    se pierda o sobreescriba incorrectamente.
+
     Returns:
         Tuple[bytes_excel_modificado, reporte_de_inyeccion]
-        El reporte contiene una entrada por ítem con estado OK/SKIP/NULL/ERROR.
+        El reporte contiene una entrada por ítem con estado OK/SKIP/NULL/ERROR/PRESERVED.
     """
     workbook = load_workbook(filename=BytesIO(bytes_excel), data_only=False)
     reporte: List[Dict[str, Any]] = []
+    _celdas_pre = celdas_prellenadas or {}
 
     for item in plan_mapeo:
         hoja_nombre = str(item.get("hoja", ""))
@@ -272,6 +279,16 @@ def rellenar_formulario_excel(
                 f"Coordenada fuera de rango (max_fila={max_fila}, max_col={max_col})"
             ))
             continue
+
+        # ── REPROCESAMIENTO INCREMENTAL: Verificar si la celda ya tiene el valor correcto ──
+        valor_esperado = str(_obtener_valor_datos(datos_empresa, str(item.get("campo", ""))) or "").strip()
+        clave_celda = (hoja_nombre, fila_destino, columna_destino)
+        if _celdas_pre and clave_celda in _celdas_pre:
+            val_existente = str(_celdas_pre[clave_celda]).strip()
+            if val_existente and val_existente == valor_esperado:
+                reporte.append(_log_item("PRESERVED", item, valor_esperado, fila_destino, columna_destino,
+                                         "Valor ya diligenciado correctamente en ejecución anterior"))
+                continue
 
         # ── WRITER-03: Determinar cantidad de columnas a combinar ─────────
         requiere_merge  = bool(item.get("requiereMerge", False))
@@ -394,13 +411,15 @@ def rellenar_formulario_excel(
 
 
     # Resumen final en consola
-    ok_count   = sum(1 for r in reporte if r["estado"] == "OK")
-    skip_count = sum(1 for r in reporte if r["estado"] == "SKIP")
-    null_count = sum(1 for r in reporte if r["estado"] == "NULL")
-    err_count  = sum(1 for r in reporte if r["estado"] == "ERROR")
+    ok_count        = sum(1 for r in reporte if r["estado"] == "OK")
+    skip_count      = sum(1 for r in reporte if r["estado"] == "SKIP")
+    null_count      = sum(1 for r in reporte if r["estado"] == "NULL")
+    err_count       = sum(1 for r in reporte if r["estado"] == "ERROR")
+    preserved_count = sum(1 for r in reporte if r["estado"] == "PRESERVED")
     summary_msg = (
-        f"\n[AutoForm Writer] 📊 Resumen: "
-        f"✅ OK={ok_count}  ⏭️ SKIP={skip_count}  🔕 NULL={null_count}  ❌ ERROR={err_count}\n"
+        f"\n[AutoForm Writer] Resumen: "
+        f"OK={ok_count}  SKIP={skip_count}  PRESERVED={preserved_count}  NULL={null_count}  ERROR={err_count}\n"
+
     )
     try:
         print(summary_msg)

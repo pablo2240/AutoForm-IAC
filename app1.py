@@ -758,7 +758,13 @@ if uploaded_file is not None:
             if file_type in ["xlsx", "xls", "pdf"]:
                 if not os.getenv("GEMINI_API_KEY") and not os.getenv("OPENROUTER_API_KEY") and not os.getenv("OPENAI_API_KEY"):
                     st.error("Configura GEMINI_API_KEY, OPENAI_API_KEY u OPENROUTER_API_KEY en tu archivo .env")
-                current_file_id = f"{uploaded_file.name}_{uploaded_file.size}_{modo_pdf}" if file_type == "pdf" else f"{uploaded_file.name}_{uploaded_file.size}"
+
+                # HITO 3: Hash MD5 del binario del archivo — clave determinista de sesión
+                uploaded_file.seek(0)
+                _archivo_bytes_md5 = uploaded_file.read()
+                import hashlib as _hl
+                file_md5 = _hl.md5(_archivo_bytes_md5).hexdigest()
+                current_file_id = f"md5:{file_md5}_{modo_pdf}" if file_type == "pdf" else f"md5:{file_md5}"
 
                 progress_placeholder = st.empty()
                 progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
@@ -814,8 +820,13 @@ if uploaded_file is not None:
                             file_extension = "pdf"
                             mime_type = "application/pdf"
                         else:
+                            # HITO 2: Escanear celdas pre-diligenciadas para reprocesamiento incremental
+                            from core.excel_parser import escanear_celdas_prellenadas as _escanear_prellenadas
+                            from io import BytesIO as _BytesIO
+                            _wb_previo = excel_parser.cargar_libro(_BytesIO(archivo_bytes))
+                            _celdas_pre = _escanear_prellenadas(_wb_previo)
                             bytes_relleno, reporte_inyeccion = excel_writer.rellenar_formulario_excel(
-                                archivo_bytes, resultados, datos_empresa
+                                archivo_bytes, resultados, datos_empresa, celdas_prellenadas=_celdas_pre
                             )
                             file_extension = "xlsx"
                             mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -939,18 +950,21 @@ if uploaded_file is not None:
                         null = df_reporte[df_reporte["estado"] == "NULL"]
                         err  = df_reporte[df_reporte["estado"] == "ERROR"]
 
-                        c1, c2, c3, c4 = st.columns(4)
+                        preserved = df_reporte[df_reporte["estado"] == "PRESERVED"]
+                        c1, c2, c3, c4, c5 = st.columns(5)
                         with c1:
-                            st.markdown(render_kpi_card(str(len(ok)),   "Campos escritos",   "#10B981", "✅"), unsafe_allow_html=True)
+                            st.markdown(render_kpi_card(str(len(ok)),        "Escritos OK",        "#10B981", "OK"), unsafe_allow_html=True)
                         with c2:
-                            st.markdown(render_kpi_card(str(len(skip)), "Saltados (ocupados)", "#F8B126", "⏭️"), unsafe_allow_html=True)
+                            st.markdown(render_kpi_card(str(len(preserved)), "Preservados",        "#6366F1", "OK"), unsafe_allow_html=True)
                         with c3:
-                            st.markdown(render_kpi_card(str(len(null)), "Sin valor (NULL)",  "#3B82F6", "🔕"), unsafe_allow_html=True)
+                            st.markdown(render_kpi_card(str(len(skip)),      "Saltados (ocupados)", "#F8B126", "!"), unsafe_allow_html=True)
                         with c4:
-                            st.markdown(render_kpi_card(str(len(err)),  "Errores",           "#EF4444", "❌"), unsafe_allow_html=True)
+                            st.markdown(render_kpi_card(str(len(null)),      "Sin valor (NULL)",   "#3B82F6", "?"), unsafe_allow_html=True)
+                        with c5:
+                            st.markdown(render_kpi_card(str(len(err)),       "Errores",            "#EF4444", "X"), unsafe_allow_html=True)
 
-                        with st.expander("📋 Ver reporte completo de inyección por campo", expanded=len(err) > 0 or len(skip) > 2):
-                            no_ok = df_reporte[df_reporte["estado"] != "OK"]
+                        with st.expander("Ver reporte completo de inyeccion por campo", expanded=len(err) > 0 or len(skip) > 2):
+                            no_ok = df_reporte[~df_reporte["estado"].isin(["OK", "PRESERVED"])]
                             if not no_ok.empty:
                                 st.warning(f"⚠️ {len(no_ok)} campos no se escribieron correctamente:")
                                 st.dataframe(

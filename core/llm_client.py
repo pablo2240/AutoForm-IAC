@@ -103,9 +103,7 @@ Recibes un objeto JSON con dos componentes principales:
 
 ### ETAPA 2: ASIGNACIÓN DE CAMPOS DECLARATIVOS, INLINE Y CABECERAS DE TABLA
 - Si el rótulo contiene marcadores inline como `____` o `...` dentro de un texto declarativo (ej: 'Yo, _____ identificado con documento _____ expedido en _____'):
-  * Asigna en orden secuencial: representante_legal -> cedula -> expedicion.
-- Si el rótulo forma parte de una cabecera de tabla (ej. 'BANCO', 'SUCURSAL', 'NÚMERO DE CUENTA', 'TIPO DE CUENTA', 'ENTIDAD') donde los datos se escriben en la celda de la fila inferior:
-  * DEBES especificar obligatoriamente `ubicacion: "abajo"`.
+  * Asigna en orden secuencial: representante_legal → cedula → expedicion.
 
 ### ETAPA 3: DISTINCIÓN ENTRE DATOS MAESTROS Y TERCEROS/FIRMAS/DOCUMENTOS A ANEXAR
 - DILIGENCIAR: Únicamente información referente a la empresa o su representante legal principal contenidos en 'D'.
@@ -128,24 +126,27 @@ Recibes un objeto JSON con dos componentes principales:
 
 Ejemplo 1 (Datos Básicos del Proponente):
 Rótulo: {"id": 1, "rotulo": "1. DATOS GENERALES DE LA SOCIEDAD SOLICITANTE / RAZÓN SOCIAL:", "seccion": "INFORMACIÓN DE VINCULACIÓN"}
-Asignación: {"id": 1, "campo": "razon_social", "ubicacion": "derecha"}
+Asignación: {"id": 1, "campo": "razon_social"}
 
 Ejemplo 2 (Texto Declarativo Inline con Guiones):
 Rótulo: {"id": 5, "rotulo": "Yo, _____ identificado con C.C. No. _____ expedida en _____", "seccion": "DECLARACIÓN JURAMENTADA"}
-Asignación: {"id": 5, "campo": "representante_legal", "ubicacion": "misma"}
+Asignación: {"id": 5, "campo": "representante_legal"}
 
 Ejemplo 3 (Identificación Tributaria):
 Rótulo: {"id": 8, "rotulo": "NIT / CÉDULA DE CIUDADANÍA NO.:", "seccion": "DATOS TRIBUTARIOS"}
-Asignación: {"id": 8, "campo": "nit", "ubicacion": "derecha"}
+Asignación: {"id": 8, "campo": "nit"}
 
-## FORMATO DE SALIDA (ESTRICTO JSON)
+## FORMATO DE SALIDA (ESTRICTO JSON — SIN UBICACION)
+Tu única tarea es emparejar rótulos con claves del perfil de empresa.
+La ubicación física de escritura la calcula el sistema Python automáticamente.
 Responde ÚNICAMENTE con un objeto JSON válido con la clave "mappings":
 {
   "mappings": [
-    {"id": 1, "campo": "razon_social", "ubicacion": "derecha"},
-    {"id": 2, "campo": "nit", "ubicacion": "derecha"}
+    {"id": 1, "campo": "razon_social"},
+    {"id": 2, "campo": "nit"}
   ]
 }"""
+
 
 
 

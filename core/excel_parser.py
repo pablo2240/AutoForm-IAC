@@ -181,7 +181,107 @@ def _calcular_rango_linea_captura(
     return (c_inicio_real, c_fin_real, max(1, ancho))
 
 
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PARSER-HYBRID-01: Cálculo determinista de ubicación de escritura (sin LLM)
+# ──────────────────────────────────────────────────────────────────────────────
+
+import re as _re
+
+_PATRON_INLINE_GUIONES = _re.compile(r"_{2,}|\.{3,}")
+
+
+def _calcular_ubicacion_fisica(
+    val_rotulo: str,
+    derecha_vacia: bool,
+    abajo_vacia: bool,
+    derecha_es_merge: bool,
+    tipo_espacio: str,
+) -> str:
+    """Calcula la ubicación de escritura usando únicamente flags espaciales de Python.
+
+    Este es el MURO DE CONTENCIÓN de la Arquitectura Híbrida: el LLM NO toma
+    esta decisión. Python la calcula de forma determinista con los flags del
+    escaneo físico de la hoja de cálculo.
+
+    Reglas (en orden de prioridad):
+      1. Texto declarativo inline (____): escribir en la MISMA celda (reemplazar guiones).
+      2. Derecha libre (vacia o merge disponible) y tipo no forzado a "abajo": DERECHA.
+      3. Derecha ocupada pero abajo libre (cabecera de tabla): ABAJO.
+      4. Fallback: DERECHA (caso seguro por defecto).
+
+    Args:
+        val_rotulo: Texto del rótulo escaneado del formulario.
+        derecha_vacia: True si la celda a la derecha está vacía.
+        abajo_vacia: True si la celda de abajo está vacía.
+        derecha_es_merge: True si la celda de la derecha es un merge disponible.
+        tipo_espacio: Tipo de espacio calculado por el parser ("subrayado", "cuadro", "vacio", etc.).
+
+    Returns:
+        str: "misma" | "derecha" | "abajo"
+    """
+    # Regla 1: Texto declarativo con guiones inline → escribir MISMA celda
+    if _PATRON_INLINE_GUIONES.search(val_rotulo):
+        return "misma"
+
+    # Regla 2: Hay espacio libre a la derecha → escribir a la DERECHA
+    espacio_derecha_libre = derecha_vacia or derecha_es_merge
+    if espacio_derecha_libre and tipo_espacio != "abajo":
+        return "derecha"
+
+    # Regla 3: Derecha bloqueada pero abajo libre → cabecera de tabla → ABAJO
+    if not espacio_derecha_libre and abajo_vacia:
+        return "abajo"
+
+    # Regla 4: Fallback seguro → DERECHA
+    return "derecha"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# PARSER-HYBRID-02: Escaneo de celdas pre-diligenciadas para reprocesamiento incremental
+# ──────────────────────────────────────────────────────────────────────────────
+
+def escanear_celdas_prellenadas(workbook: Any) -> Dict[Tuple[str, int, int], str]:
+    """Escanea un workbook cargado y retorna todas las celdas que ya tienen datos escritos.
+
+    Este scanner es la base del Reprocesamiento Incremental: al re-subir un formulario
+    parcialmente diligenciado, preserva el 100% de los datos existentes y solo intenta
+    completar los campos vacíos restantes.
+
+    Args:
+        workbook: Objeto Workbook de openpyxl ya cargado.
+
+    Returns:
+        Dict {(nombre_hoja, fila, columna): valor_str} con todas las celdas no vacías.
+        Solo incluye celdas que contienen texto real (excluye fórmulas puras y valores None).
+    """
+    celdas_prellenadas: Dict[Tuple[str, int, int], str] = {}
+
+    for nombre_hoja in workbook.sheetnames:
+        ws = workbook[nombre_hoja]
+        max_f = ws.max_row or 0
+        max_c = ws.max_column or 0
+
+        for fila in range(1, max_f + 1):
+            for col in range(1, max_c + 1):
+                celda = ws.cell(row=fila, column=col)
+                val = celda.value
+
+                # Ignorar celdas vacías o con solo espacios/caracteres invisibles
+                if val is None:
+                    continue
+
+                txt = str(val).replace("\xa0", " ").replace("\t", " ").strip()
+                if not txt or txt.startswith("="):
+                    continue
+
+                celdas_prellenadas[(nombre_hoja, fila, col)] = txt
+
+    return celdas_prellenadas
+
+
 import re
+
 
 _PATRON_OPCION_CASILLA = re.compile(
     r"^\s*(S[ÍI]|NO|C\.?C\.?|C\.?E\.?|PASAPORTE|NIT|OTRO|AUTORRETENEDOR|GRAN CONTRIBUYENTE|MEDIANA|PEQUEÑA|GRAN EMPRESA|IMPORTADOR|EXPORTADOR|FABRICANTE|DISTRIBUIDOR)\b",

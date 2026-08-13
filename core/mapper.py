@@ -23,6 +23,8 @@ from typing import Any, Dict, List, Optional, Tuple   # ← FIX: Tuple estaba au
 
 from core import semantic_cache
 from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
+from core.excel_parser import _calcular_ubicacion_fisica
+
 
 
 # ---------------------------------------------------------------------------
@@ -620,46 +622,65 @@ def _fusionar_mapeos(
     return resultado
 
 
+def _fusionar_mapeos_incrementales(
+    mapeo_anterior: List[Dict[str, Any]],
+    mapeo_nuevo: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Funde dos mapeos garantizando progreso monotónicamente creciente.
+
+    Algoritmo:
+      - Preserva TODOS los items del mapeo anterior que ya fueron diligenciados (estado OK).
+      - Agrega items nuevos del mapeo_nuevo que no colisionen con coordenadas ya cubiertas.
+      - Nunca elimina un campo ya mapeado correctamente.
+
+    Resultado: el sistema NUNCA pierde campos entre ejecuciones (13→17→18→19→20).
+    """
+    # Índice del mapeo anterior por coordenada destino
+    celdas_cubiertas: Dict[Tuple[str, int, int], Dict[str, Any]] = {}
+    for item in mapeo_anterior:
+        clave = (item.get("hoja", ""), int(item.get("fila", 0)), int(item.get("columna", 0)))
+        celdas_cubiertas[clave] = item
+
+    # Agregar items nuevos solo si su coordenada no está ya cubierta
+    resultado = list(mapeo_anterior)
+    for item in mapeo_nuevo:
+        clave = (item.get("hoja", ""), int(item.get("fila", 0)), int(item.get("columna", 0)))
+        if clave not in celdas_cubiertas:
+            resultado.append(item)
+            celdas_cubiertas[clave] = item
+
+    return resultado
+
 def _reconstruir_mapeo_fisico(
     coincidencias_semanticas: List[Dict[str, Any]],
     mapa_formularios: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """Transforma respuestas compactas del LLM (id -> campo) en objetos físicos con hoja, fila, columna."""
+    """Transforma respuestas compactas del LLM (id -> campo) en objetos físicos con hoja, fila, columna.
+
+    ARQUITECTURA HÍBRIDA: La ubicación de escritura es calculada por Python
+    mediante _calcular_ubicacion_fisica(), NO por el LLM. El LLM solo resuelve
+    el emparejamiento semántico (id_rotulo -> clave_empresa).
+    """
     dict_mapa = {idx + 1: elem for idx, elem in enumerate(mapa_formularios)}
     resultado = []
 
     for match in coincidencias_semanticas:
         item_id = match.get("id")
         campo = match.get("campo")
-        ubicacion_llm = str(match.get("ubicacion", "")).lower()
 
         if item_id in dict_mapa and campo and campo in datos_empresa:
             elem = dict_mapa[item_id]
             val_str = str(elem.get("valor", "")).strip()
 
-            tipo_sugerido = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-
-            derecha_disponible = bool(elem.get("derechaVacia", True) or elem.get("derechaEsMerge", False))
-            abajo_disponible = bool(elem.get("abajoVacia", False))
-
-            if re.search(r"_{2,}|\.{3,}", val_str):
-                ubicacion_calc = "misma"
-            elif derecha_disponible and tipo_sugerido != "abajo":
-                # Si hay espacio libre o merge a la derecha (Sección 1), escribir a la DERECHA
-                ubicacion_calc = "derecha"
-            elif not derecha_disponible and abajo_disponible:
-                # Si a la derecha hay otra etiqueta y abajo está libre (Cabecera de Tabla Sección 3), escribir ABAJO
-                ubicacion_calc = "abajo"
-            elif ubicacion_llm in ("derecha", "abajo", "misma"):
-                ubicacion_calc = ubicacion_llm
-            elif tipo_sugerido in ("derecha", "abajo", "misma"):
-                ubicacion_calc = tipo_sugerido
-            else:
-                ubicacion_calc = "derecha"
-
-
-
+            # ── MURO DE CONTENCIÓN: Python calcula la ubicación (no el LLM) ──
+            ubicacion_calc = _calcular_ubicacion_fisica(
+                val_rotulo=val_str,
+                derecha_vacia=bool(elem.get("derechaVacia", True)),
+                abajo_vacia=bool(elem.get("abajoVacia", False)),
+                derecha_es_merge=bool(elem.get("derechaEsMerge", False)),
+                tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+            )
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             resultado.append({
