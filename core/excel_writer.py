@@ -52,14 +52,30 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
         nit_val = str(datos_empresa["nit"])
         return nit_val.split("-")[-1] if "-" in nit_val else ""
 
+    if campo == "representante_nombres":
+        val = datos_empresa.get("representante_nombres")
+        if val and str(val).strip():
+            return val
+        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        if rep_full:
+            partes = rep_full.split()
+            return " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
+
+    if campo == "representante_apellidos":
+        val = datos_empresa.get("representante_apellidos")
+        if val and str(val).strip():
+            return val
+        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        if rep_full:
+            partes = rep_full.split()
+            return " ".join(partes[-2:]) if len(partes) >= 2 else ""
+
     if campo in datos_empresa:
         return datos_empresa[campo]
 
     if campo == "identificacion" and "identificacion" not in datos_empresa:
         return datos_empresa.get("cedula")
 
-    if campo in ("representante_nombres", "representante_apellidos") and campo not in datos_empresa:
-        return datos_empresa.get("representante_legal")
 
 
 

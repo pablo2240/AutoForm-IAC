@@ -62,14 +62,22 @@ def cargar_perfil(ruta: Path) -> Dict[str, Any]:
             print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
             datos = _obtener_plantilla_vacia()
 
-    # Generación dinámica de representante_legal concatenado si no existe explícitamente
-    if not datos.get("representante_legal"):
-        nombres = str(datos.get("representante_nombres", "")).strip()
-        apellidos = str(datos.get("representante_apellidos", "")).strip()
-        if nombres or apellidos:
-            datos["representante_legal"] = f"{nombres} {apellidos}".strip()
+    # Generación dinámica bidireccional de nombres, apellidos y representante_legal
+    rep_full = str(datos.get("representante_legal", "")).strip()
+    rep_nom = str(datos.get("representante_nombres", "")).strip()
+    rep_ape = str(datos.get("representante_apellidos", "")).strip()
+
+    if not rep_full and (rep_nom or rep_ape):
+        datos["representante_legal"] = f"{rep_nom} {rep_ape}".strip()
+    elif rep_full:
+        partes = rep_full.split()
+        if not rep_nom:
+            datos["representante_nombres"] = " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
+        if not rep_ape:
+            datos["representante_apellidos"] = " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
     return datos
+
 
 
 
