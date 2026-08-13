@@ -58,6 +58,10 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if campo == "identificacion" and "identificacion" not in datos_empresa:
         return datos_empresa.get("cedula")
 
+    if campo in ("representante_nombres", "representante_apellidos") and campo not in datos_empresa:
+        return datos_empresa.get("representante_legal")
+
+
 
     # Acceso por ruta anidada "seccion.subcampo"
     valor = datos_empresa
@@ -248,13 +252,25 @@ def rellenar_formulario_excel(
             columna_destino = columna_origen
 
         elif ubicacion == "derecha":
-            fila_destino = fila_origen
-            if rango_origen is not None:
-                # Si el rótulo está en un merge, escribir en la celda inmediatamente
-                # a la derecha del extremo derecho del merge (primer espacio libre).
-                columna_destino = rango_origen.max_col + 1
+            max_col_sheet = ws.max_column or 0
+            max_col_origen = rango_origen.max_col if rango_origen is not None else columna_origen
+
+            # Si el rótulo llega al extremo derecho del formulario (sin espacio a la derecha), escribir ABAJO
+            if max_col_origen >= max_col_sheet - 1:
+                ubicacion = "abajo"
+                if rango_origen is not None:
+                    fila_destino = rango_origen.max_row + 1
+                    columna_destino = rango_origen.min_col
+                else:
+                    fila_destino = fila_origen + 1
+                    columna_destino = columna_origen
             else:
-                columna_destino = columna_origen + 1
+                fila_destino = fila_origen
+                if rango_origen is not None:
+                    columna_destino = rango_origen.max_col + 1
+                else:
+                    columna_destino = columna_origen + 1
+
 
         elif ubicacion == "abajo":
             if rango_origen is not None:

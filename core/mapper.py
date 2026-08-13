@@ -490,7 +490,14 @@ def _evaluar_cobertura_campos(
     """Devuelve los campos de DatosEmpresa que el LLM no asignó a ninguna celda."""
     esperados = set(datos_empresa_filtrados.keys())
     asignados = {item["campo"] for item in mapeos_realizados if item.get("campo")}
+
+    # Si representante_legal fue asignado, considerar cubiertos representante_nombres y representante_apellidos
+    if "representante_legal" in asignados:
+        asignados.add("representante_nombres")
+        asignados.add("representante_apellidos")
+
     return sorted(list(esperados - asignados))
+
 
 
 def _construir_prompt_focalizado(
@@ -582,12 +589,30 @@ def _validar_hard_gates_mapeo(
                 print(f"[AutoForm AI Hard-Gate] Razón Social recuperada automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
+    # Regla 2: NIT
+    if "nit" not in campos_mapeados and datos_empresa.get("nit"):
+        for elem in mapa_formularios:
+            val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"\bnit\b|n\.i\.t|identificaci[oó]n\s+tributaria|r\.u\.t", val_str):
+                mapeo_resultado.append({
+                    "hoja": elem.get("hoja", ""),
+                    "fila": int(elem.get("fila", 1)),
+                    "columna": int(elem.get("columna", 1)),
+                    "valor": elem.get("valor", ""),
+                    "ubicacion": "derecha",
+                    "campo": "nit",
+                    "requiereMerge": False,
+                    "celdasAMergear": 1,
+                    "anchoLinea": 1,
+                })
+                print(f"[AutoForm AI Hard-Gate] NIT recuperado automáticamente para el rótulo '{elem.get('valor')}'")
+                break
+
     # Regla 3: Cédula / C.C.
     if "cedula" not in campos_mapeados and datos_empresa.get("cedula"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
             if re.search(r"\bc\.?c\.?\b|c[eé]dula|doc(?:umento)?\s+(?:de\s+)?identida[dn]|no\.\s*c\.?c\.?|identificaci[oó]n\s+(?:del\s+)?representante|no\.\s*(?:de\s+)?identificaci[oó]n|\bidentificaci[oó]n\b", val_str):
-
                 mapeo_resultado.append({
                     "hoja": elem.get("hoja", ""),
                     "fila": int(elem.get("fila", 1)),
@@ -633,7 +658,33 @@ def _validar_hard_gates_mapeo(
                 print(f"[AutoForm AI Hard-Gate] Expedición de Cédula recuperada automáticamente para el rótulo '{elem.get('valor')}'")
                 break
 
+    # Regla 5: Representante Legal
+    if "representante_legal" not in campos_mapeados and datos_empresa.get("representante_legal"):
+        for elem in mapa_formularios:
+            val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"representante\s+legal|nombre\s+(?:del\s+)?representante|apoderado|gerente\s+general", val_str):
+                mapeo_resultado.append({
+                    "hoja": elem.get("hoja", ""),
+                    "fila": int(elem.get("fila", 1)),
+                    "columna": int(elem.get("columna", 1)),
+                    "valor": elem.get("valor", ""),
+                    "ubicacion": _calcular_ubicacion_fisica(
+                        val_rotulo=elem.get("valor", ""),
+                        derecha_vacia=bool(elem.get("derechaVacia", True)),
+                        abajo_vacia=bool(elem.get("abajoVacia", False)),
+                        derecha_es_merge=bool(elem.get("derechaEsMerge", False)),
+                        tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+                    ),
+                    "campo": "representante_legal",
+                    "requiereMerge": False,
+                    "celdasAMergear": 1,
+                    "anchoLinea": 1,
+                })
+                print(f"[AutoForm AI Hard-Gate] Representante Legal recuperado automáticamente para el rótulo '{elem.get('valor')}'")
+                break
+
     return mapeo_resultado
+
 
 
 
