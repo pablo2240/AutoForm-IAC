@@ -586,7 +586,8 @@ def _validar_hard_gates_mapeo(
     if "cedula" not in campos_mapeados and datos_empresa.get("cedula"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
-            if re.search(r"\bc\.?c\.?\b|c[eé]dula|doc(?:umento)?\s+(?:de\s+)?identida[dn]|no\.\s*c\.?c\.?|identificaci[oó]n\s+(?:del\s+)?representante", val_str):
+            if re.search(r"\bc\.?c\.?\b|c[eé]dula|doc(?:umento)?\s+(?:de\s+)?identida[dn]|no\.\s*c\.?c\.?|identificaci[oó]n\s+(?:del\s+)?representante|no\.\s*(?:de\s+)?identificaci[oó]n|\bidentificaci[oó]n\b", val_str):
+
                 mapeo_resultado.append({
                     "hoja": elem.get("hoja", ""),
                     "fila": int(elem.get("fila", 1)),

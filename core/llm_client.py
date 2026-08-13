@@ -92,7 +92,8 @@ Recibes un objeto JSON con dos componentes principales:
 - Si el rótulo o la sección hace referencia al proponente, solicitante, oferente, sociedad o empresa contratista:
   * Rótulos como '1. DATOS DEL PROPONENTE', 'Nombre de la persona jurídica o empresa que presenta la propuesta', 'Identificación del oferente', 'Datos de la firma proveedora', 'Información de la entidad' -> razon_social
   * Rótulos como 'Número de NIT', 'Identificación tributaria', 'Registro tributario', 'RUT', 'NIT No.' -> nit
-  * Rótulos como 'C.C.', 'C.C. No.', 'No. C.C.', 'Cédula', 'Cédula de ciudadanía', 'Documento de Identidad', 'No. de Documento', 'CC/CE/PAS', 'Identificación del representante' -> cedula
+  * Rótulos como 'C.C.', 'C.C. No.', 'No. C.C.', 'Cédula', 'Cédula de ciudadanía', 'Documento de Identidad', 'No. de Documento', 'CC/CE/PAS', 'Identificación del representante', 'Identificación', 'No. de Identificación', 'Identificación No.', 'Documento de Identificación' -> cedula
+
   * Rótulos como 'Nombre del representante legal', 'Nombre completo del representante', 'Apoderado autorizado' -> representante_legal
   * Rótulos que pidan específicamente Nombres del representante (ej. 'Primer Nombre', 'Nombres del Representante') -> representante_nombres
   * Rótulos que pidan específicamente Apellidos del representante (ej. 'Apellidos del Representante', 'Primer Apellido') -> representante_apellidos

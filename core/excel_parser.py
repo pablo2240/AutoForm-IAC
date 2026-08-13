@@ -484,8 +484,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 abajo_columna = columna
 
                 # 3. Estado de vecinos: vacío / combinado (consultas O(1))
-                derecha_vacia   = _celda_vacia(hoja, derecha_fila, derecha_columna)
+                max_hoja_col = hoja.max_column or 1
+                derecha_vacia   = _celda_vacia(hoja, derecha_fila, derecha_columna) if derecha_columna <= max_hoja_col else False
                 abajo_vacia     = _celda_vacia(hoja, abajo_fila, abajo_columna)
+
                 rango_derecha   = mapa_merges.get((derecha_fila, derecha_columna))
                 rango_abajo     = mapa_merges.get((abajo_fila, abajo_columna))
                 derecha_es_merge = rango_derecha is not None

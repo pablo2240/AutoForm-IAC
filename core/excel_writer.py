@@ -55,6 +55,10 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if campo in datos_empresa:
         return datos_empresa[campo]
 
+    if campo == "identificacion" and "identificacion" not in datos_empresa:
+        return datos_empresa.get("cedula")
+
+
     # Acceso por ruta anidada "seccion.subcampo"
     valor = datos_empresa
     for parte in campo.split("."):
@@ -353,8 +357,8 @@ def rellenar_formulario_excel(
 
         escrito = _escribir_valor_en_celda(celda_destino, valor, es_misma, hoja=ws)
 
-        # ── FALLBACK AUTOMÁTICO A ABAJO SI DERECHA ESTÁ BLOQUEADA POR OTRO RÓTULO ──
-        if not escrito and ubicacion == "derecha":
+        # ── FALLBACK AUTOMÁTICO A ABAJO SI DERECHA ESTÁ BLOQUEADA O FUERA DE LÍMITE ──
+        if (not escrito or columna_destino >= max_col) and ubicacion == "derecha":
             if rango_origen is not None:
                 fb_fila = rango_origen.max_row + 1
                 fb_col  = rango_origen.min_col
@@ -369,7 +373,8 @@ def rellenar_formulario_excel(
                     columna_destino = fb_col
                     celda_destino = celda_fb
                     escrito = True
-                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada por rótulo vecino.")
+                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada o en el límite del formulario.")
+
 
 
         # ── WRITER-01/02/04: Preservar estilos ───────────────────────────
