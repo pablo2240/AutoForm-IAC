@@ -75,33 +75,41 @@ def _es_titulo_seccion(texto: str) -> bool:
     if t_clean.endswith(":"):
         return False
 
-    # 1. Empieza con número o número romano + punto/paréntesis + texto (ej. "3. DATOS DEL REPRESENTANTE LEGAL")
-    if re.search(r"^\s*\d+[\.\)]\s*[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-]{4,}$", t_clean):
-        return True
-    if re.search(r"^\s*(?:I|II|III|IV|V|VI|VII|VIII|IX|X)+\.?\s+[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-]{4,}$", t_clean):
+    # 1. Empieza con número o número romano + punto/paréntesis + texto de título (ej. "3. REPRESENTANTE LEGAL (aplica para personas jurídicas)")
+    if re.search(r"^\s*\d+[\.\)]\s*(?:REPRESENTANTE|DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO)", t_clean, re.IGNORECASE):
         return True
 
-    # 2. Enunciados en mayúsculas sostenidas que son títulos típicos de bloque
+    if re.search(r"^\s*\d+[\.\)]\s*[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-\(\)\w]{4,}$", t_clean):
+        if not re.search(r"_{2,}|\.{3,}|\[\s*\]|\(\s*\)", t_clean):
+            return True
+
+    if re.search(r"^\s*(?:I|II|III|IV|V|VI|VII|VIII|IX|X)+\.?\s+", t_clean, re.IGNORECASE):
+        if not re.search(r"_{2,}|\.{3,}|\[\s*\]|\(\s*\)", t_clean):
+            return True
+
+    # 2. Enunciados en mayúsculas sostenidas que son títulos típicos de bloque (incluso con texto explicativo entre paréntesis)
     titulos_tipicos = [
-        r"^\s*REPRESENTANTE\s+LEGAL\s*$",
-        r"^\s*DATOS\s+DE\s+LA\s+EMPRESA\s*$",
-        r"^\s*DATOS\s+DEL\s+REPRESENTANTE\s+(?:LEGAL)?\s*$",
-        r"^\s*DATOS\s+GENERALES\s*$",
-        r"^\s*INFORMACI[OÓ]N\s+GENERAL\s*$",
-        r"^\s*INFORMACI[OÓ]N\s+B[AÁ]SICA\s*$",
-        r"^\s*INFORMACI[OÓ]N\s+FINANCIERA\s*$",
-        r"^\s*REFERENCIAS\s+BANCARIAS\s*$",
-        r"^\s*DATOS\s+TRIBUTARIOS\s*$",
+        r"^\s*REPRESENTANTE\s+(?:LEGAL|JUR[IÍ]DICO)(?:\s*\(.*?\))?\s*$",
+        r"^\s*DATOS\s+DE\s+LA\s+EMPRESA(?:\s*\(.*?\))?\s*$",
+        r"^\s*DATOS\s+DEL\s+REPRESENTANTE\s+(?:LEGAL|JUR[IÍ]DICO)?(?:\s*\(.*?\))?\s*$",
+        r"^\s*DATOS\s+GENERALES(?:\s*\(.*?\))?\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+GENERAL(?:\s*\(.*?\))?\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+B[AÁ]SICA(?:\s*\(.*?\))?\s*$",
+        r"^\s*INFORMACI[OÓ]N\s+FINANCIERA(?:\s*\(.*?\))?\s*$",
+        r"^\s*REFERENCIAS\s+BANCARIAS(?:\s*\(.*?\))?\s*$",
+        r"^\s*DATOS\s+TRIBUTARIOS(?:\s*\(.*?\))?\s*$",
     ]
     for pat in titulos_tipicos:
-        if re.match(pat, t_clean):
+        if re.match(pat, t_clean, re.IGNORECASE):
             return True
 
     # 3. Frases en mayúsculas de tipo "DATOS..."
-    if re.match(r"^\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N)\s+(?:GENERALES|B[AÁ]SICOS|DE|DEL|DE\s+LA)\s+[A-ZÁÉÍÓÚÑ\s]{4,}$", t_clean):
-        return True
+    if re.match(r"^\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N)\s+(?:GENERALES|B[AÁ]SICOS|DE|DEL|DE\s+LA)\s+", t_clean, re.IGNORECASE):
+        if not t_clean.endswith(":") and not re.search(r"_{2,}|\.{3,}", t_clean):
+            return True
 
     return False
+
 
 
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
