@@ -453,11 +453,59 @@ def construir_mapa_desde_vision(
                 "_pdf_es_vision": True,
             })
             
-        doc.close()
     except Exception as e:
         print(f"[AutoForm AI] Error al construir mapa desde Visión: {e}")
 
     return mapa_vision
+
+
+def extraer_tipografia_dominante_pdf(pagina: fitz.Page) -> Tuple[str, str]:
+
+    """HITO 4: Extrae la tipografía dominante y la variante (normal/negrita) de una página PDF.
+
+    Analiza los spans de texto de la página y determina el código de fuente nativo de PyMuPDF:
+    - 'helv' / 'hebo' (Helvetica / Sans-Serif)
+    - 'tiro' / 'tibo' (Times-Roman / Serif)
+    - 'cour' / 'cobo' (Courier / Monospace)
+
+    Returns:
+        Tuple[fontname_codigo, nombre_fuente_original]
+    """
+    try:
+        text_page = pagina.get_text("dict")
+        conteo_fuentes: Dict[str, int] = {}
+        es_bold = False
+
+        for block in text_page.get("blocks", []):
+            if block.get("type") == 0:
+                for line in block.get("lines", []):
+                    for span in line.get("spans", []):
+                        fn = str(span.get("font", "")).strip()
+                        txt = str(span.get("text", "")).strip()
+                        if fn and txt:
+                            conteo_fuentes[fn] = conteo_fuentes.get(fn, 0) + len(txt)
+
+        if not conteo_fuentes:
+            return ("helv", "Helvetica")
+
+        fuente_top = max(conteo_fuentes, key=conteo_fuentes.get)
+        fn_lower = fuente_top.lower()
+
+        if any(b in fn_lower for b in ("bold", "black", "heavy", "medium")):
+            es_bold = True
+
+        if any(s in fn_lower for s in ("times", "serif", "cambria", "georgia", "garamond", "roman")):
+            code = "tibo" if es_bold else "tiro"
+        elif any(m in fn_lower for m in ("courier", "mono", "consolas", "code")):
+            code = "cobo" if es_bold else "cour"
+        else:
+            code = "hebo" if es_bold else "helv"
+
+        return (code, fuente_top)
+
+    except Exception as exc:
+        print(f"[AutoForm AI PDF] Error extrayendo tipografía de la página: {exc}")
+        return ("helv", "Helvetica")
 
 
 def rellenar_pdf(
@@ -465,12 +513,13 @@ def rellenar_pdf(
     plan_mapeo: List[Dict[str, Any]], 
     datos_empresa: Dict[str, Any]
 ) -> bytes:
-    """Superpone los datos en el PDF ajustando automáticamente el tamaño y centrado de forma proporcional."""
+    """Superpone los datos en el PDF ajustando automáticamente la tipografía nativa, tamaño y centrado."""
     t0 = time.perf_counter()
     try:
         doc = fitz.open(stream=bytes_pdf, filetype="pdf")
         es_acroform = doc.is_form_pdf
         inyectados = 0
+        fuentes_paginas: Dict[int, str] = {}
 
         for item in plan_mapeo:
             campo = item.get("campo")
@@ -496,6 +545,14 @@ def rellenar_pdf(
                 continue
 
             pagina = doc.load_page(pdf_page_idx)
+
+            # HITO 4: Extraer y aplicar la tipografía nativa detectada para la página
+            if pdf_page_idx not in fuentes_paginas:
+                font_code, font_orig = extraer_tipografia_dominante_pdf(pagina)
+                fuentes_paginas[pdf_page_idx] = font_code
+                print(f"[AutoForm AI PDF Font] Pág {pdf_page_idx + 1}: Tipografía nativa '{font_orig}' → Código '{font_code}'")
+
+            font_nativa_pagina = fuentes_paginas[pdf_page_idx]
 
             # Capa 1: AcroForms Nativo (Widgets Interactivos)
             inyectado_acroform = False
@@ -532,14 +589,14 @@ def rellenar_pdf(
                         rect_cb,
                         val_cb,
                         fontsize=font_cb,
-                        fontname="helv",
+                        fontname=font_nativa_pagina,
                         color=(0.0, 0.2, 0.5),
                         align=fitz.TEXT_ALIGN_CENTER,
                     )
                     inyectados += 1
                     continue
 
-            # Capa 3: Inyección Visual General con Auto-fit y Centrado
+            # Capa 3: Inyección Visual General con Tipografía Nativa
             target_rect_tuple = item.get("_pdf_target_rect")
             es_caja = item.get("_pdf_es_caja", False)
 
@@ -580,7 +637,7 @@ def rellenar_pdf(
                     rect_ajustado,
                     valor_a_escribir,
                     fontsize=size,
-                    fontname="helv",
+                    fontname=font_nativa_pagina,
                     color=(0.05, 0.12, 0.20),
                     align=align_mode
                 )
@@ -589,7 +646,6 @@ def rellenar_pdf(
                     break
                 size -= 0.5
 
-
             if rc < 0:
                 # Truncado de seguridad acotado si excede físicamente el rectángulo
                 rect_expandido = fitz.Rect(rect_original.x0, rect_original.y0, rect_original.x1, rect_original.y1 + 10)
@@ -597,13 +653,14 @@ def rellenar_pdf(
                     rect_expandido,
                     valor_a_escribir[:45],
                     fontsize=font_min,
-                    fontname="helv",
+                    fontname=font_nativa_pagina,
                     color=(0.07, 0.16, 0.23),
                     align=fitz.TEXT_ALIGN_LEFT
                 )
                 inyectados += 1
 
         output_pdf_stream = io.BytesIO()
+
         doc.save(output_pdf_stream)
         doc.close()
 
