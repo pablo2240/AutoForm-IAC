@@ -393,8 +393,9 @@ st.markdown("""
             <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
         </div>
         <div class="iac-badge">
-            <span>●</span> MOTOR OPENAI GPT-4o ACTIVE
+            <span>●</span> MOTOR OPENAI GPT-4.1-MINI ACTIVE
         </div>
+
 
     </div>
 """, unsafe_allow_html=True)
@@ -753,7 +754,8 @@ if uploaded_file is not None:
                 [
                     "Autodetectar (Híbrido - Recomendado)",
                     "Heurístico Local (Ray-Casting Bidireccional)",
-                    "IA Visual (OpenAI GPT-4o Vision)"
+                    "IA Visual (OpenAI GPT-4.1-mini Vision)"
+
 
                 ],
                 help="El modo híbrido usa el motor local ultra-rápido para PDFs estándar y conmuta automáticamente a IA Visual si el PDF es escaneado o complejo."

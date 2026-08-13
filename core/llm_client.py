@@ -54,7 +54,8 @@ else:
 
 # OpenAI Configuration (Motor Principal)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
 
 
 STRICT_SYSTEM_PROMPT = """## ROL Y PERSONA
@@ -147,7 +148,8 @@ def _consultar_openai(
         raise RuntimeError("OPENAI_API_KEY no configurada en .env")
 
     # Modelos candidatos para OpenAI
-    modelos_openai = [OPENAI_MODEL, "gpt-4o-mini", "gpt-4o"]
+    modelos_openai = [OPENAI_MODEL, "gpt-4.1-mini", "gpt-4o-mini", "gpt-4o"]
+
     modelos_unicos = [m for idx, m in enumerate(modelos_openai) if m and m not in modelos_openai[:idx]]
 
     ultimo_exc_openai: Exception = RuntimeError("Fallaron todos los intentos con OpenAI API.")
@@ -349,12 +351,13 @@ def invocar_llm_vision(
             "Content-Type": "application/json",
         }
         body = {
-            "model": "gpt-4o",
+            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4.1-mini",
             "messages": [{"role": "user", "content": content_parts}],
             "response_format": {"type": "json_object"},
             "temperature": 0.0,
             "seed": 42,
         }
+
         res_http = requests.post("https://api.openai.com/v1/chat/completions", json=body, headers=headers, timeout=timeout)
         res_http.raise_for_status()
         text_out = res_http.json()["choices"][0]["message"]["content"]
