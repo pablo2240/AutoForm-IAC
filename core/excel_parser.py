@@ -200,23 +200,8 @@ def _calcular_ubicacion_fisica(
 ) -> str:
     """Calcula la ubicación de escritura usando únicamente flags espaciales de Python.
 
-    Este es el MURO DE CONTENCIÓN de la Arquitectura Híbrida: el LLM NO toma
-    esta decisión. Python la calcula de forma determinista con los flags del
-    escaneo físico de la hoja de cálculo.
-
-    Reglas (en orden de prioridad):
+    Jerarquía de clasificación determinista:
       1. Texto declarativo inline (____): escribir en la MISMA celda (reemplazar guiones).
-      2. Derecha libre (vacia o merge disponible) y tipo no forzado a "abajo": DERECHA.
-      3. Derecha ocupada pero abajo libre (cabecera de tabla): ABAJO.
-      4. Fallback: DERECHA (caso seguro por defecto).
-
-    Args:
-        val_rotulo: Texto del rótulo escaneado del formulario.
-        derecha_vacia: True si la celda a la derecha está vacía.
-        abajo_vacia: True si la celda de abajo está vacía.
-        derecha_es_merge: True si la celda de la derecha es un merge disponible.
-        tipo_espacio: Tipo de espacio calculado por el parser ("subrayado", "cuadro", "vacio", etc.).
-
     Returns:
         str: "misma" | "derecha" | "abajo"
     """
