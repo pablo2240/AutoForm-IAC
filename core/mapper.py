@@ -28,6 +28,22 @@ from core.excel_parser import _calcular_ubicacion_fisica
 
 
 # ---------------------------------------------------------------------------
+# Claves físicas PDF que el relleno/validación necesitan (página, rect exacto,
+# cajas, widgets). Deben propagarse del mapa original al plan de mapeo final.
+# ---------------------------------------------------------------------------
+_CLAVES_PDF = (
+    "_pdf_page",
+    "_pdf_bbox",
+    "_pdf_target_rect",
+    "_pdf_es_caja",
+    "_pdf_es_casilla",
+    "_pdf_es_acroform",
+    "_pdf_widget_name",
+    "_pdf_es_vision",
+)
+
+
+# ---------------------------------------------------------------------------
 # Claves del parser que necesita la IA para decidir semánticamente la
 # ubicación. Los demás campos son internos y sólo aumentan tokens.
 # ---------------------------------------------------------------------------
@@ -836,7 +852,7 @@ def _reconstruir_mapeo_fisico(
             )
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
-            resultado.append({
+            item_plan = {
                 "hoja": elem.get("hoja", ""),
                 "fila": int(elem.get("fila", 1)),
                 "columna": int(elem.get("columna", 1)),
@@ -848,7 +864,13 @@ def _reconstruir_mapeo_fisico(
                 "requiereMerge": bool(ancho_l > 1 and ubicacion_calc == "derecha"),
                 "celdasAMergear": ancho_l,
                 "anchoLinea": ancho_l,
-            })
+            }
+            # FIX: conservar coordenadas físicas PDF del mapa original para que el
+            # relleno use el rect exacto y la validación visual realmente se ejecute.
+            for clave in _CLAVES_PDF:
+                if clave in elem:
+                    item_plan[clave] = elem[clave]
+            resultado.append(item_plan)
     return resultado
 
 

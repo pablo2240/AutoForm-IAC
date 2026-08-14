@@ -816,18 +816,20 @@ if uploaded_file is not None:
                     resultados_limpios = [r for r in resultados if r.get("hoja") and r.get("campo")] if resultados else []
 
                     if resultados_limpios:
-                        resultados = _sanitizar_resultados(resultados_limpios)
+                        # FIX: el sanitizado (sin claves _pdf_*) solo alimenta el DataFrame
+                        # de pantalla; el relleno y la validación reciben los originales.
+                        resultados_sanitizados = _sanitizar_resultados(resultados_limpios)
                         # Construir DataFrame Arrow-safe (forzar todo a str)
-                        df_resultado = pd.DataFrame.from_records(resultados)
+                        df_resultado = pd.DataFrame.from_records(resultados_sanitizados)
                         df_resultado = df_resultado.map(lambda x: str(x) if x is not None else "").astype(str)
 
                         if file_type == "pdf":
-                            bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados, datos_empresa)
+                            bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados_limpios, datos_empresa)
                             # Motor PDF v2: validación visual + auto-corrección de bounding boxes
                             advertencias_visuales = []
-                            if any(r.get("_pdf_page") is not None for r in resultados):
+                            if any(r.get("_pdf_page") is not None for r in resultados_limpios):
                                 bytes_relleno, advertencias_visuales = pdf_vision.validar_relleno_vision(
-                                    archivo_bytes, bytes_relleno, resultados, datos_empresa
+                                    archivo_bytes, bytes_relleno, resultados_limpios, datos_empresa
                                 )
                             reporte_inyeccion = []
                             st.session_state["resultado_advertencias_pdf"] = advertencias_visuales
@@ -840,7 +842,7 @@ if uploaded_file is not None:
                             _wb_previo = excel_parser.cargar_libro(_BytesIO(archivo_bytes))
                             _celdas_pre = _escanear_prellenadas(_wb_previo)
                             bytes_relleno, reporte_inyeccion = excel_writer.rellenar_formulario_excel(
-                                archivo_bytes, resultados, datos_empresa, celdas_prellenadas=_celdas_pre
+                                archivo_bytes, resultados_sanitizados, datos_empresa, celdas_prellenadas=_celdas_pre
                             )
                             file_extension = "xlsx"
                             mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
