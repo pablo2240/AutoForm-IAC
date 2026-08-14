@@ -375,3 +375,59 @@ def invocar_llm_vision(
         print(f"[AutoForm AI Vision Error] Falló visión con OpenAI: {exc}")
 
     return []
+
+
+def consultar_llm_vision(
+    imagenes_png: List[bytes],
+    prompt_usuario: str,
+    clave_resultado: str,
+    timeout: int = 90,
+) -> List[Dict[str, Any]]:
+    """Invocación genérica a OpenAI Vision (Base64) que extrae una lista JSON bajo `clave_resultado`.
+
+    Se usa para tareas de visión distintas a la detección de campos (p. ej. validación
+    visual post-llenado y auto-corrección de bounding boxes).
+    """
+    if not imagenes_png:
+        return []
+
+    if not OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY no configurada en .env para motor de Visión")
+
+    try:
+        content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt_usuario}]
+
+        for img_bytes in imagenes_png[:3]:
+            b64_img = base64.b64encode(img_bytes).decode("utf-8")
+            content_parts.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:image/png;base64,{b64_img}"}
+            })
+
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4.1-mini",
+            "messages": [{"role": "user", "content": content_parts}],
+            "response_format": {"type": "json_object"},
+            "temperature": 0.0,
+            "seed": 42,
+        }
+
+        res_http = requests.post("https://api.openai.com/v1/chat/completions", json=body, headers=headers, timeout=timeout)
+        res_http.raise_for_status()
+        text_out = res_http.json()["choices"][0]["message"]["content"]
+
+        if text_out:
+            res_json = json.loads(text_out)
+            if isinstance(res_json, dict) and clave_resultado in res_json:
+                return res_json[clave_resultado]
+            if isinstance(res_json, list):
+                return res_json
+
+    except Exception as exc:
+        print(f"[AutoForm AI Vision Error] Falló consulta genérica de visión con OpenAI: {exc}")
+
+    return []

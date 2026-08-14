@@ -21,6 +21,7 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
         importlib.reload(sys.modules[modulo])
 
 from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor, llm_client
+from core import pdf_vision
 from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
@@ -783,21 +784,36 @@ if uploaded_file is not None:
                     # Paso 1 & 2: Carga y Estructura
                     usar_vision = False
                     if file_type == "pdf":
-                        progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas bidireccionales del PDF..."), unsafe_allow_html=True)
-                        mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+                        progress_placeholder.markdown(render_stepper_progress(1, 30, "Detectando tipo de PDF (digital/escaneado)..."), unsafe_allow_html=True)
+                        tipo_info = pdf_vision.detectar_tipo_pdf(archivo_bytes)
+                        tipo_pdf = tipo_info.get("tipo", "digital")
 
-                        if modo_pdf.startswith("IA Visual") or (modo_pdf.startswith("Autodetectar") and len(mapa_formularios) < 8):
+                        if tipo_pdf == "escaneado":
                             usar_vision = True
-                            progress_placeholder.markdown(render_stepper_progress(2, 60, "Analizando imagen del PDF con IA Visual (Vision)..."), unsafe_allow_html=True)
-                            imagenes_png = pdf_processor.renderizar_paginas_png(archivo_bytes, max_paginas=3)
-                            elementos_vision = llm_client.invocar_llm_vision(imagenes_png, datos_empresa)
+                            progress_placeholder.markdown(render_stepper_progress(2, 55, "PDF escaneado: OCR + IA Visual (Vision)..."), unsafe_allow_html=True)
+                            mapa_formularios = pdf_vision.construir_mapa_desde_ocr(archivo_bytes)
+                            elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
                             if elementos_vision:
                                 resultados = pdf_processor.construir_mapa_desde_vision(archivo_bytes, elementos_vision)
-                            else:
+                            elif mapa_formularios:
                                 resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+                            else:
+                                resultados = []
                         else:
-                            progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico bidireccional..."), unsafe_allow_html=True)
-                            resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+                            progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas bidireccionales del PDF..."), unsafe_allow_html=True)
+                            mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+
+                            if modo_pdf.startswith("IA Visual") or (modo_pdf.startswith("Autodetectar") and len(mapa_formularios) < 8):
+                                usar_vision = True
+                                progress_placeholder.markdown(render_stepper_progress(2, 60, "Analizando imagen del PDF con IA Visual (Vision)..."), unsafe_allow_html=True)
+                                elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
+                                if elementos_vision:
+                                    resultados = pdf_processor.construir_mapa_desde_vision(archivo_bytes, elementos_vision)
+                                else:
+                                    resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+                            else:
+                                progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico bidireccional..."), unsafe_allow_html=True)
+                                resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
                     else:
                         progress_placeholder.markdown(render_stepper_progress(1, 25, "Leyendo estructura espacial del libro Excel..."), unsafe_allow_html=True)
                         libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
@@ -824,7 +840,14 @@ if uploaded_file is not None:
 
                         if file_type == "pdf":
                             bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados, datos_empresa)
+                            # Motor PDF v2: validación visual + auto-corrección de bounding boxes
+                            advertencias_visuales = []
+                            if any(r.get("_pdf_page") is not None for r in resultados):
+                                bytes_relleno, advertencias_visuales = pdf_vision.validar_relleno_vision(
+                                    archivo_bytes, bytes_relleno, resultados, datos_empresa
+                                )
                             reporte_inyeccion = []
+                            st.session_state["resultado_advertencias_pdf"] = advertencias_visuales
                             file_extension = "pdf"
                             mime_type = "application/pdf"
                         else:
@@ -989,6 +1012,13 @@ if uploaded_file is not None:
                         width="stretch",
                         height=min(400, len(df_reporte) * 40 + 40),
                     )
+
+            advertencias_pdf = st.session_state.get("resultado_advertencias_pdf", [])
+            if advertencias_pdf:
+                with st.expander(f"🔍 Validación Visual PDF (auto-corrección) — {len(advertencias_pdf)} advertencia(s)", expanded=len(advertencias_pdf) > 0):
+                    df_adv = pd.DataFrame(advertencias_pdf).astype(str).fillna("")
+                    st.dataframe(df_adv, width="stretch", height=min(300, len(df_adv) * 40 + 40))
+                    st.caption("Las bounding boxes problemáticas se corrigieron automáticamente con visión LLM.")
 
             if AgGrid is not None:
                 tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])

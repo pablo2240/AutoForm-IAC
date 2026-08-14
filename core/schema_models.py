@@ -86,6 +86,77 @@ class PlanMapeoFormulario(BaseModel):
     )
 
 
+class CampoVision(BaseModel):
+    """Campo detectado por visión LLM con su bounding box normalizado 0-1000."""
+
+    campo: str = Field(description="Clave exacta de DatosEmpresa solicitada por el rótulo")
+    bbox_1000: List[int] = Field(
+        min_length=4, max_length=4,
+        description="Bounding box [ymin, xmin, ymax, xmax] normalizado de 0 a 1000"
+    )
+    pagina: int = Field(default=1, ge=1, description="Número de página del PDF (1-indexed)")
+
+    @field_validator("bbox_1000", mode="before")
+    @classmethod
+    def normalizar_bbox(cls, v: Any) -> List[int]:
+        if isinstance(v, (list, tuple)):
+            return [int(round(float(x))) for x in v]
+        return v
+
+    @field_validator("pagina", mode="before")
+    @classmethod
+    def normalizar_pagina(cls, v: Any) -> int:
+        try:
+            val_int = int(v)
+            return val_int if val_int >= 1 else 1
+        except Exception:
+            return 1
+
+
+class PlanCamposVision(BaseModel):
+    """Lista de campos detectados por visión."""
+
+    campos_vision: List[CampoVision] = Field(default_factory=list)
+
+
+class AdvertenciaValidacion(BaseModel):
+    """Problema detectado por la validación visual de un campo relleno."""
+
+    campo: str = Field(description="Clave de DatosEmpresa con problema")
+    pagina: int = Field(default=1, ge=1, description="Número de página del PDF (1-indexed)")
+    problema: Literal["ok", "overflow", "vacio", "fuera_de_lugar"] = Field(
+        default="ok", description="Tipo de problema detectado en la inyección"
+    )
+    bbox_corregido: Optional[List[int]] = Field(
+        default=None, description="Bounding box corregido [ymin, xmin, ymax, xmax] 0-1000 si aplica"
+    )
+
+    @field_validator("problema", mode="before")
+    @classmethod
+    def normalizar_problema(cls, v: Any) -> str:
+        if not isinstance(v, str):
+            return "ok"
+        v_clean = v.strip().lower()
+        if v_clean in ("ok", "overflow", "vacio", "fuera_de_lugar"):
+            return v_clean
+        return "ok"
+
+    @field_validator("bbox_corregido", mode="before")
+    @classmethod
+    def normalizar_bbox_corregido(cls, v: Any) -> Optional[List[int]]:
+        if v is None:
+            return None
+        if isinstance(v, (list, tuple)):
+            return [int(round(float(x))) for x in v]
+        return None
+
+
+class ResultadoValidacion(BaseModel):
+    """Lista de advertencias de validación visual."""
+
+    advertencias: List[AdvertenciaValidacion] = Field(default_factory=list)
+
+
 def _extraer_json_robusto(texto: str) -> Any:
     """Extrae y parsea JSON de respuestas LLM, incluso si incluyen razonamiento previo (Chain-of-Thought)."""
     texto_limpio = texto.strip()

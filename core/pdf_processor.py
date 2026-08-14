@@ -15,6 +15,7 @@ from __future__ import annotations
 import hashlib
 import io
 import json
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -508,6 +509,62 @@ def extraer_tipografia_dominante_pdf(pagina: fitz.Page) -> Tuple[str, str]:
         return ("helv", "Helvetica")
 
 
+def _raiz_fuente(nombre: str) -> str:
+    """Raíz alfabética de un nombre de fuente.
+
+    'ArialMT' -> 'arial', 'Arial Regular' -> 'arial', 'ABCDEF+Arial-Bold' -> 'arial'.
+    """
+    nombre = str(nombre)
+    if "+" in nombre:
+        nombre = nombre.split("+")[-1]
+    m = re.search(r"[a-z]+", nombre.lower())
+    return m.group(0) if m else ""
+
+
+def _obtener_fuente_nativa(doc: fitz.Document, pagina: fitz.Page) -> Tuple[str, Optional[bytes]]:
+    """Extrae la fuente más usada de la página y devuelve (fontname, fontbuffer TTF/OTF).
+
+    Permite inyectar texto con la tipografía real del documento (incluye ñ y acentos).
+    Retorna (None, None) si no hay fuente embebible (se usa el fallback base-14).
+    """
+    try:
+        conteo: Dict[str, int] = {}
+        for block in pagina.get_text("dict").get("blocks", []):
+            if block.get("type") != 0:
+                continue
+            for line in block.get("lines", []):
+                for span in line.get("spans", []):
+                    fn = str(span.get("font", "")).strip()
+                    txt = str(span.get("text", "")).strip()
+                    if fn and txt:
+                        conteo[fn] = conteo.get(fn, 0) + len(txt)
+
+        if not conteo:
+            return (None, None)
+
+        fuente_top = max(conteo, key=conteo.get)
+        raiz_top = _raiz_fuente(fuente_top)
+
+        for xref, ext, ftype, basefont, name, _encoding, *_rest in pagina.get_fonts(full=True):
+            candidato = basefont or name
+            raiz_cand = _raiz_fuente(candidato)
+            if not (raiz_top and raiz_cand):
+                continue
+            if raiz_top != raiz_cand and raiz_top not in raiz_cand and raiz_cand not in raiz_top:
+                continue
+            try:
+                _basename, fext, _ftype, content = doc.extract_font(xref)
+                if content and fext in ("ttf", "otf", "ttf.0", "ttf.1", "otf.0"):
+                    return (f"afrm{xref}", content)
+            except Exception:
+                continue
+
+        return (None, None)
+    except Exception as e:
+        print(f"[AutoForm AI PDF Font] Error extrayendo fuente nativa: {e}")
+        return (None, None)
+
+
 def rellenar_pdf(
     bytes_pdf: bytes, 
     plan_mapeo: List[Dict[str, Any]], 
@@ -549,8 +606,19 @@ def rellenar_pdf(
             # HITO 4: Extraer y aplicar la tipografía nativa detectada para la página
             if pdf_page_idx not in fuentes_paginas:
                 font_code, font_orig = extraer_tipografia_dominante_pdf(pagina)
-                fuentes_paginas[pdf_page_idx] = font_code
-                print(f"[AutoForm AI PDF Font] Pág {pdf_page_idx + 1}: Tipografía nativa '{font_orig}' → Código '{font_code}'")
+                # Motor PDF v2: preferir la fuente real del documento (TTF/OTF embebido)
+                font_nativa = _obtener_fuente_nativa(doc, pagina)
+                if font_nativa[1]:
+                    try:
+                        pagina.insert_font(fontname=font_nativa[0], fontbuffer=font_nativa[1])
+                        fuentes_paginas[pdf_page_idx] = font_nativa[0]
+                        print(f"[AutoForm AI PDF Font] Pág {pdf_page_idx + 1}: Fuente real embebida")
+                    except Exception as e:
+                        print(f"[AutoForm AI PDF Font] Fallback base-14 en Pág {pdf_page_idx + 1}: {e}")
+                        fuentes_paginas[pdf_page_idx] = font_code
+                else:
+                    fuentes_paginas[pdf_page_idx] = font_code
+                    print(f"[AutoForm AI PDF Font] Pág {pdf_page_idx + 1}: Tipografía nativa '{font_orig}' -> Código '{font_code}'")
 
             font_nativa_pagina = fuentes_paginas[pdf_page_idx]
 
