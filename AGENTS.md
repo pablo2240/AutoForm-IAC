@@ -27,7 +27,8 @@ Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático
 ## Dependencias y entorno
 
 - `requirements.txt` está incompleto para el flujo PDF: **no incluye `pymupdf` ni `pdfplumber`**, que sí importa `pdf_processor.py`. Instálalos si se trabaja en esa ruta.
-- Actualmente **no hay venv** en el repo (`venv/` ni `.venv/`). Si lo hay al momento de trabajar, usa `.\venv\Scripts\python.exe` (Windows).
+- Sí hay venv (`venv/`, en `.gitignore`). Usa `.\venv\Scripts\python.exe` / `.\venv\Scripts\streamlit.exe` (Windows).
+- El venv necesita `pymupdf` y `pdfplumber` instalados a mano (`pip install pymupdf pdfplumber`); `requirements.txt` no los incluye.
 
 ## Comandos
 
