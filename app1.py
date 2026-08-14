@@ -748,26 +748,12 @@ if uploaded_file is not None:
         st.markdown("### ⚡ Ejecutar IA")
         st.write("Extrae rótulos visuales, analiza campos vacíos e inyecta los datos de la empresa respetando estilos.")
 
-        modo_pdf = "Autodetectar (Híbrido)"
-        if file_type == "pdf":
-            modo_pdf = st.selectbox(
-                "🎯 Modo Motor PDF:",
-                [
-                    "Autodetectar (Híbrido - Recomendado)",
-                    "Heurístico Local (Ray-Casting Bidireccional)",
-                    "IA Visual (OpenAI GPT-4.1-mini Vision)"
-
-
-                ],
-                help="El modo híbrido usa el motor local ultra-rápido para PDFs estándar y conmuta automáticamente a IA Visual si el PDF es escaneado o complejo."
-            )
-
         # HITO 3: Hash MD5 del binario del archivo — clave determinista de sesión (calculado fuera del botón)
         uploaded_file.seek(0)
         _archivo_bytes_md5 = uploaded_file.read()
         import hashlib as _hl
         file_md5 = _hl.md5(_archivo_bytes_md5).hexdigest()
-        current_file_id = f"md5:{file_md5}_{modo_pdf}" if file_type == "pdf" else f"md5:{file_md5}"
+        current_file_id = f"md5:{file_md5}"
 
         if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
             if file_type in ["xlsx", "xls", "pdf"]:
@@ -782,14 +768,12 @@ if uploaded_file is not None:
                     archivo_bytes = uploaded_file.read()
 
                     # Paso 1 & 2: Carga y Estructura
-                    usar_vision = False
                     if file_type == "pdf":
                         progress_placeholder.markdown(render_stepper_progress(1, 30, "Detectando tipo de PDF (digital/escaneado)..."), unsafe_allow_html=True)
                         tipo_info = pdf_vision.detectar_tipo_pdf(archivo_bytes)
                         tipo_pdf = tipo_info.get("tipo", "digital")
 
                         if tipo_pdf == "escaneado":
-                            usar_vision = True
                             progress_placeholder.markdown(render_stepper_progress(2, 55, "PDF escaneado: OCR + IA Visual (Vision)..."), unsafe_allow_html=True)
                             mapa_formularios = pdf_vision.construir_mapa_desde_ocr(archivo_bytes)
                             elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
@@ -803,8 +787,7 @@ if uploaded_file is not None:
                             progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas bidireccionales del PDF..."), unsafe_allow_html=True)
                             mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
 
-                            if modo_pdf.startswith("IA Visual") or (modo_pdf.startswith("Autodetectar") and len(mapa_formularios) < 8):
-                                usar_vision = True
+                            if len(mapa_formularios) < 8:
                                 progress_placeholder.markdown(render_stepper_progress(2, 60, "Analizando imagen del PDF con IA Visual (Vision)..."), unsafe_allow_html=True)
                                 elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
                                 if elementos_vision:
