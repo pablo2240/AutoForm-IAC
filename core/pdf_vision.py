@@ -380,6 +380,22 @@ def validar_relleno_vision(
 
     plan_actual = copy.deepcopy(plan_mapeo)
 
+    # FIX: deduplicar por campo antes de cada iteración de validación
+    # (evita re-escribir el mismo campo en múltiples posiciones)
+    def _deduplicar_por_campo_local(items):
+        vistos = set()
+        unicos = []
+        for it in items:
+            campo = it.get("campo")
+            if campo and campo not in vistos:
+                vistos.add(campo)
+                unicos.append(it)
+            elif campo:
+                print(f"[AutoForm AI Validación] Deduplicado campo repetido: {campo}")
+        return unicos
+
+    plan_actual = _deduplicar_por_campo_local(plan_actual)
+
     for _ in range(max_iter):
         por_pagina: Dict[int, List[Dict[str, Any]]] = {}
 
@@ -442,6 +458,9 @@ def validar_relleno_vision(
             for item in plan_actual:
                 if item.get("campo") == adv.get("campo") and int(item.get("_pdf_page", -1)) == pg:
                     item["_pdf_target_rect"] = rect_corregido
+
+        # FIX: deduplicar por campo antes de re-llenar (correcciones pueden duplicar)
+        plan_actual = _deduplicar_por_campo_local(plan_actual)
 
         bytes_actual = pdf_processor.rellenar_pdf(bytes_pdf_original, plan_actual, datos_empresa)
 

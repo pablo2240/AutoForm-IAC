@@ -686,6 +686,24 @@ def _sanitizar_resultados(resultados):
     return sanitizados
 
 
+def _deduplicar_por_campo(resultados):
+    """Conserva el primer item por cada campo único.
+
+    Evita que el mismo dato (ej. nit, razon_social) se escriba en múltiples
+    posiciones del formulario, lo que causaba datos repetidos y fuera de lugar.
+    """
+    vistos = set()
+    resultado = []
+    for item in resultados:
+        campo = item.get("campo")
+        if campo and campo not in vistos:
+            vistos.add(campo)
+            resultado.append(item)
+        elif campo:
+            print(f"[AutoForm AI] Deduplicado campo repetido: {campo}")
+    return resultado
+
+
 # 6. Zona de Carga Principal
 st.markdown("### 📥 Cargar Formulario de Terceros")
 
@@ -814,6 +832,9 @@ if uploaded_file is not None:
                     progress_placeholder.markdown(render_stepper_progress(3, 90, "Inyectando datos y preservando plantilla..."), unsafe_allow_html=True)
 
                     resultados_limpios = [r for r in resultados if r.get("hoja") and r.get("campo")] if resultados else []
+
+                    # FIX: deduplicar por campo (evita escribir el mismo dato en múltiples posiciones)
+                    resultados_limpios = _deduplicar_por_campo(resultados_limpios)
 
                     if resultados_limpios:
                         # FIX: el sanitizado (sin claves _pdf_*) solo alimenta el DataFrame
