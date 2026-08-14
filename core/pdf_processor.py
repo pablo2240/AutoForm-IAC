@@ -17,6 +17,7 @@ import io
 import json
 import re
 import time
+import traceback
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -552,6 +553,11 @@ def _obtener_fuente_nativa(doc: fitz.Document, pagina: fitz.Page) -> Tuple[str, 
                 continue
             if raiz_top != raiz_cand and raiz_top not in raiz_cand and raiz_cand not in raiz_top:
                 continue
+            # FIX: las fuentes Type0/CID (Identity-H) no mapean glifos de texto nuevo al
+            # registrarse via insert_font: "inyectan" pero el texto queda INVISIBLE y no
+            # extraible. Solo se usan fuentes simples con cmap real (TrueType/Type1).
+            if ftype == "Type0":
+                continue
             try:
                 _basename, fext, _ftype, content = doc.extract_font(xref)
                 if content and fext in ("ttf", "otf", "ttf.0", "ttf.1", "otf.0"):
@@ -563,6 +569,32 @@ def _obtener_fuente_nativa(doc: fitz.Document, pagina: fitz.Page) -> Tuple[str, 
     except Exception as e:
         print(f"[AutoForm AI PDF Font] Error extrayendo fuente nativa: {e}")
         return (None, None)
+
+
+def _insertar_con_fallback(
+    pagina: fitz.Page,
+    rect: fitz.Rect,
+    texto: str,
+    fontname: str,
+    size: float,
+    color: Tuple[float, float, float],
+    align: int,
+) -> int:
+    """Inyecta texto con la fuente dada y reintenta con base-14 'helv' ante cualquier fallo.
+
+    Devuelve el rc de insert_textbox (>= 0 = éxito) o -1 si ambas fallan.
+    """
+    try:
+        return pagina.insert_textbox(
+            rect, texto, fontsize=size, fontname=fontname, color=color, align=align
+        )
+    except Exception:
+        try:
+            return pagina.insert_textbox(
+                rect, texto, fontsize=size, fontname="helv", color=color, align=align
+            )
+        except Exception:
+            return -1
 
 
 def rellenar_pdf(
@@ -653,13 +685,14 @@ def rellenar_pdf(
                     # Forzar dibujado de 'X' centrada
                     val_cb = "X" if str(valor_a_escribir).upper() in ("X", "YES", "SI", "SÍ", "TRUE", "1") else valor_a_escribir[:2]
                     font_cb = min(10.0, max(6.0, rect_cb.height * 0.75))
-                    pagina.insert_textbox(
+                    _insertar_con_fallback(
+                        pagina,
                         rect_cb,
                         val_cb,
-                        fontsize=font_cb,
-                        fontname=font_nativa_pagina,
-                        color=(0.0, 0.2, 0.5),
-                        align=fitz.TEXT_ALIGN_CENTER,
+                        font_nativa_pagina,
+                        font_cb,
+                        (0.0, 0.2, 0.5),
+                        fitz.TEXT_ALIGN_CENTER,
                     )
                     inyectados += 1
                     continue
@@ -701,13 +734,14 @@ def rellenar_pdf(
                     rect_original.y1
                 )
 
-                rc = pagina.insert_textbox(
+                rc = _insertar_con_fallback(
+                    pagina,
                     rect_ajustado,
                     valor_a_escribir,
-                    fontsize=size,
-                    fontname=font_nativa_pagina,
-                    color=(0.05, 0.12, 0.20),
-                    align=align_mode
+                    font_nativa_pagina,
+                    size,
+                    (0.05, 0.12, 0.20),
+                    align_mode,
                 )
                 if rc >= 0:
                     inyectados += 1
@@ -717,13 +751,14 @@ def rellenar_pdf(
             if rc < 0:
                 # Truncado de seguridad acotado si excede físicamente el rectángulo
                 rect_expandido = fitz.Rect(rect_original.x0, rect_original.y0, rect_original.x1, rect_original.y1 + 10)
-                pagina.insert_textbox(
+                _insertar_con_fallback(
+                    pagina,
                     rect_expandido,
                     valor_a_escribir[:45],
-                    fontsize=font_min,
-                    fontname=font_nativa_pagina,
-                    color=(0.07, 0.16, 0.23),
-                    align=fitz.TEXT_ALIGN_LEFT
+                    font_nativa_pagina,
+                    font_min,
+                    (0.07, 0.16, 0.23),
+                    fitz.TEXT_ALIGN_LEFT,
                 )
                 inyectados += 1
 
@@ -737,5 +772,6 @@ def rellenar_pdf(
         return output_pdf_stream.getvalue()
 
     except Exception as e:
+        traceback.print_exc()
         print(f"[AutoForm AI] Error al rellenar PDF: {e}")
         return bytes_pdf
