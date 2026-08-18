@@ -568,6 +568,65 @@ def _evaluar_cobertura_campos(
     return sorted(list(esperados - asignados))
 
 
+_INDICIOS_CAMPOS_RECURSIVOS = {
+    "banco": [r"banco", r"entidad\s+financiera", r"corporaci[oó]n"],
+    "numero_cuenta": [r"cuenta", r"cta", r"n[uú]mero\s+de\s+cuenta"],
+    "tipo_cuenta": [r"tipo\s+de\s+cuenta", r"ahorros", r"corriente"],
+    "pagina_web": [r"web", r"sitio", r"url", r"p[aá]gina"],
+    "sucursal": [r"sucursal", r"agencia", r"filial", r"oficina"],
+    "expedicion": [r"expedici[oó]n", r"expedida"],
+    "departamento": [r"dpto", r"departamento"],
+    "pais": [r"pa[ií]s"],
+}
+
+
+def _filtrar_campos_faltantes_candidatos(
+    campos_faltantes: List[str],
+    mapa_formularios: List[Dict[str, Any]],
+    mapeos_realizados: List[Dict[str, Any]],
+) -> List[str]:
+    """HITO 8: Filtra la lista de campos faltantes para incluir únicamente aquellos
+    que posean al menos un indicio o palabra clave en los rótulos libres del formulario.
+
+    Si el formulario no contiene preguntas sobre 'banco' o 'página web', no se fuerza
+    el re-mapeo, concluyendo el proceso sin invocaciones innecesarias a la IA.
+    """
+    if not campos_faltantes:
+        return []
+
+    celdas_ocupadas = {
+        (item["hoja"], item["fila"], item["columna"])
+        for item in mapeos_realizados
+    }
+    mapa_purgado = _purgar_mapa(mapa_formularios)
+    rotulos_libres_txt = [
+        str(elem.get("valor", "")).strip().lower()
+        for elem in mapa_purgado
+        if (elem.get("hoja"), elem.get("fila"), elem.get("columna")) not in celdas_ocupadas
+    ]
+
+    campos_validos = []
+    for campo in campos_faltantes:
+        pats = _INDICIOS_CAMPOS_RECURSIVOS.get(campo)
+        if not pats:
+            campos_validos.append(campo)
+            continue
+
+        tiene_indicio = False
+        for txt in rotulos_libres_txt:
+            if any(re.search(pat, txt, re.IGNORECASE) for pat in pats):
+                tiene_indicio = True
+                break
+
+        if tiene_indicio:
+            campos_validos.append(campo)
+        else:
+            print(f"[AutoForm AI Coverage] Campo '{campo}' omitido del re-mapeo (no es solicitado por la plantilla).")
+
+    return campos_validos
+
+
+
 
 def _construir_prompt_focalizado(
     mapa_formularios: List[Dict[str, Any]],
@@ -1001,15 +1060,18 @@ def mapeo_formularios(
     mapeos_iniciales = _reconstruir_mapeo_fisico(coincidencias_raw, mapa_formularios, datos_empresa)
 
     # ── 4. Auditoría de cobertura ─────────────────────────────────────────
-    campos_faltantes = _evaluar_cobertura_campos(datos_filtrados, mapeos_iniciales)
+    campos_faltantes_brutos = _evaluar_cobertura_campos(datos_filtrados, mapeos_iniciales)
+    campos_faltantes = _filtrar_campos_faltantes_candidatos(
+        campos_faltantes_brutos, mapa_formularios, mapeos_iniciales
+    )
     resultado_final: List[Dict[str, Any]]
 
     if not campos_faltantes:
-        print("[AutoForm AI Coverage] [OK] Cobertura 100 %.")
+        print("[AutoForm AI Coverage] [OK] Cobertura 100 % (todos los campos solicitados por la plantilla fueron mapeados).")
         resultado_final = mapeos_iniciales
     else:
         print(
-            f"[AutoForm AI Coverage] [WARNING] Faltan {len(campos_faltantes)} campos: "
+            f"[AutoForm AI Coverage] [WARNING] Faltan {len(campos_faltantes)} campos con indicios en la plantilla: "
             f"{campos_faltantes}. Ejecutando re-mapeo focalizado..."
         )
         try:
@@ -1024,6 +1086,7 @@ def mapeo_formularios(
             ]
             mapeos_comp = _reconstruir_mapeo_fisico(coincidencias_comp_raw, mapa_formularios, datos_empresa)
             resultado_final = _fusionar_mapeos(mapeos_iniciales, mapeos_comp)
+
 
             print(
                 f"[AutoForm AI Coverage] Re-mapeo: +{len(resultado_final) - len(mapeos_iniciales)} "
