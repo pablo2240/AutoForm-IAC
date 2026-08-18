@@ -22,7 +22,6 @@ for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "cor
 
 from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor, llm_client
 from core import pdf_vision
-from core.llm_client import consultar_llm
 from core.mapper import get_debug_info as _get_debug_info
 
 # ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
@@ -493,38 +492,6 @@ with st.sidebar:
                     st.success(f"✅ Perfil creado: {nueva_etiqueta}")
                     _safe_rerun()
 
-    st.markdown("---")
-    
-    with st.expander("💬 Probador de Agente", expanded=False):
-        if "chat_messages" not in st.session_state:
-            st.session_state["chat_messages"] = []
-
-        if st.session_state["chat_messages"]:
-            if st.button("🧹 Limpiar Chat", key="btn_clear_chat", width="stretch"):
-                st.session_state["chat_messages"] = []
-                _safe_rerun()
-
-        for message in st.session_state["chat_messages"]:
-            role = message.get("role", "assistant")
-            content = message.get("content", "")
-            st.chat_message(role).write(content)
-
-        user_prompt = st.chat_input("Probar razonamiento del modelo...")
-        if user_prompt:
-            st.session_state["chat_messages"].append({"role": "user", "content": user_prompt})
-            st.chat_message("user").write(user_prompt)
-            
-            with st.spinner("Consultando modelo..."):
-                respuesta_llm = consultar_llm(user_prompt)
-            
-            MAX_CHARS = 150
-            if len(respuesta_llm) > MAX_CHARS:
-                corte = respuesta_llm[:MAX_CHARS].rfind(" ")
-                respuesta_llm = respuesta_llm[: corte if corte > 0 else MAX_CHARS] + "…"
-                
-            st.session_state["chat_messages"].append({"role": "assistant", "content": respuesta_llm})
-            st.chat_message("assistant").write(respuesta_llm)
-
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────
 
@@ -602,48 +569,6 @@ def render_stepper_progress(paso_actual: int, porcentaje: int, texto_estado: str
     return _clean_html(html_raw)
 
 
-def render_tabla_coincidencias(df_resultado) -> str:
-    """Construye una vista estilizada HTML con badges de tipo de celda y coordenadas."""
-    filas_html = ""
-    for idx, row in df_resultado.iterrows():
-        campo = str(row.get("campo", ""))
-        valor = str(row.get("valor", ""))
-        hoja = str(row.get("hoja", ""))
-        fila = row.get("fila", "")
-        col = row.get("columna", "")
-        req_merge = bool(row.get("requiereMerge", False))
-
-        if req_merge:
-            badge = '<span style="background: #FEF3C7; color: #92400E; border: 1px solid #F8B126; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.72rem; font-weight: 700;">MERGE COMPUESTO</span>'
-        else:
-            badge = '<span style="background: #ECFDF5; color: #065F46; border: 1px solid #10B981; padding: 0.15rem 0.5rem; border-radius: 12px; font-size: 0.72rem; font-weight: 700;">DIRECTO</span>'
-
-        filas_html += f"""
-            <tr style="border-bottom: 1px solid #F1F5F9; transition: background 0.15s ease;">
-                <td style="padding: 0.65rem 0.85rem; font-weight: 700; color: #1E293B; font-family: monospace;">{campo}</td>
-                <td style="padding: 0.65rem 0.85rem; color: #0F172A; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">{valor}</td>
-                <td style="padding: 0.65rem 0.85rem; color: #64748B; font-size: 0.82rem;">{hoja}!F{fila}:C{col}</td>
-                <td style="padding: 0.65rem 0.85rem; text-align: right;">{badge}</td>
-            </tr>
-        """
-
-    html_raw = f"""
-        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 10px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.03); margin-top: 0.75rem;">
-            <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; text-align: left;">
-                <thead>
-                    <tr style="background: #F8FAFC; border-bottom: 2px solid #E2E8F0; color: #64748B; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.5px;">
-                        <th style="padding: 0.65rem 0.85rem;">Campo Canónico</th>
-                        <th style="padding: 0.65rem 0.85rem;">Valor Inyectado</th>
-                        <th style="padding: 0.65rem 0.85rem;">Coordenada Excel</th>
-                        <th style="padding: 0.65rem 0.85rem; text-align: right;">Tipo Asignación</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {filas_html}
-                </tbody>
-            </table>
-        </div>
-    """
     return _clean_html(html_raw)
 
 
@@ -1026,14 +951,10 @@ if uploaded_file is not None:
                     st.dataframe(df_adv, width="stretch", height=min(300, len(df_adv) * 40 + 40))
                     st.caption("Las bounding boxes problemáticas se corrigieron automáticamente con visión LLM.")
 
-            if AgGrid is not None:
-                tab_aggrid, tab_html = st.tabs(["📊 Tabla AgGrid Enterprise", "🎨 Vista HTML Badges"])
-                with tab_aggrid:
+                if AgGrid is not None:
                     render_aggrid_coincidencias(df_resultado)
-                with tab_html:
-                    st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
-            else:
-                st.markdown(render_tabla_coincidencias(df_resultado), unsafe_allow_html=True)
+                else:
+                    st.dataframe(df_resultado, width="stretch")
 
 else:
     st.markdown("""
