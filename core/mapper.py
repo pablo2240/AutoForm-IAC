@@ -157,6 +157,12 @@ _PATRON_PREGUNTAS_CONDICIONALES = re.compile(
 )
 
 
+_PATRON_CAMPOS_FIRMA = re.compile(
+    r"^\s*(?:firma|firmas|signature)\b",
+    re.IGNORECASE
+)
+
+
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N).
 
@@ -165,6 +171,11 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     purgado = []
     for idx, entrada in enumerate(mapa):
         txt_rotulo = str(entrada.get("valor", "")).strip()
+
+        # Omitir recuadros de firma física/digital (no se inyectan textos en campos de firma)
+        if _PATRON_CAMPOS_FIRMA.search(txt_rotulo):
+            print(f"[AutoForm AI Mapper Filter] Omitido recuadro de firma física: '{txt_rotulo}'")
+            continue
 
         # Omitir rótulos que sean instrucciones de anexos o listas de documentos a presentar
         if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
@@ -235,6 +246,14 @@ _INDICIOS: Dict[str, List[str]] = {
 }
 
 
+import unicodedata
+
+
+def _quitar_acentos(texto: str) -> str:
+    """Normaliza texto removiendo diacríticos y acentos (ej. PAÍS -> pais)."""
+    return "".join(c for c in unicodedata.normalize("NFD", str(texto or "").lower()) if unicodedata.category(c) != "Mn")
+
+
 def _filtrar_datos_empresa(
     mapa_purgo: List[Dict[str, Any]],
     datos: Dict[str, Any],
@@ -257,9 +276,7 @@ def _filtrar_datos_empresa(
     if modo_permisivo:
         return dict(datos)
 
-    vocabulario = " ".join(
-        str(e.get("valor", "")).lower() for e in mapa_purgo
-    )
+    vocabulario_norm = _quitar_acentos(" ".join(str(e.get("rotulo") or e.get("valor") or "").lower() for e in mapa_purgo))
 
     resultado: Dict[str, Any] = {}
     for campo, valor in datos.items():
@@ -267,7 +284,7 @@ def _filtrar_datos_empresa(
         if indicios is None:
             # Clave desconocida → incluir por seguridad
             resultado[campo] = valor
-        elif any(indicio in vocabulario for indicio in indicios):
+        elif any(_quitar_acentos(indicio) in vocabulario_norm for indicio in indicios):
             resultado[campo] = valor
 
     # ── FIX: Fallback permisivo si el filtro estricto dejó menos de la mitad ──
@@ -646,7 +663,7 @@ def _filtrar_campos_faltantes_candidatos(
     }
     mapa_purgado = _purgar_mapa(mapa_formularios)
     rotulos_libres_txt = [
-        str(elem.get("valor", "")).strip().lower()
+        str(elem.get("rotulo") or elem.get("valor") or "").strip().lower()
         for elem in mapa_purgado
         if (elem.get("hoja"), elem.get("fila"), elem.get("columna")) not in celdas_ocupadas
     ]
@@ -922,7 +939,7 @@ def _validar_hard_gates_mapeo(
     if "representante_legal" not in campos_mapeados and datos_empresa.get("representante_legal"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
-            if re.search(r"en\s+caso\s+afirmativo|favor\s+indicar|conflicto|v[ií]nculo", val_str):
+            if re.search(r"en\s+caso\s+afirmativo|favor\s+indicar|conflicto|v[ií]nculo|^firma|firmas", val_str):
                 continue
             if re.search(r"representante\s+legal|nombre\s+(?:del\s+)?representante|apoderado|gerente\s+general", val_str):
                 mapeo_resultado.append({
@@ -1032,8 +1049,11 @@ def _mapear_campos_seccion_representante(
                 continue
 
             coord_origen = (hoja_rl, fila_elem, col_elem)
-            if coord_origen in coords_existentes:
-                continue  # ya mapeado
+            # Remover mapeos erróneos en esta coordenada para inyectar el campo correcto de RL
+            resultado_mapeo = [
+                m for m in resultado_mapeo
+                if not (m.get("hoja") == hoja_rl and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem)
+            ]
 
             derecha_es_merge = bool(elem.get("derechaEsMerge", False))
             val_up = rotulo_txt.strip().upper()

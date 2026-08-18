@@ -54,7 +54,7 @@ def _calcular_max_columna_real(ws: Worksheet) -> int:
                     if c > max_c:
                         max_c = c
 
-    return max(max_c, min(ws.max_column or 1, 38))
+    return max(max_c, 1)
 
 
 def _buscar_campo_anidado(obj: Any, campo: str) -> Any:
@@ -298,8 +298,9 @@ def rellenar_formulario_excel(
             max_col_real = _calcular_max_columna_real(ws)
             max_col_origen = rango_origen.max_col if rango_origen is not None else columna_origen
 
-            # Si el rótulo llega al extremo derecho del formulario (col >= 12) o es un merge ancho (>=15 columnas), escribir ABAJO
-            es_borde_derecho = (max_col_origen >= 12 or max_col_origen >= max_col_real - 1)
+            # Si la columna destino a la derecha excede la columna máxima del formulario, escribir ABAJO
+            col_dest_prevista = (rango_origen.max_col + 1) if rango_origen is not None else (columna_origen + 1)
+            es_borde_derecho = (col_dest_prevista > max_col_real)
             es_merge_ancho = (rango_origen is not None and (rango_origen.max_col - rango_origen.min_col + 1) >= 15)
 
             if es_borde_derecho or es_merge_ancho:
