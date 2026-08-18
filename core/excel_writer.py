@@ -371,7 +371,7 @@ def rellenar_formulario_excel(
         if ancho_linea > 1:
             cant_cols_merge = max(cant_cols_merge, ancho_linea)
 
-        # Protección: no invadir rótulos vecinos con contenido
+        # Protección: no invadir rótulos vecinos con contenido ni rangos combinados adyacentes
         if cant_cols_merge > 1:
             max_cols_libres = 1
             for col_chk in range(
@@ -379,7 +379,9 @@ def rellenar_formulario_excel(
                 min(columna_destino + cant_cols_merge, max_col + 1),
             ):
                 val_chk = ws.cell(row=fila_destino, column=col_chk).value
-                if val_chk is not None and str(val_chk).strip() != "":
+                rango_chk = _celda_en_merge(ws, fila_destino, col_chk)
+                # Detener expansión si hay contenido o si inicia un rango combinado preexistente
+                if (val_chk is not None and str(val_chk).strip() != "") or (rango_chk is not None and rango_chk.min_col == col_chk):
                     break
                 max_cols_libres += 1
             cant_cols_merge = max_cols_libres
