@@ -151,6 +151,12 @@ def _es_titulo_seccion(texto: str) -> bool:
 
 
 
+_PATRON_PREGUNTAS_CONDICIONALES = re.compile(
+    r"^\s*(?:en\s+caso\s+(?:afirmativo|de)|si\s+la\s+respuesta\s+es|favor\s+indicar|conflicto\s+de\s+inter[eé]s)\b",
+    re.IGNORECASE
+)
+
+
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N).
 
@@ -164,6 +170,11 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         if _PATRON_DOCUMENTOS_ANEXAR.search(txt_rotulo):
             continue
         if re.search(r"^\s*\d+[\.\)]\s*(?:copia\s+de|fotocopia\s+de|adjuntar|anexo|certificado|certificaci[oó]n)", txt_rotulo, re.IGNORECASE):
+            continue
+
+        # Omitir preguntas condicionales opcionales (ej. "En caso afirmativo favor indicar nombre...")
+        if _PATRON_PREGUNTAS_CONDICIONALES.search(txt_rotulo):
+            print(f"[AutoForm AI Mapper Filter] Omitida pregunta condicional opcional: '{txt_rotulo}'")
             continue
 
         # Omitir títulos decorativos de sección (ej. "3. DATOS DEL REPRESENTANTE LEGAL")
@@ -911,6 +922,8 @@ def _validar_hard_gates_mapeo(
     if "representante_legal" not in campos_mapeados and datos_empresa.get("representante_legal"):
         for elem in mapa_formularios:
             val_str = str(elem.get("valor", "")).strip().lower()
+            if re.search(r"en\s+caso\s+afirmativo|favor\s+indicar|conflicto|v[ií]nculo", val_str):
+                continue
             if re.search(r"representante\s+legal|nombre\s+(?:del\s+)?representante|apoderado|gerente\s+general", val_str):
                 mapeo_resultado.append({
                     "hoja": elem.get("hoja", ""),
@@ -958,11 +971,12 @@ _PAT_SECCION_RL = re.compile(
 
 # Mapeo: patrón de rótulo → campo canónico a inyectar en esa posición
 _ROTULOS_SECCION_RL: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*(?:nombre\s*/\s*apellidos|nombres?\s+y\s+apellidos?|nombre\s+completo)\s*$", re.IGNORECASE), "representante_legal"),
     (re.compile(r"^\s*(?:id|c\.?c\.?|cedula|identificaci[oó]n)\s*$", re.IGNORECASE), "cedula"),
     (re.compile(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bfono\b", re.IGNORECASE),    "telefono"),
     (re.compile(r"\bemail\b|\bcorreo\b|\be-mail\b|\bmail\b",          re.IGNORECASE),    "correo"),
-    (re.compile(r"\bnombres?\b",                                        re.IGNORECASE),    "representante_nombres"),
-    (re.compile(r"\bapellidos?\b",                                      re.IGNORECASE),    "representante_apellidos"),
+    (re.compile(r"^\s*nombres?\s*$",                                    re.IGNORECASE),    "representante_nombres"),
+    (re.compile(r"^\s*apellidos?\s*$",                                  re.IGNORECASE),    "representante_apellidos"),
 ]
 
 
@@ -1021,11 +1035,9 @@ def _mapear_campos_seccion_representante(
             if coord_origen in coords_existentes:
                 continue  # ya mapeado
 
-            # Si el rótulo tiene una caja mergeada a la derecha (ej. ID, Teléfono, email en fila 20), escribir a la derecha.
-            # Si es cabecera de tabla sin merge a la derecha (ej. NOMBRES, APELLIDOS en fila 23), escribir abajo.
             derecha_es_merge = bool(elem.get("derechaEsMerge", False))
-            rotulos_en_fila = sum(1 for e in mapa_formularios if e.get("hoja") == hoja_rl and e.get("fila") == fila_elem)
-            if rotulos_en_fila > 1 and not derecha_es_merge:
+            val_up = rotulo_txt.strip().upper()
+            if val_up in ("NOMBRES", "APELLIDOS"):
                 ubicacion_calc = "abajo"
             else:
                 ubicacion_calc = _calcular_ubicacion_fisica(
@@ -1320,6 +1332,12 @@ def mapeo_formularios(
     # Se ejecuta DESPUÉS de la deduplicación para que campos como cedula/telefono/correo
     # puedan ser inyectados en la sección del representante sin conflicto con la sección principal.
     resultado_final = _mapear_campos_seccion_representante(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.8 Muro de Seguridad final de Ubicación: NOMBRES / APELLIDOS en cabeceras ──
+    for item in resultado_final:
+        v_upper = str(item.get("valor", "")).strip().upper()
+        if v_upper in ("NOMBRES", "APELLIDOS"):
+            item["ubicacion"] = "abajo"
 
 
     # ── 7. Enriquecimiento con anchoLinea del parser (WRITER-03) ──────────

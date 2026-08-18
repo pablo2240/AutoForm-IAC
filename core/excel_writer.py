@@ -298,8 +298,8 @@ def rellenar_formulario_excel(
             max_col_real = _calcular_max_columna_real(ws)
             max_col_origen = rango_origen.max_col if rango_origen is not None else columna_origen
 
-            # Si el rótulo llega al extremo derecho del formulario o es un merge ancho (>=15 columnas), escribir ABAJO
-            es_borde_derecho = (max_col_origen >= max_col_real - 1)
+            # Si el rótulo llega al extremo derecho del formulario (col >= 12) o es un merge ancho (>=15 columnas), escribir ABAJO
+            es_borde_derecho = (max_col_origen >= 12 or max_col_origen >= max_col_real - 1)
             es_merge_ancho = (rango_origen is not None and (rango_origen.max_col - rango_origen.min_col + 1) >= 15)
 
             if es_borde_derecho or es_merge_ancho:
