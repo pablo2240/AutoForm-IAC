@@ -509,6 +509,55 @@ def _calcular_rect_destino_fitz(
     return (x0_dest, y0_dest, x1_dest, y1_dest)
 
 
+# ---------------------------------------------------------------------------
+# FASE 2: Text-Fit determinista (medir antes de escribir, nunca expandir el campo)
+# ---------------------------------------------------------------------------
+
+_SAFE_MARGIN_X = 2.0
+_FONT_METRICAS = fitz.Font("helv")
+
+
+def _medir_ancho_texto(texto: str, size: float) -> float:
+    """Ancho real del texto en puntos usando métricas Helvetica (compatible con Arial)."""
+    return _FONT_METRICAS.text_length(texto, fontsize=size)
+
+
+def _calcular_font_size_fit(
+    texto: str,
+    rect: fitz.Rect,
+    size_max: float,
+    size_min: float,
+) -> float | None:
+    """Calcula el mayor tamaño de fuente cuyo ancho de texto cabe dentro del rectángulo."""
+    ancho_disponible = max(1.0, rect.width - 2 * _SAFE_MARGIN_X)
+    size = size_max
+    while size >= size_min:
+        if _medir_ancho_texto(texto, size) <= ancho_disponible:
+            return size
+        size -= 0.5
+    return None
+
+
+def _truncar_a_ancho(texto: str, rect: fitz.Rect, size: float) -> str:
+    """Recorta el texto hasta que su ancho quepa en el rectángulo a un tamaño fijo."""
+    ancho_disponible = max(1.0, rect.width - 2 * _SAFE_MARGIN_X)
+    corto = texto
+    while corto and _medir_ancho_texto(corto, size) > ancho_disponible:
+        corto = corto[:-1]
+    return corto
+
+
+def _calcular_margen_vertical(rect: fitz.Rect, size: float) -> float:
+    """Centrado vertical por métricas de fuente (ascender/descender), no empírico.
+
+    La altura del bloque de una línea es ~size * (ascender - descender); se centra
+    ese bloque dentro del rectángulo en lugar de usar factores mágicos como /3.5.
+    """
+    ratio_linea = _FONT_METRICAS.ascender - _FONT_METRICAS.descender
+    bloque = size * max(ratio_linea, 1.0)
+    return max(0.0, (rect.height - bloque) / 2.0)
+
+
 def extraer_tipografia_dominante_pdf(pagina: fitz.Page) -> Tuple[str, str]:
 
 
@@ -777,44 +826,56 @@ def rellenar_pdf(
             else:
                 align_mode = fitz.TEXT_ALIGN_LEFT
 
-            rc = -1
-            size = font_size_ideal
-            while size >= font_min:
-                top_margin = max(0.0, (rect_original.height - size) / 3.5)
-                rect_ajustado = fitz.Rect(
-                    rect_original.x0 + 1,
-                    rect_original.y0 + top_margin,
-                    rect_original.x1 - 1,
-                    rect_original.y1
-                )
+            # ── FASE 2: Fit determinista — medir el texto ANTES de escribirlo ──
+            size = _calcular_font_size_fit(
+                valor_a_escribir, rect_original, font_size_ideal, font_min
+            )
+            if size is None:
+                size = font_min
+                texto_a_escribir = _truncar_a_ancho(valor_a_escribir, rect_original, size)
+                if not texto_a_escribir:
+                    texto_a_escribir = valor_a_escribir[:1]
+            else:
+                texto_a_escribir = valor_a_escribir
 
-                rc = _insertar_con_fallback(
-                    pagina,
-                    rect_ajustado,
-                    valor_a_escribir,
-                    font_nativa_pagina,
-                    size,
-                    (0.05, 0.12, 0.20),
-                    align_mode,
-                )
-                if rc >= 0:
-                    inyectados += 1
-                    break
-                size -= 0.5
+            # ── FASE 2: posicionamiento exacto con baseline calculado ─────────
+            # insert_textbox exige altura >= lineheight y devuelve rc<0 en cajas
+            # pequeñas (p. ej. 8.32pt); insert_text + métricas de fuente permite
+            # escribir en cualquier caja SIN expandir jamás el rectángulo.
+            ancho_texto = _medir_ancho_texto(texto_a_escribir, size)
+            ancho_disponible = rect_original.width - 2 * _SAFE_MARGIN_X
+            if align_mode == fitz.TEXT_ALIGN_CENTER:
+                x0_texto = rect_original.x0 + _SAFE_MARGIN_X + max(0.0, (ancho_disponible - ancho_texto) / 2.0)
+            else:
+                x0_texto = rect_original.x0 + _SAFE_MARGIN_X
+            if x0_texto + ancho_texto > rect_original.x1 - _SAFE_MARGIN_X:
+                x0_texto = rect_original.x1 - _SAFE_MARGIN_X - ancho_texto
 
-            if rc < 0:
-                # Truncado de seguridad acotado si excede físicamente el rectángulo
-                rect_expandido = fitz.Rect(rect_original.x0, rect_original.y0, rect_original.x1, rect_original.y1 + 10)
-                _insertar_con_fallback(
-                    pagina,
-                    rect_expandido,
-                    valor_a_escribir[:45],
-                    font_nativa_pagina,
-                    font_min,
-                    (0.07, 0.16, 0.23),
-                    fitz.TEXT_ALIGN_LEFT,
+            top_margin = _calcular_margen_vertical(rect_original, size)
+            baseline_y = rect_original.y0 + top_margin + size * _FONT_METRICAS.ascender
+
+            try:
+                pagina.insert_text(
+                    fitz.Point(x0_texto, baseline_y),
+                    texto_a_escribir,
+                    fontsize=size,
+                    fontname=font_nativa_pagina,
+                    color=(0.05, 0.12, 0.20),
                 )
-                inyectados += 1
+            except Exception:
+                pagina.insert_text(
+                    fitz.Point(x0_texto, baseline_y),
+                    texto_a_escribir,
+                    fontsize=size,
+                    fontname="helv",
+                    color=(0.05, 0.12, 0.20),
+                )
+            inyectados += 1
+            if top_margin <= 0.0:
+                print(
+                    f"[AutoForm AI WRITE] Overflow vertical: caja {rect_original.height:.1f}pt "
+                    f"menor al bloque de linea ({size:.1f}pt). Texto anclado al borde superior."
+                )
 
         output_pdf_stream = io.BytesIO()
 

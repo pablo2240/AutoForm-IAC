@@ -107,6 +107,7 @@ Recibes un objeto JSON con dos componentes principales:
 ### ETAPA 5: AUDITORÍA DE CERO INVENCIÓN Y VERIFICACIÓN FINAL (HARD GATE)
 - Cero Alucinación: Si la información solicitada no existe en 'D', DEBES OMITIR ese id.
 - Realiza un pase de verificación final: Comprueba que ningún dato disponible en 'D' haya sido omitido si existe una pregunta o enunciado que lo solicite.
+- UNICIDAD ESTRICTA: Cada campo de 'D' debe asignarse a MÁXIMO UN rótulo (un solo 'id'). Nunca repitas un mismo campo en varios ids. Si un dato ya fue asignado, omite los demás rótulos que lo soliciten.
 
 ## EJEMPLOS FEW-SHOT EN CONTEXTO (FORMULARIOS COLOMBIANOS)
 

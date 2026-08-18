@@ -702,6 +702,71 @@ def deduplicar_coordenadas_destino(mapeos: List[Dict[str, Any]]) -> List[Dict[st
     return resultado
 
 
+# ---------------------------------------------------------------------------
+# FASE 1: Selección del mejor mapeo por campo (anti-sobremappeo)
+# ---------------------------------------------------------------------------
+
+def _puntaje_afinidad_rotulo(item: Dict[str, Any]) -> Tuple[float, int, float, float]:
+    """Score de afinidad de un ítem de mapeo con su rótulo.
+
+    Devuelve una tupla comparable (mayor = mejor):
+      1. Número de sinónimos (_INDICIOS) presentes en el rótulo.
+      2. Preferencia por cajas PDF reales (+1) y AcroForms (+2); penaliza casillas (-1).
+      3. Orden de lectura: menor (fila, columna) — negado para que el máximo sea el primero.
+    """
+    campo = str(item.get("campo", ""))
+    rotulo = str(item.get("valor", "")).lower()
+
+    coincidencias = 0
+    for indicio in _INDICIOS.get(campo, []):
+        if indicio in rotulo:
+            coincidencias += 1
+
+    fisico = 0
+    if item.get("_pdf_es_caja"):
+        fisico += 1
+    if item.get("_pdf_es_acroform"):
+        fisico += 2
+    if item.get("_pdf_es_casilla"):
+        fisico -= 1
+
+    fila = float(item.get("fila", 0) or 0)
+    col = float(item.get("columna", 0) or 0)
+    return (coincidencias, fisico, -fila, -col)
+
+
+def _seleccionar_mejor_mapeo_por_campo(mapeos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Conserva una sola asignación por campo, eligiendo la de mayor afinidad con el rótulo.
+
+    Motivo: el LLM puede asignar un mismo campo a varios rótulos (sobremappeo) y la
+    deduplicación previa conservaba el primero en el orden arbitrario del modelo. Aquí
+    prevalece el criterio semántico/geométrico:
+      1) coincidencias de sinónimos con el rótulo,
+      2) preferencia por cajas PDF reales / AcroForms,
+      3) desempate por orden de lectura (fila, columna).
+    """
+    mejores: Dict[str, Dict[str, Any]] = {}
+    orden: List[str] = []
+    for item in mapeos:
+        campo = str(item.get("campo", ""))
+        if not campo:
+            continue
+        score = _puntaje_afinidad_rotulo(item)
+        previo = mejores.get(campo)
+        if previo is None or score > _puntaje_afinidad_rotulo(previo):
+            mejores[campo] = item
+            if campo not in orden:
+                orden.append(campo)
+
+    total_in = sum(1 for m in mapeos if m.get("campo"))
+    if total_in > len(mejores):
+        print(
+            f"[AutoForm AI FASE-1] Selección por campo: {len(mejores)} campos conservados "
+            f"(descartadas {total_in - len(mejores)} asignaciones duplicadas del LLM)."
+        )
+    return [mejores[campo] for campo in orden]
+
+
 def _validar_hard_gates_mapeo(
     resultado_mapeo: List[Dict[str, Any]],
     mapa_formularios: List[Dict[str, Any]],
@@ -1013,6 +1078,8 @@ def mapeo_formularios(
                 p for p in plan_adaptado
                 if p.get("hoja") and int(p.get("fila", 0) or 0) > 0 and p.get("campo")
             ]
+            # FASE-1: también depura planes provenientes de cachés antiguos con duplicados
+            plan_valido = _seleccionar_mejor_mapeo_por_campo(plan_valido)
 
             if plan_valido:
                 print(
@@ -1098,6 +1165,9 @@ def mapeo_formularios(
 
     # ── 5. Hard Gates Validador (Garantizar campos críticos Razón Social y NIT) ──
     resultado_final = _validar_hard_gates_mapeo(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 5.5 Selección del mejor mapeo por campo (FASE-1: anti-sobremappeo) ──────
+    resultado_final = _seleccionar_mejor_mapeo_por_campo(resultado_final)
 
     # ── 6. Deduplicación ──────────────────────────────────────────────────
     resultado_final = deduplicar_coordenadas_destino(resultado_final)
