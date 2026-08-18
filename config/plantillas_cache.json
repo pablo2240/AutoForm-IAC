@@ -1616,31 +1616,274 @@
         "_pdf_es_caja": false
       },
       {
-        "hoja": "Pagina_2",
-        "fila": 185,
-        "columna": 681,
-        "inicioLineaCol": 681,
-        "finLineaCol": 681,
-        "valor": "SI X NO",
+        "hoja": "Pagina_1",
+        "fila": 572,
+        "columna": 308,
+        "inicioLineaCol": 308,
+        "finLineaCol": 308,
+        "valor": "Guillermo Humberto Cañón Sarria",
         "ubicacion": "derecha",
-        "campo": "tipo_cuenta",
+        "campo": "representante_legal",
         "requiereMerge": false,
         "celdasAMergear": 1,
         "anchoLinea": 1,
-        "_pdf_page": 1,
+        "_pdf_page": 0,
         "_pdf_bbox": [
-          681.60096,
-          185.99936000000002,
-          735.51792,
-          196.59344
+          308.8,
+          572.91008,
+          471.83291200000025,
+          582.99008
         ],
         "_pdf_target_rect": [
-          740.24,
-          183.24099999999999,
-          737.199,
-          197.24
+          476.83291200000025,
+          572.91008,
+          771.8329120000003,
+          586.01408
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 462,
+        "columna": 89,
+        "inicioLineaCol": 89,
+        "finLineaCol": 89,
+        "valor": "Tipo de Sociedad:",
+        "ubicacion": "derecha",
+        "campo": "razon_social",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          89.44,
+          462.19007999999997,
+          175.98788800000003,
+          472.27008
+        ],
+        "_pdf_target_rect": [
+          189.84,
+          474.6,
+          186.8,
+          498.52
         ],
         "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 462,
+        "columna": 320,
+        "inicioLineaCol": 320,
+        "finLineaCol": 320,
+        "valor": "Razón Social",
+        "ubicacion": "derecha",
+        "campo": "razon_social",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          320.64,
+          462.19007999999997,
+          383.278128,
+          472.27008
+        ],
+        "_pdf_target_rect": [
+          388.278128,
+          462.19007999999997,
+          683.2781279999999,
+          475.29408
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 462,
+        "columna": 506,
+        "inicioLineaCol": 506,
+        "finLineaCol": 506,
+        "valor": "Número de identificación",
+        "ubicacion": "derecha",
+        "campo": "nit",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          506.24,
+          462.19007999999997,
+          626.6294720000001,
+          472.27008
+        ],
+        "_pdf_target_rect": [
+          644.24,
+          459.24,
+          641.2,
+          498.52
+        ],
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_3",
+        "fila": 496,
+        "columna": 528,
+        "inicioLineaCol": 528,
+        "finLineaCol": 528,
+        "valor": "C.C. 98.555.384 de Envigado",
+        "ubicacion": "derecha",
+        "campo": "cedula",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 2,
+        "_pdf_bbox": [
+          528.8,
+          496.3960000000001,
+          661.59392,
+          506.476
+        ],
+        "_pdf_target_rect": [
+          666.59392,
+          496.3960000000001,
+          801,
+          509.5
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_3",
+        "fila": 481,
+        "columna": 518,
+        "inicioLineaCol": 518,
+        "finLineaCol": 518,
+        "valor": "Guillermo Humberto Cañón Sarria",
+        "ubicacion": "derecha",
+        "campo": "representante_legal",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 2,
+        "_pdf_bbox": [
+          518.88,
+          481.03600000000006,
+          671.5143840000001,
+          491.116
+        ],
+        "_pdf_target_rect": [
+          676.5143840000001,
+          481.03600000000006,
+          801,
+          494.14
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_3",
+        "fila": 496,
+        "columna": 324,
+        "inicioLineaCol": 324,
+        "finLineaCol": 324,
+        "valor": "Tipo y No. Identificación",
+        "ubicacion": "derecha",
+        "campo": "cedula",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 2,
+        "_pdf_bbox": [
+          324.64,
+          496.91008,
+          441.0307360000001,
+          506.99008000000003
+        ],
+        "_pdf_target_rect": [
+          446.0307360000001,
+          496.91008,
+          741.0307360000002,
+          510.01408000000004
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_3",
+        "fila": 394,
+        "columna": 70,
+        "inicioLineaCol": 70,
+        "finLineaCol": 70,
+        "valor": "Autorizo el tratamiento descrito SI",
+        "ubicacion": "derecha",
+        "campo": "representante_legal",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 2,
+        "_pdf_bbox": [
+          70.72,
+          394.592,
+          213.230592,
+          403.552
+        ],
+        "_pdf_target_rect": [
+          228.72,
+          404.201,
+          269.68,
+          403.15999999999997
+        ],
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_4",
+        "fila": 610,
+        "columna": 703,
+        "inicioLineaCol": 703,
+        "finLineaCol": 703,
+        "valor": "X",
+        "ubicacion": "derecha",
+        "campo": "cedula",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 3,
+        "_pdf_bbox": [
+          703.52496,
+          610.95712,
+          710.2483199999999,
+          621.03712
+        ],
+        "_pdf_target_rect": [
+          715.2483199999999,
+          610.95712,
+          801,
+          624.06112
+        ],
+        "_pdf_es_caja": false
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 303,
+        "columna": 621,
+        "inicioLineaCol": 621,
+        "finLineaCol": 621,
+        "valor": "antonio.prieto@iac.com.co",
+        "ubicacion": "derecha",
+        "campo": "correo",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          621.43664,
+          303.12016000000006,
+          741.5882240000001,
+          313.20016
+        ],
+        "_pdf_target_rect": [
+          746.5882240000001,
+          303.12016000000006,
+          801,
+          316.22416
+        ],
+        "_pdf_es_caja": false
       },
       {
         "hoja": "Pagina_1",
@@ -1779,11 +2022,11 @@
       },
       {
         "hoja": "Pagina_1",
-        "fila": 303,
-        "columna": 621,
-        "inicioLineaCol": 621,
-        "finLineaCol": 621,
-        "valor": "antonio.prieto@iac.com.co",
+        "fila": 324,
+        "columna": 484,
+        "inicioLineaCol": 484,
+        "finLineaCol": 484,
+        "valor": "Correo persona",
         "ubicacion": "derecha",
         "campo": "correo",
         "requiereMerge": false,
@@ -1791,126 +2034,180 @@
         "anchoLinea": 1,
         "_pdf_page": 0,
         "_pdf_bbox": [
-          621.43664,
-          303.12016000000006,
-          741.5882240000001,
-          313.20016
+          484.64,
+          324.27018,
+          559.51424,
+          334.35018
         ],
         "_pdf_target_rect": [
-          746.5882240000001,
-          303.12016000000006,
+          564.51424,
+          324.27018,
           801,
-          316.22416
+          337.37418
         ],
         "_pdf_es_caja": false
       },
       {
         "hoja": "Pagina_1",
-        "fila": 572,
-        "columna": 308,
-        "inicioLineaCol": 308,
-        "finLineaCol": 308,
-        "valor": "Guillermo Humberto Cañón Sarria",
-        "ubicacion": "derecha",
-        "campo": "representante_legal",
-        "requiereMerge": false,
-        "celdasAMergear": 1,
-        "anchoLinea": 1,
-        "_pdf_page": 0,
-        "_pdf_bbox": [
-          308.8,
-          572.91008,
-          471.83291200000025,
-          582.99008
-        ],
-        "_pdf_target_rect": [
-          476.83291200000025,
-          572.91008,
-          771.8329120000003,
-          586.01408
-        ],
-        "_pdf_es_caja": false
-      },
-      {
-        "hoja": "Pagina_3",
-        "fila": 496,
-        "columna": 528,
-        "inicioLineaCol": 528,
-        "finLineaCol": 528,
-        "valor": "C.C. 98.555.384 de Envigado",
-        "ubicacion": "derecha",
-        "campo": "cedula",
-        "requiereMerge": false,
-        "celdasAMergear": 1,
-        "anchoLinea": 1,
-        "_pdf_page": 2,
-        "_pdf_bbox": [
-          528.8,
-          496.3960000000001,
-          661.59392,
-          506.476
-        ],
-        "_pdf_target_rect": [
-          666.59392,
-          496.3960000000001,
-          801,
-          509.5
-        ],
-        "_pdf_es_caja": false
-      },
-      {
-        "hoja": "Pagina_4",
-        "fila": 518,
-        "columna": 703,
-        "inicioLineaCol": 703,
-        "finLineaCol": 703,
+        "fila": 107,
+        "columna": 316,
+        "inicioLineaCol": 316,
+        "finLineaCol": 316,
         "valor": "X",
         "ubicacion": "derecha",
         "campo": "banco",
         "requiereMerge": false,
         "celdasAMergear": 1,
         "anchoLinea": 1,
-        "_pdf_page": 3,
+        "_pdf_page": 0,
         "_pdf_bbox": [
-          703.5288,
-          518.9532200000001,
-          710.25216,
-          529.03322
+          316.64,
+          107.11599999999999,
+          323.36336,
+          117.19599999999991
         ],
         "_pdf_target_rect": [
-          715.25216,
-          518.9532200000001,
-          801,
-          532.05722
+          343.44,
+          105.79999999999995,
+          340.399,
+          116.75999999999999
         ],
-        "_pdf_es_caja": false
+        "_pdf_es_caja": true
       },
       {
-        "hoja": "Pagina_4",
-        "fila": 610,
-        "columna": 703,
-        "inicioLineaCol": 703,
-        "finLineaCol": 703,
+        "hoja": "Pagina_1",
+        "fila": 107,
+        "columna": 697,
+        "inicioLineaCol": 697,
+        "finLineaCol": 697,
         "valor": "X",
         "ubicacion": "derecha",
-        "campo": "numero_cuenta",
+        "campo": "tipo_cuenta",
         "requiereMerge": false,
         "celdasAMergear": 1,
         "anchoLinea": 1,
-        "_pdf_page": 3,
+        "_pdf_page": 0,
         "_pdf_bbox": [
-          703.52496,
-          610.95712,
-          710.2483199999999,
-          621.03712
+          697.44,
+          107.11599999999999,
+          704.16336,
+          117.19599999999991
         ],
         "_pdf_target_rect": [
-          715.2483199999999,
-          610.95712,
-          801,
-          624.06112
+          724.24,
+          105.79999999999995,
+          721.2,
+          116.75999999999999
         ],
-        "_pdf_es_caja": false
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 107,
+        "columna": 78,
+        "inicioLineaCol": 78,
+        "finLineaCol": 78,
+        "valor": "Creación",
+        "ubicacion": "derecha",
+        "campo": "tipo_cuenta",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          78.24,
+          107.63007999999991,
+          121.354176,
+          117.71007999999995
+        ],
+        "_pdf_target_rect": [
+          154.64,
+          105.79999999999995,
+          151.6,
+          116.75999999999999
+        ],
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 107,
+        "columna": 209,
+        "inicioLineaCol": 209,
+        "finLineaCol": 209,
+        "valor": "Actualización",
+        "ubicacion": "derecha",
+        "campo": "tipo_cuenta",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          209.44,
+          107.63007999999991,
+          274.469104,
+          117.71007999999995
+        ],
+        "_pdf_target_rect": [
+          292.24,
+          105.79999999999995,
+          289.2,
+          116.75999999999999
+        ],
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 107,
+        "columna": 459,
+        "inicioLineaCol": 459,
+        "finLineaCol": 459,
+        "valor": "Aliados",
+        "ubicacion": "derecha",
+        "campo": "banco",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          459.04,
+          107.63007999999991,
+          495.35723200000007,
+          117.71007999999995
+        ],
+        "_pdf_target_rect": [
+          535.44,
+          105.79999999999995,
+          532.4000000000001,
+          116.75999999999999
+        ],
+        "_pdf_es_caja": true
+      },
+      {
+        "hoja": "Pagina_1",
+        "fila": 107,
+        "columna": 590,
+        "inicioLineaCol": 590,
+        "finLineaCol": 590,
+        "valor": "Proveedor",
+        "ubicacion": "derecha",
+        "campo": "banco",
+        "requiereMerge": false,
+        "celdasAMergear": 1,
+        "anchoLinea": 1,
+        "_pdf_page": 0,
+        "_pdf_bbox": [
+          590.24,
+          107.63007999999991,
+          639.915248,
+          117.71007999999995
+        ],
+        "_pdf_target_rect": [
+          673.04,
+          105.79999999999995,
+          670.0,
+          116.75999999999999
+        ],
+        "_pdf_es_caja": true
       },
       {
         "hoja": "Pagina_1",
@@ -1941,30 +2238,30 @@
       },
       {
         "hoja": "Pagina_1",
-        "fila": 280,
-        "columna": 654,
-        "inicioLineaCol": 654,
-        "finLineaCol": 654,
-        "valor": "COLOMBIA",
+        "fila": 215,
+        "columna": 484,
+        "inicioLineaCol": 484,
+        "finLineaCol": 484,
+        "valor": "Ciudad sede principal",
         "ubicacion": "derecha",
-        "campo": "pais",
+        "campo": "expedicion",
         "requiereMerge": false,
         "celdasAMergear": 1,
         "anchoLinea": 1,
         "_pdf_page": 0,
         "_pdf_bbox": [
-          654.88112,
-          280.3960000000001,
-          708.172064,
-          290.476
+          484.64,
+          215.31007999999997,
+          589.1927840000001,
+          225.39008
         ],
         "_pdf_target_rect": [
-          713.172064,
-          280.3960000000001,
-          801,
-          293.5
+          627.58,
+          228.66999999999996,
+          739.58,
+          238.66999999999996
         ],
-        "_pdf_es_caja": false
+        "_pdf_es_caja": true
       }
     ]
   }

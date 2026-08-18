@@ -575,7 +575,7 @@ def _construir_prompt_focalizado(
     datos_empresa: Dict[str, Any],
     campos_faltantes: List[str],
 ) -> str:
-    """Payload ultra-compacto para la re-consulta de cobertura."""
+    """Payload ultra-compacto para la re-consulta de cobertura con exclusión de pie de página."""
     celdas_ocupadas = {
         (item["hoja"], item["fila"], item["columna"])
         for item in mapeos_realizados
@@ -585,9 +585,26 @@ def _construir_prompt_focalizado(
         elem for elem in mapa_purgado
         if (elem.get("hoja"), elem.get("fila"), elem.get("columna")) not in celdas_ocupadas
     ]
+
+    # Filtro de Exclusión Espacial: Ignorar pies de página (Y > 440pt) y textos legales/paginación
+    rotulos_validos = []
+    for elem in rotulos_libres:
+        txt = str(elem.get("valor", "")).strip()
+        bbox = elem.get("_pdf_bbox") or elem.get("_pdf_target_rect")
+        if bbox and isinstance(bbox, (list, tuple)) and len(bbox) >= 2 and bbox[1] > 440:
+            continue
+        if re.search(r"p[aá]gina\s+\d+\s+de\s+\d+|derechos\s+reservados|formulario\s+gratuito|ccb|c[aá]mara\s+de\s+comercio|impresi[oó]n", txt, re.IGNORECASE):
+            continue
+        rotulos_validos.append(elem)
+
     datos_faltantes = {k: datos_empresa[k] for k in campos_faltantes if k in datos_empresa}
-    payload = {"F": rotulos_libres, "D": datos_faltantes}
+    payload = {
+        "INSTRUCCION": f"ESTRICTO: Mapear UNICAMENTE los campos faltantes: {campos_faltantes}. PROHIBIDO re-asignar otros campos.",
+        "F": rotulos_validos,
+        "D": datos_faltantes
+    }
     return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+
 
 
 # ---------------------------------------------------------------------------
@@ -1001,8 +1018,13 @@ def mapeo_formularios(
             )
             respuesta_comp = invocar_llm(prompt_focalizado)
             coincidencias_comp_raw = _procesar_resultado_llm(respuesta_comp)
+            # Filtrado de Seguridad: autorizar únicamente campos verdaderamente faltantes
+            coincidencias_comp_raw = [
+                m for m in coincidencias_comp_raw if m.get("campo") in campos_faltantes
+            ]
             mapeos_comp = _reconstruir_mapeo_fisico(coincidencias_comp_raw, mapa_formularios, datos_empresa)
             resultado_final = _fusionar_mapeos(mapeos_iniciales, mapeos_comp)
+
             print(
                 f"[AutoForm AI Coverage] Re-mapeo: +{len(resultado_final) - len(mapeos_iniciales)} "
                 f"campos recuperados."
