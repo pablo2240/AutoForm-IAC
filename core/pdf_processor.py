@@ -461,7 +461,56 @@ def construir_mapa_desde_vision(
     return mapa_vision
 
 
+def _calcular_rect_destino_fitz(
+    pagina: fitz.Page,
+    label_bbox: Tuple[float, float, float, float] | List[float],
+    tipo_espacio: str = "derecha"
+) -> Tuple[float, float, float, float]:
+    """HITO 6: Calcula las coordenadas de destino exactas (x0, y0, x1, y1) en puntos PDF
+    utilizando exclusivamente la librería nativa PyMuPDF (fitz).
+
+    Ancla el inicio X al extremo derecho del texto de la etiqueta (x1 + 10pt) e inspecciona
+    líneas vectoriales dibujadas con get_drawings() para alineación milimétrica.
+    """
+    x0, y0, x1, y1 = label_bbox
+    ancho_pag = pagina.rect.width
+    alto_linea = max(10.0, y1 - y0)
+
+    # Detección de líneas vectoriales dibujadas a la derecha con get_drawings()
+    linea_vectorial_x = None
+    try:
+        for dw in pagina.get_drawings():
+            for item in dw.get("items", []):
+                if item[0] in ("l", "re"):
+                    p1, p2 = item[1], item[2]
+                    if min(p1.y, p2.y) <= y1 + 4 and max(p1.y, p2.y) >= y0 - 4:
+                        min_x = min(p1.x, p2.x)
+                        if min_x >= x1 - 5 and min_x <= x1 + 150:
+                            linea_vectorial_x = min_x
+                            break
+            if linea_vectorial_x:
+                break
+    except Exception:
+        pass
+
+    x0_dest = (linea_vectorial_x + 2.0) if linea_vectorial_x else (x1 + 10.0)
+
+    # Redirección por Borde Derecho: Si no hay espacio a la derecha (x0_dest >= ancho_pag - 40pt)
+    if x0_dest >= ancho_pag - 40.0 or tipo_espacio == "abajo":
+        x0_dest = x0
+        y0_dest = y1 + 3.0
+        x1_dest = min(x0_dest + 250.0, ancho_pag - 15.0)
+        y1_dest = y0_dest + alto_linea
+    else:
+        y0_dest = y0
+        x1_dest = min(x0_dest + max(150.0, ancho_pag - x0_dest - 15.0), ancho_pag - 15.0)
+        y1_dest = y1
+
+    return (x0_dest, y0_dest, x1_dest, y1_dest)
+
+
 def extraer_tipografia_dominante_pdf(pagina: fitz.Page) -> Tuple[str, str]:
+
 
     """HITO 4: Extrae la tipografía dominante y la variante (normal/negrita) de una página PDF.
 
@@ -702,9 +751,14 @@ def rellenar_pdf(
             es_caja = item.get("_pdf_es_caja", False)
 
             if not target_rect_tuple:
-                x0 = float(item.get("columna", 50))
-                y_top = float(item.get("fila", 50))
-                target_rect_tuple = (x0 + 100, y_top, min(x0 + 300, pagina.rect.width - 15), y_top + 15)
+                label_bbox = item.get("_pdf_label_bbox") or item.get("_pdf_bbox")
+                if label_bbox:
+                    target_rect_tuple = _calcular_rect_destino_fitz(pagina, label_bbox, item.get("ubicacion", "derecha"))
+                else:
+                    x0 = float(item.get("columna", 50))
+                    y_top = float(item.get("fila", 50))
+                    target_rect_tuple = (x0 + 100, y_top, min(x0 + 300, pagina.rect.width - 15), y_top + 15)
+
 
             rect_original = fitz.Rect(target_rect_tuple)
 
