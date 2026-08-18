@@ -946,6 +946,115 @@ def _validar_hard_gates_mapeo(
     return mapeo_limpio
 
 
+# ---------------------------------------------------------------------------
+# Hard-Gate Representante: campos repetidos en la sección del Representante Legal
+# ---------------------------------------------------------------------------
+
+# Patrones que identifican rótulos propios de la sección del Representante Legal
+_PAT_SECCION_RL = re.compile(
+    r"representante\s+legal|representante\s+jur[ií]dico|datos\s+del\s+representante",
+    re.IGNORECASE
+)
+
+# Mapeo: patrón de rótulo → campo canónico a inyectar en esa posición
+_ROTULOS_SECCION_RL: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*(?:id|c\.?c\.?|cedula|identificaci[oó]n)\s*$", re.IGNORECASE), "cedula"),
+    (re.compile(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bfono\b", re.IGNORECASE),    "telefono"),
+    (re.compile(r"\bemail\b|\bcorreo\b|\be-mail\b|\bmail\b",          re.IGNORECASE),    "correo"),
+    (re.compile(r"\bnombres?\b",                                        re.IGNORECASE),    "representante_nombres"),
+    (re.compile(r"\bapellidos?\b",                                      re.IGNORECASE),    "representante_apellidos"),
+]
+
+
+def _mapear_campos_seccion_representante(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Detecta y rellena campos repetidos en la sección del Representante Legal.
+
+    Muchos formularios colombianos repiten campos como ID, Teléfono y email dos veces:
+    una para los datos de la empresa y otra específicamente para el Representante Legal.
+    El LLM solo mapea la primera ocurrencia y la deduplicación elimina la segunda.
+
+    Esta función localiza la fila del rótulo 'Representante Legal' en el formulario y
+    busca hacia abajo (ventana de 8 filas) los rótulos repetidos para inyectarlos.
+    """
+    # Coordenadas ya ocupadas para no colisionar
+    coords_existentes = {
+        (item.get("hoja", ""), int(item.get("fila", 0)), int(item.get("columna", 0)))
+        for item in resultado_mapeo
+    }
+    nuevos: List[Dict[str, Any]] = []
+
+    # 1. Encontrar la fila del rótulo "Representante Legal" en el mapa
+    fila_seccion_rl = None
+    hoja_rl = None
+    for elem in mapa_formularios:
+        if _PAT_SECCION_RL.search(str(elem.get("valor", ""))):
+            fila_seccion_rl = int(elem.get("fila", 0))
+            hoja_rl = str(elem.get("hoja", ""))
+            break
+
+    if fila_seccion_rl is None:
+        return resultado_mapeo  # El formulario no tiene sección de Representante Legal
+
+    # 2. Buscar en una ventana de filas desde la sección RL hasta la siguiente sección grande
+    VENTANA = 10
+    for elem in mapa_formularios:
+        if str(elem.get("hoja", "")) != hoja_rl:
+            continue
+        fila_elem = int(elem.get("fila", 0))
+        if fila_elem <= fila_seccion_rl or fila_elem > fila_seccion_rl + VENTANA:
+            continue
+
+        rotulo_txt = str(elem.get("valor", "")).strip()
+        col_elem = int(elem.get("columna", 0))
+
+        for patron, campo in _ROTULOS_SECCION_RL:
+            if not patron.search(rotulo_txt):
+                continue
+            if not datos_empresa.get(campo):
+                continue
+
+            coord_origen = (hoja_rl, fila_elem, col_elem)
+            if coord_origen in coords_existentes:
+                continue  # ya mapeado
+
+            # Si el rótulo tiene una caja mergeada a la derecha (ej. ID, Teléfono, email en fila 20), escribir a la derecha.
+            # Si es cabecera de tabla sin merge a la derecha (ej. NOMBRES, APELLIDOS en fila 23), escribir abajo.
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            rotulos_en_fila = sum(1 for e in mapa_formularios if e.get("hoja") == hoja_rl and e.get("fila") == fila_elem)
+            if rotulos_en_fila > 1 and not derecha_es_merge:
+                ubicacion_calc = "abajo"
+            else:
+                ubicacion_calc = _calcular_ubicacion_fisica(
+                    val_rotulo=rotulo_txt,
+                    derecha_vacia=bool(elem.get("derechaVacia", True)),
+                    abajo_vacia=bool(elem.get("abajoVacia", False)),
+                    derecha_es_merge=derecha_es_merge,
+                    tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+                )
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_rl,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": rotulo_txt,
+                "ubicacion": ubicacion_calc,
+                "campo": campo,
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            coords_existentes.add(coord_origen)
+            print(
+                f"[AutoForm AI RL-Gate] Campo '{campo}' inyectado en sección Representante Legal "
+                f"-> rótulo '{rotulo_txt}' F{fila_elem}C{col_elem}"
+            )
+            break  # un campo por rótulo
+
+    return resultado_mapeo + nuevos
 
 
 
@@ -1206,6 +1315,12 @@ def mapeo_formularios(
 
     # ── 6. Deduplicación ──────────────────────────────────────────────────
     resultado_final = deduplicar_coordenadas_destino(resultado_final)
+
+    # ── 6.5 Hard-Gate Representante Legal: inyectar campos repetidos en la sección RL ──
+    # Se ejecuta DESPUÉS de la deduplicación para que campos como cedula/telefono/correo
+    # puedan ser inyectados en la sección del representante sin conflicto con la sección principal.
+    resultado_final = _mapear_campos_seccion_representante(resultado_final, mapa_formularios, datos_empresa)
+
 
     # ── 7. Enriquecimiento con anchoLinea del parser (WRITER-03) ──────────
     resultado_final = _enriquecer_con_ancholinea(resultado_final, mapa_formularios)
