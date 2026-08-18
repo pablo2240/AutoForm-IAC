@@ -76,7 +76,17 @@ def get_debug_info(hash_form: str) -> Optional[Dict[str, Any]]:
 
 
 _PATRON_DOCUMENTOS_ANEXAR = re.compile(
-    r"^\s*(?:\d+[\.\)\-]\s*)?(?:copia|adjuntar|fotocopia|anexo|certificado|certificaci[oó]n|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?|rut|c[aá]mara\s+de\s+comercio|declaraci[oó]n|antecedentes)\b",
+    r"^\s*(?:\d+[\.)\-]\s*)?(?:copia|adjuntar|fotocopia|anexo|certificado|certificaci[oó]n|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?|rut|c[aá]mara\s+de\s+comercio|declaraci[oó]n|antecedentes)\b",
+    re.IGNORECASE
+)
+
+
+# FIX-4 (módulo): Términos que identifican campos de formulario reales (no títulos de sección)
+_TERMINOS_CAMPO_REAL_TITULO = re.compile(
+    r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombre|tel[eé]fono|celular|direcci[oó]n|"
+    r"correo|email|ciudad|municipio|departamento|pa[ií]s|cargo|firma|banco|cuenta|"
+    r"representante|p[aá]gina|web|objeto|actividad|expedici[oó]n|matr[ií]cula|"
+    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede)\b",
     re.IGNORECASE
 )
 
@@ -91,12 +101,25 @@ def _es_titulo_seccion(texto: str) -> bool:
     if t_clean.endswith(":"):
         return False
 
+    # FIX-4: Rótulos con número+término corto de campo conocido NO son títulos decorativos.
+    # Ejemplo: "1. NIT:", "2. Razón social:", "3. Teléfono:" — son campos reales del formulario.
+    m_num = re.match(r"^\s*\d+[\.]\s+(.+)$", t_clean)
+    if m_num:
+        texto_tras_num = m_num.group(1).strip()
+        # Si el texto tras el número es corto (≤5 palabras) y contiene un término de campo → NO es título
+        if len(texto_tras_num.split()) <= 5 and _TERMINOS_CAMPO_REAL_TITULO.search(texto_tras_num):
+            return False
+
     # 1. Empieza con número o número romano + punto/paréntesis + texto de título (ej. "3. REPRESENTANTE LEGAL (aplica para personas jurídicas)")
-    if re.search(r"^\s*\d+[\.\)]\s*(?:REPRESENTANTE|DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO)", t_clean, re.IGNORECASE):
+    if re.search(r"^\s*\d+[\.]\s*(?:REPRESENTANTE|DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO)", t_clean, re.IGNORECASE):
         return True
 
-    if re.search(r"^\s*\d+[\.\)]\s*[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-\(\)\w]{4,}$", t_clean):
+    if re.search(r"^\s*\d+[\.]\s*[A-ZÁÉÍÓÚÑ\s\/\,\;\:\-\(\)\w]{4,}$", t_clean):
         if not re.search(r"_{2,}|\.{3,}|\[\s*\]|\(\s*\)", t_clean):
+            # FIX-4: Si el texto completo es corto (≤ 4 palabras) o contiene término de campo → no es título
+            palabras = [w for w in t_clean.split() if not re.match(r"^\d+[\.)]?$", w)]
+            if len(palabras) <= 4 or _TERMINOS_CAMPO_REAL_TITULO.search(t_clean):
+                return False
             return True
 
     if re.search(r"^\s*(?:I|II|III|IV|V|VI|VII|VIII|IX|X)+\.?\s+", t_clean, re.IGNORECASE):
@@ -186,6 +209,18 @@ _INDICIOS: Dict[str, List[str]] = {
     "numero_cuenta":             ["cuenta", "nro cuenta", "no. cuenta", "numero cuenta", "n° cuenta"],
     "tipo_cuenta":               ["tipo cuenta", "tipo de cuenta", "modalidad", "clase cuenta"],
     "sucursal":                  ["sucursal", "agencia", "oficina bancaria"],
+    # FIX-3: Campos frecuentes en formularios colombianos que antes carecían de indicios
+    "objeto_social":             ["objeto social", "objeto", "actividad", "giro", "naturaleza", "razon de ser"],
+    "actividad_economica":       ["actividad economica", "actividad principal", "ciiu", "codigo actividad", "giro negocio", "sector economico"],
+    "tipo_identificacion":       ["tipo de documento", "tipo identificacion", "clase de documento", "tipo de id", "clase id", "tipo doc"],
+    "expedicion":                ["expedicion", "expedida", "lugar de expedicion", "ciudad de expedicion", "expedida en"],
+    "cargo_representante":       ["cargo", "calidad", "calidad en que actua", "en calidad de", "titulo cargo"],
+    "fecha_expedicion":          ["fecha de expedicion", "fecha expedicion", "fecha doc"],
+    "actividad_ciiu":            ["ciiu", "codigo ciiu", "clasificacion", "actividad economica"],
+    "ciudad_correspondencia":    ["ciudad correspondencia", "ciudad para notificaciones", "ciudad notificacion"],
+    "numero_matricula":          ["matricula mercantil", "matricula", "camara de comercio", "no matricula"],
+    "fecha_constitucion":        ["fecha constitucion", "fecha de constitucion", "constituida", "fundada"],
+    "tipo_empresa":              ["tipo de empresa", "tipo sociedad", "naturaleza juridica", "razon juridica"],
 }
 
 

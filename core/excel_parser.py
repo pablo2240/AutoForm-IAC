@@ -450,7 +450,8 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
 
                 texto = str(valor).strip()
                 # Omitir textos vacíos o demasiado cortos (menor a 2)
-                if not texto or len(texto) < 2 or len(texto) > 120:
+                # FIX-2: Ampliado límite superior a 200 para capturar rótulos compuestos largos
+                if not texto or len(texto) < 2 or len(texto) > 200:
                     continue
 
                 # PARSER-08: Filtrar ruido: fechas, numeros, codigos, puntuacion y URLs
@@ -493,7 +494,27 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 derecha_es_merge = rango_derecha is not None
                 abajo_es_merge   = rango_abajo is not None
 
-                # Optimización: si ambos vecinos tienen contenido Y ninguno es merge, descartar.
+                # FIX-1: Considerar "placeholder" como vacío efectivo.
+                # Celdas con solo guiones, puntos o espacios (p.ej. "____", "...", "-")
+                # no son contenido real — el rótulo no debe descartarse por ellas.
+                def _es_placeholder_celda(h: Worksheet, f: int, c: int) -> bool:
+                    if f < 1 or c < 1 or f > (h.max_row or 0) or c > (h.max_column or 0):
+                        return False
+                    v = h.cell(row=f, column=c).value
+                    if v is None:
+                        return False
+                    return bool(_re.match(r'^[\s_\.\:\-]+$', str(v).strip()))
+
+                derecha_placeholder = _es_placeholder_celda(hoja, derecha_fila, derecha_columna)
+                abajo_placeholder   = _es_placeholder_celda(hoja, abajo_fila, abajo_columna)
+
+                # Actualizar flags: si el vecino es placeholder, se trata como vacío
+                if derecha_placeholder:
+                    derecha_vacia = True
+                if abajo_placeholder:
+                    abajo_vacia = True
+
+                # Optimización: si ambos vecinos tienen contenido real Y ninguno es merge, descartar.
                 if not derecha_vacia and not abajo_vacia and not derecha_es_merge and not abajo_es_merge:
                     continue
 

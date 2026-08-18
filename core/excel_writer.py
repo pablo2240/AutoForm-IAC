@@ -339,8 +339,11 @@ def rellenar_formulario_excel(
         # ── WRITER-07: Validación de coordenadas fuera de rango ──────────
         max_fila = ws.max_row or 0
         max_col  = ws.max_column or 0
+        # FIX-5: openpyxl puede subestimar max_row/max_col cuando las últimas
+        # filas/columnas solo tienen bordes sin contenido. Toleramos un margen de
+        # +10 filas y +5 columnas para no descartar campos legítimos al borde del formulario.
         if (fila_destino < 1 or columna_destino < 1
-                or fila_destino > max_fila or columna_destino > max_col):
+                or fila_destino > max_fila + 10 or columna_destino > max_col + 5):
             reporte.append(_log_item(
                 "SKIP", item, None, fila_destino, columna_destino,
                 f"Coordenada fuera de rango (max_fila={max_fila}, max_col={max_col})"
