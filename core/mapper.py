@@ -152,7 +152,7 @@ def _es_titulo_seccion(texto: str) -> bool:
 
 
 _PATRON_PREGUNTAS_CONDICIONALES = re.compile(
-    r"^\s*(?:en\s+caso\s+(?:afirmativo|de)|si\s+la\s+respuesta\s+es|favor\s+indicar|conflicto\s+de\s+inter[eé]s)\b",
+    r"^\s*(?:en\s+caso\s+(?:afirmativo|de)|si\s+la\s+respuesta\s+es|favor\s+indicar|conflicto\s+de\s+inter[eé]s|beneficiario[s]?\s+finale[s]?|si\s+en\s+la\s+composici[oó]n)\b",
     re.IGNORECASE
 )
 
@@ -1388,7 +1388,7 @@ def _mapear_campos_seccion_firma_nombre(
 # ---------------------------------------------------------------------------
 
 _PAT_SECCION_COMPOSICION_ACCIONARIA = re.compile(
-    r"composici[oó]n\s+accionaria|beneficiario[s]?\s+finale[s]?",
+    r"composici[oó]n\s+accionaria",
     re.IGNORECASE
 )
 
@@ -1398,12 +1398,19 @@ _ROTULOS_SECCION_COMPOSICION: List[Tuple[re.Pattern, str]] = [
 ]
 
 
+def _es_cabecera_composicion_accionaria(txt: str) -> bool:
+    txt_l = txt.lower().strip()
+    if any(x in txt_l for x in ["existiera", "adjuntar", "si en la", "beneficiarios finales"]):
+        return False
+    return bool(re.search(r"composici[oó]n\s+accionaria", txt_l))
+
+
 def _mapear_campos_seccion_composicion_accionaria(
     resultado_mapeo: List[Dict[str, Any]],
     mapa_formularios: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
 ) -> List[Dict[str, Any]]:
-    """Hard-Gate: Detecta y rellena la tabla de Composición Accionaria / Beneficiarios Finales."""
+    """Hard-Gate: Detecta y rellena únicamente la tabla de Composición Accionaria (excluyendo Beneficiarios Finales)."""
     val_rep = datos_empresa.get("representante_legal") or datos_empresa.get("razon_social")
     val_ced = datos_empresa.get("cedula") or datos_empresa.get("nit")
     if not val_rep or not val_ced:
@@ -1412,7 +1419,7 @@ def _mapear_campos_seccion_composicion_accionaria(
     filas_composicion = []
     hoja_comp = None
     for elem in mapa_formularios:
-        if _PAT_SECCION_COMPOSICION_ACCIONARIA.search(str(elem.get("valor", ""))):
+        if _es_cabecera_composicion_accionaria(str(elem.get("valor", ""))):
             filas_composicion.append(int(elem.get("fila", 0)))
             hoja_comp = str(elem.get("hoja", ""))
 
@@ -1425,7 +1432,7 @@ def _mapear_campos_seccion_composicion_accionaria(
             continue
         fila_elem = int(elem.get("fila", 0))
 
-        es_en_seccion = any(f_c <= fila_elem <= f_c + 12 for f_c in filas_composicion)
+        es_en_seccion = any(f_c <= fila_elem <= f_c + 6 for f_c in filas_composicion)
         if not es_en_seccion:
             continue
 
