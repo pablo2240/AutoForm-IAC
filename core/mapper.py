@@ -163,14 +163,65 @@ _PATRON_CAMPOS_FIRMA = re.compile(
 )
 
 
+_PATRON_SECCION_USO_EXCLUSIVO = re.compile(
+    r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|espacio\s+reservado|reservado\s+para\s+la\s+empresa|verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones",
+    re.IGNORECASE
+)
+
+
+def _obtener_rangos_uso_exclusivo(mapa: List[Dict[str, Any]]) -> Set[Tuple[str, int]]:
+    """Identifica todas las coordenadas (hoja, fila) pertenecientes a secciones
+    de 'USO EXCLUSIVO / USO INTERNO / ESPACIO RESERVADO PARA LA EMPRESA'.
+
+    Estas secciones son para diligenciamiento interno por parte de auditores o líderes
+    de proceso de la empresa receptora y NUNCA deben rellenarse con datos del proveedor.
+    """
+    celdas_exclusivas: Set[Tuple[str, int]] = set()
+
+    cabeceras_exclusivas = []
+    for elem in mapa:
+        txt = str(elem.get("valor", "")).strip()
+        if _PATRON_SECCION_USO_EXCLUSIVO.search(txt):
+            cabeceras_exclusivas.append((str(elem.get("hoja", "")), int(elem.get("fila", 0))))
+
+    if not cabeceras_exclusivas:
+        return celdas_exclusivas
+
+    for hoja_exc, fila_exc in cabeceras_exclusivas:
+        fila_fin = fila_exc + 15
+        for elem in mapa:
+            if str(elem.get("hoja", "")) != hoja_exc:
+                continue
+            f = int(elem.get("fila", 0))
+            if f > fila_exc:
+                txt = str(elem.get("valor", "")).strip()
+                if _es_titulo_seccion(txt) and not _PATRON_SECCION_USO_EXCLUSIVO.search(txt):
+                    fila_fin = min(fila_fin, f - 1)
+                    break
+
+        for r in range(fila_exc, fila_fin + 1):
+            celdas_exclusivas.add((hoja_exc, r))
+
+    return celdas_exclusivas
+
+
 def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     """Genera una representación limpia y estructurada para el LLM con ID incremental explícito (1..N).
 
     Filtra automáticamente enunciados que correspondan a listas de requisitos o títulos decorativos.
     """
     purgado = []
+    rangos_uso_exclusivo = _obtener_rangos_uso_exclusivo(mapa)
+
     for idx, entrada in enumerate(mapa):
         txt_rotulo = str(entrada.get("valor", "")).strip()
+        hoja_elem = str(entrada.get("hoja", ""))
+        fila_elem = int(entrada.get("fila", 0))
+
+        # Omitir celdas dentro de secciones de USO EXCLUSIVO / USO INTERNO
+        if (hoja_elem, fila_elem) in rangos_uso_exclusivo:
+            print(f"[AutoForm AI Mapper Filter] Omitido campo de sección interna (USO EXCLUSIVO): '{txt_rotulo}' F{fila_elem}")
+            continue
 
         # Omitir códigos de control de calidad/documental (ej. "Versión: 00", "Código: GE.F.021", "Página 1 de 2")
         if re.search(r"^\s*(?:versi[oó]n|c[oó]digo|p[aá]gina)\b", txt_rotulo, re.IGNORECASE):
