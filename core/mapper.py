@@ -1383,6 +1383,87 @@ def _mapear_campos_seccion_firma_nombre(
     return resultado_mapeo + nuevos
 
 
+# ---------------------------------------------------------------------------
+# Hard-Gate Composición Accionaria / Beneficiarios Finales: Nombre/Razon Social, Identificación/TIPO ID
+# ---------------------------------------------------------------------------
+
+_PAT_SECCION_COMPOSICION_ACCIONARIA = re.compile(
+    r"composici[oó]n\s+accionaria|beneficiario[s]?\s+finale[s]?",
+    re.IGNORECASE
+)
+
+_ROTULOS_SECCION_COMPOSICION: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*(?:nombre\s*/?\s*razon\s+social|nombres?\s+y\s+apellidos?|nombre\s+completo)\s*$", re.IGNORECASE), "representante_legal"),
+    (re.compile(r"^\s*(?:identificaci[oó]n\s*/?\s*tipo\s+id|identificaci[oó]n|c\.?c\.?|cedula)\s*$", re.IGNORECASE), "cedula"),
+]
+
+
+def _mapear_campos_seccion_composicion_accionaria(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Detecta y rellena la tabla de Composición Accionaria / Beneficiarios Finales."""
+    val_rep = datos_empresa.get("representante_legal") or datos_empresa.get("razon_social")
+    val_ced = datos_empresa.get("cedula") or datos_empresa.get("nit")
+    if not val_rep or not val_ced:
+        return resultado_mapeo
+
+    filas_composicion = []
+    hoja_comp = None
+    for elem in mapa_formularios:
+        if _PAT_SECCION_COMPOSICION_ACCIONARIA.search(str(elem.get("valor", ""))):
+            filas_composicion.append(int(elem.get("fila", 0)))
+            hoja_comp = str(elem.get("hoja", ""))
+
+    if not filas_composicion:
+        return resultado_mapeo
+
+    nuevos: List[Dict[str, Any]] = []
+    for elem in mapa_formularios:
+        if str(elem.get("hoja", "")) != hoja_comp:
+            continue
+        fila_elem = int(elem.get("fila", 0))
+
+        es_en_seccion = any(f_c <= fila_elem <= f_c + 12 for f_c in filas_composicion)
+        if not es_en_seccion:
+            continue
+
+        rotulo_txt = str(elem.get("valor", "")).strip()
+        col_elem = int(elem.get("columna", 0))
+
+        for patron, campo in _ROTULOS_SECCION_COMPOSICION:
+            if not patron.search(rotulo_txt):
+                continue
+
+            ya_esta = any(
+                m.get("hoja") == hoja_comp and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem
+                for m in resultado_mapeo
+            )
+            if ya_esta:
+                continue
+
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_comp,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": rotulo_txt,
+                "ubicacion": "abajo",
+                "campo": campo,
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            print(
+                f"[AutoForm AI Composicion-Gate] Campo '{campo}' inyectado en Composición Accionaria "
+                f"-> rótulo '{rotulo_txt}' F{fila_elem}C{col_elem}"
+            )
+            break
+
+    return resultado_mapeo + nuevos
+
+
 def _mapear_campos_seccion_representante(
     resultado_mapeo: List[Dict[str, Any]],
     mapa_formularios: List[Dict[str, Any]],
@@ -1750,6 +1831,9 @@ def mapeo_formularios(
 
     # ── 6.76 Hard-Gate Bloque Final de Firma ("Nombre :" en Fila 130) ──
     resultado_final = _mapear_campos_seccion_firma_nombre(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.77 Hard-Gate Composición Accionaria / Beneficiarios Finales ──
+    resultado_final = _mapear_campos_seccion_composicion_accionaria(resultado_final, mapa_formularios, datos_empresa)
 
     # ── 6.8 Muro de Seguridad final de Ubicación: NOMBRES / APELLIDOS en cabeceras ──
     for item in resultado_final:
