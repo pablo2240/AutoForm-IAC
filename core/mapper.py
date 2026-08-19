@@ -172,6 +172,11 @@ def _purgar_mapa(mapa: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for idx, entrada in enumerate(mapa):
         txt_rotulo = str(entrada.get("valor", "")).strip()
 
+        # Omitir códigos de control de calidad/documental (ej. "Versión: 00", "Código: GE.F.021", "Página 1 de 2")
+        if re.search(r"^\s*(?:versi[oó]n|c[oó]digo|p[aá]gina)\b", txt_rotulo, re.IGNORECASE):
+            print(f"[AutoForm AI Mapper Filter] Omitido código de control documental: '{txt_rotulo}'")
+            continue
+
         # Omitir recuadros de firma física/digital (no se inyectan textos en campos de firma)
         if _PATRON_CAMPOS_FIRMA.search(txt_rotulo):
             print(f"[AutoForm AI Mapper Filter] Omitido recuadro de firma física: '{txt_rotulo}'")
@@ -640,6 +645,7 @@ _INDICIOS_CAMPOS_RECURSIVOS = {
     "expedicion": [r"expedici[oó]n", r"expedida"],
     "departamento": [r"dpto", r"departamento"],
     "pais": [r"pa[ií]s"],
+    "cedula": [r"c\.?c\.?", r"c[eé]dula", r"identificaci[oó]n", r"documento"],
 }
 
 
@@ -992,9 +998,197 @@ _ROTULOS_SECCION_RL: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"^\s*(?:id|c\.?c\.?|cedula|identificaci[oó]n)\s*$", re.IGNORECASE), "cedula"),
     (re.compile(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bfono\b", re.IGNORECASE),    "telefono"),
     (re.compile(r"\bemail\b|\bcorreo\b|\be-mail\b|\bmail\b",          re.IGNORECASE),    "correo"),
+    (re.compile(r"^\s*(?:direcci[oó]n|domicilio)\s*$",                re.IGNORECASE),    "direccion"),
     (re.compile(r"^\s*nombres?\s*$",                                    re.IGNORECASE),    "representante_nombres"),
     (re.compile(r"^\s*apellidos?\s*$",                                  re.IGNORECASE),    "representante_apellidos"),
 ]
+
+
+# ---------------------------------------------------------------------------
+# Hard-Gate Declaración de Origen / SAGRILAFT: "Yo, ____ identificado con ____ expedido en ____"
+# ---------------------------------------------------------------------------
+
+_PAT_SECCION_DECLARACION_ORIGEN = re.compile(
+    r"declaraci[oó]n\s+de\s+origen|fuente\s+de\s+(?:fondos|recursos)|^\s*yo,?\s*$",
+    re.IGNORECASE
+)
+
+_ROTULOS_SECCION_DECLARACION: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*yo,?\s*$", re.IGNORECASE), "representante_legal"),
+    (re.compile(r"identificad[oa]\s+con|documento\s+de\s+identidad|c\.?c\.?", re.IGNORECASE), "cedula"),
+    (re.compile(r"expedid[oa]\s+en|lugar\s+de\s+expedici[oó]n", re.IGNORECASE), "expedicion"),
+]
+
+
+def _mapear_campos_seccion_declaracion_origen(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Rellena automáticamente los campos inline de la cláusula de Declaración de Origen.
+
+    Ejemplo en formularios SAGRILAFT/SARLAFT colombianos:
+      'Yo, [Nombre], identificado con el documento de identidad: [Cédula] expedido en: [Ciudad]'
+    """
+    fila_declaracion = None
+    hoja_dec = None
+    for elem in mapa_formularios:
+        if _PAT_SECCION_DECLARACION_ORIGEN.search(str(elem.get("valor", ""))):
+            fila_declaracion = int(elem.get("fila", 0))
+            hoja_dec = str(elem.get("hoja", ""))
+            break
+
+    if fila_declaracion is None:
+        return resultado_mapeo
+
+    VENTANA = 6
+    nuevos: List[Dict[str, Any]] = []
+    for elem in mapa_formularios:
+        if str(elem.get("hoja", "")) != hoja_dec:
+            continue
+        fila_elem = int(elem.get("fila", 0))
+        if fila_elem < fila_declaracion or fila_elem > fila_declaracion + VENTANA:
+            continue
+
+        rotulo_txt = str(elem.get("valor", "")).strip()
+        col_elem = int(elem.get("columna", 0))
+
+        for patron, campo in _ROTULOS_SECCION_DECLARACION:
+            if not patron.search(rotulo_txt):
+                continue
+            val_emp = datos_empresa.get(campo)
+            if not val_emp:
+                if campo == "representante_legal":
+                    val_emp = datos_empresa.get("representante_nombres")
+                if not val_emp:
+                    continue
+
+            # Remover mapeos erróneos en esta coordenada para inyectar el campo correcto
+            resultado_mapeo = [
+                m for m in resultado_mapeo
+                if not (m.get("hoja") == hoja_dec and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem)
+            ]
+
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            ubicacion_calc = _calcular_ubicacion_fisica(
+                val_rotulo=rotulo_txt,
+                derecha_vacia=bool(elem.get("derechaVacia", True)),
+                abajo_vacia=bool(elem.get("abajoVacia", False)),
+                derecha_es_merge=derecha_es_merge,
+                tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+            )
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_dec,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": rotulo_txt,
+                "ubicacion": ubicacion_calc,
+                "campo": campo,
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            print(
+                f"[AutoForm AI Declaracion-Gate] Campo '{campo}' inyectado en Declaración de Origen "
+                f"-> rótulo '{rotulo_txt}' F{fila_elem}C{col_elem}"
+            )
+            break
+
+    return resultado_mapeo + nuevos
+
+
+# ---------------------------------------------------------------------------
+# Hard-Gate Referencias Bancarias: BANCO, SUCURSAL, N° CUENTA, TIPO DE CUENTA
+# ---------------------------------------------------------------------------
+
+_PAT_SECCION_BANCO = re.compile(
+    r"referencia[s]?\s+bancaria[s]?|datos\s+bancarios|informaci[oó]n\s+bancaria",
+    re.IGNORECASE
+)
+
+_ROTULOS_SECCION_BANCO: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*banco\s*$", re.IGNORECASE), "banco"),
+    (re.compile(r"^\s*sucursal\s*$", re.IGNORECASE), "sucursal"),
+    (re.compile(r"n[o°\.]?\s*cuenta\b|\bcuenta\s+no\b", re.IGNORECASE), "numero_cuenta"),
+    (re.compile(r"tipo\s+de\s+cuenta\b|\btipo\s+cuenta\b", re.IGNORECASE), "tipo_cuenta"),
+]
+
+
+def _mapear_campos_seccion_banco(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Garantiza la inyección precisa de datos en la tabla de Referencias Bancarias."""
+    fila_banco = None
+    hoja_banco = None
+    for elem in mapa_formularios:
+        if _PAT_SECCION_BANCO.search(str(elem.get("valor", ""))):
+            fila_banco = int(elem.get("fila", 0))
+            hoja_banco = str(elem.get("hoja", ""))
+            break
+
+    if fila_banco is None:
+        return resultado_mapeo
+
+    VENTANA = 6
+    nuevos: List[Dict[str, Any]] = []
+    for elem in mapa_formularios:
+        if str(elem.get("hoja", "")) != hoja_banco:
+            continue
+        fila_elem = int(elem.get("fila", 0))
+        if fila_elem < fila_banco or fila_elem > fila_banco + VENTANA:
+            continue
+
+        rotulo_txt = str(elem.get("valor", "")).strip()
+        col_elem = int(elem.get("columna", 0))
+
+        for patron, campo in _ROTULOS_SECCION_BANCO:
+            if not patron.search(rotulo_txt):
+                continue
+            val_emp = datos_empresa.get(campo)
+            if not val_emp:
+                continue
+
+            # Remover mapeos erróneos en esta coordenada para inyectar el campo bancario correcto
+            resultado_mapeo = [
+                m for m in resultado_mapeo
+                if not (m.get("hoja") == hoja_banco and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem)
+                and m.get("campo") != campo
+            ]
+
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            rotulos_en_fila = sum(1 for e in mapa_formularios if e.get("hoja") == hoja_banco and e.get("fila") == fila_elem)
+            if rotulos_en_fila > 1 and not derecha_es_merge:
+                ubicacion_calc = "abajo"
+            else:
+                ubicacion_calc = _calcular_ubicacion_fisica(
+                    val_rotulo=rotulo_txt,
+                    derecha_vacia=bool(elem.get("derechaVacia", True)),
+                    abajo_vacia=bool(elem.get("abajoVacia", False)),
+                    derecha_es_merge=derecha_es_merge,
+                    tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+                )
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_banco,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": rotulo_txt,
+                "ubicacion": ubicacion_calc,
+                "campo": campo,
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            print(
+                f"[AutoForm AI Banco-Gate] Campo '{campo}' inyectado en Sección Bancaria "
+                f"-> rótulo '{rotulo_txt}' F{fila_elem}C{col_elem}"
+            )
+            break
+
+    return resultado_mapeo + nuevos
 
 
 def _mapear_campos_seccion_representante(
@@ -1352,6 +1546,12 @@ def mapeo_formularios(
     # Se ejecuta DESPUÉS de la deduplicación para que campos como cedula/telefono/correo
     # puedan ser inyectados en la sección del representante sin conflicto con la sección principal.
     resultado_final = _mapear_campos_seccion_representante(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.6 Hard-Gate Declaración de Origen / SAGRILAFT (Yo, ..., identificado con ..., expedido en ...) ──
+    resultado_final = _mapear_campos_seccion_declaracion_origen(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.7 Hard-Gate Referencias Bancarias (BANCO, SUCURSAL, N° CUENTA, TIPO DE CUENTA) ──
+    resultado_final = _mapear_campos_seccion_banco(resultado_final, mapa_formularios, datos_empresa)
 
     # ── 6.8 Muro de Seguridad final de Ubicación: NOMBRES / APELLIDOS en cabeceras ──
     for item in resultado_final:
