@@ -1400,7 +1400,9 @@ _ROTULOS_SECCION_COMPOSICION: List[Tuple[re.Pattern, str]] = [
 
 def _es_cabecera_composicion_accionaria(txt: str) -> bool:
     txt_l = txt.lower().strip()
-    if any(x in txt_l for x in ["existiera", "adjuntar", "si en la", "beneficiarios finales"]):
+    if any(x in txt_l for x in ["existiera", "adjuntar", "si en la"]):
+        return False
+    if txt_l.startswith("beneficiarios finales") or txt_l == "beneficiarios finales":
         return False
     return bool(re.search(r"composici[oó]n\s+accionaria", txt_l))
 
