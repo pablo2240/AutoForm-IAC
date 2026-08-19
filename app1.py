@@ -612,20 +612,17 @@ def _sanitizar_resultados(resultados):
 
 
 def _deduplicar_por_campo(resultados):
-    """Conserva el primer item por cada campo único.
-
-    Evita que el mismo dato (ej. nit, razon_social) se escriba en múltiples
-    posiciones del formulario, lo que causaba datos repetidos y fuera de lugar.
+    """Deduplica resultados por coordenada destino (hoja, fila, columna)
+    para evitar colisiones de escritura, permitiendo que campos requeridos en múltiples
+    secciones (ej. Cédula en Representante Legal y Junta Directiva) se inyecten.
     """
     vistos = set()
     resultado = []
     for item in resultados:
-        campo = item.get("campo")
-        if campo and campo not in vistos:
-            vistos.add(campo)
+        clave = (item.get("hoja", ""), int(item.get("fila", 0)), int(item.get("columna", 0)))
+        if clave not in vistos:
+            vistos.add(clave)
             resultado.append(item)
-        elif campo:
-            print(f"[AutoForm AI] Deduplicado campo repetido: {campo}")
     return resultado
 
 
