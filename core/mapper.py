@@ -1242,6 +1242,147 @@ def _mapear_campos_seccion_banco(
     return resultado_mapeo + nuevos
 
 
+# ---------------------------------------------------------------------------
+# Hard-Gate Sección 1 Identificación Empresa: C.C., PAGINA WEB, etc.
+# ---------------------------------------------------------------------------
+
+_PAT_SECCION_IDENTIFICACION = re.compile(
+    r"1\.\s*identificaci[oó]n|datos\s+de\s+la\s+empresa|informaci[oó]n\s+b[aá]sica",
+    re.IGNORECASE
+)
+
+_ROTULOS_SECCION_IDENTIFICACION: List[Tuple[re.Pattern, str]] = [
+    (re.compile(r"^\s*c\.?c\.?\s*$", re.IGNORECASE), "cedula"),
+    (re.compile(r"^\s*p[aá]gina\s+web:?\s*$", re.IGNORECASE), "pagina_web"),
+]
+
+
+def _mapear_campos_seccion_identificacion(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Garantiza que campos específicos de la Sección 1 (ej. C.C., PAGINA WEB) se inyecten."""
+    nuevos: List[Dict[str, Any]] = []
+    for elem in mapa_formularios:
+        fila_elem = int(elem.get("fila", 0))
+        if fila_elem > 20:
+            continue
+
+        hoja_elem = str(elem.get("hoja", ""))
+        rotulo_txt = str(elem.get("valor", "")).strip()
+        col_elem = int(elem.get("columna", 0))
+
+        for patron, campo in _ROTULOS_SECCION_IDENTIFICACION:
+            if not patron.search(rotulo_txt):
+                continue
+            val_emp = datos_empresa.get(campo)
+            if not val_emp:
+                continue
+
+            # Verificar si ya existe este campo en esta coordenada
+            ya_esta = any(
+                m.get("hoja") == hoja_elem and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem
+                for m in resultado_mapeo
+            )
+            if ya_esta:
+                continue
+
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            ubicacion_calc = _calcular_ubicacion_fisica(
+                val_rotulo=rotulo_txt,
+                derecha_vacia=bool(elem.get("derechaVacia", True)),
+                abajo_vacia=bool(elem.get("abajoVacia", False)),
+                derecha_es_merge=derecha_es_merge,
+                tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+            )
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_elem,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": rotulo_txt,
+                "ubicacion": ubicacion_calc,
+                "campo": campo,
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            print(
+                f"[AutoForm AI Ident-Gate] Campo '{campo}' inyectado en Sección 1 Identificación "
+                f"-> rótulo '{rotulo_txt}' F{fila_elem}C{col_elem}"
+            )
+            break
+
+    return resultado_mapeo + nuevos
+
+
+# ---------------------------------------------------------------------------
+# Hard-Gate Bloque de Firma: "Nombre :" debajo de Firma del Representante Legal
+# ---------------------------------------------------------------------------
+
+_PAT_ROTULO_NOMBRE_FIRMA = re.compile(
+    r"^\s*nombre\s*:?\s*$",
+    re.IGNORECASE
+)
+
+
+def _mapear_campos_seccion_firma_nombre(
+    resultado_mapeo: List[Dict[str, Any]],
+    mapa_formularios: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    """Hard-Gate: Inyecta el nombre del representante legal en el espacio 'Nombre :' ubicado en el bloque final de firmas."""
+    val_rep = datos_empresa.get("representante_legal") or datos_empresa.get("representante_nombres")
+    if not val_rep:
+        return resultado_mapeo
+
+    nuevos: List[Dict[str, Any]] = []
+    for elem in mapa_formularios:
+        txt_rotulo = str(elem.get("valor", "")).strip()
+        fila_elem = int(elem.get("fila", 0))
+
+        # Buscar rótulos 'Nombre :' en la zona final del documento (fila > 115)
+        if fila_elem > 115 and _PAT_ROTULO_NOMBRE_FIRMA.search(txt_rotulo):
+            hoja_elem = str(elem.get("hoja", ""))
+            col_elem = int(elem.get("columna", 0))
+
+            ya_esta = any(
+                m.get("hoja") == hoja_elem and int(m.get("fila", 0)) == fila_elem and int(m.get("columna", 0)) == col_elem
+                for m in resultado_mapeo
+            )
+            if ya_esta:
+                continue
+
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            ubicacion_calc = _calcular_ubicacion_fisica(
+                val_rotulo=txt_rotulo,
+                derecha_vacia=bool(elem.get("derechaVacia", True)),
+                abajo_vacia=bool(elem.get("abajoVacia", False)),
+                derecha_es_merge=derecha_es_merge,
+                tipo_espacio=str(elem.get("tipoEspacioEscritura", "derecha")).lower(),
+            )
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            nuevos.append({
+                "hoja": hoja_elem,
+                "fila": fila_elem,
+                "columna": col_elem,
+                "valor": txt_rotulo,
+                "ubicacion": ubicacion_calc,
+                "campo": "representante_legal",
+                "requiereMerge": ancho_l > 1,
+                "celdasAMergear": ancho_l,
+                "anchoLinea": ancho_l,
+            })
+            print(
+                f"[AutoForm AI Firma-Nombre-Gate] Campo 'representante_legal' inyectado en Bloque de Firma "
+                f"-> rótulo '{txt_rotulo}' F{fila_elem}C{col_elem}"
+            )
+            break
+
+    return resultado_mapeo + nuevos
+
+
 def _mapear_campos_seccion_representante(
     resultado_mapeo: List[Dict[str, Any]],
     mapa_formularios: List[Dict[str, Any]],
@@ -1603,6 +1744,12 @@ def mapeo_formularios(
 
     # ── 6.7 Hard-Gate Referencias Bancarias (BANCO, SUCURSAL, N° CUENTA, TIPO DE CUENTA) ──
     resultado_final = _mapear_campos_seccion_banco(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.75 Hard-Gate Sección 1 Identificación (C.C., PAGINA WEB) ──
+    resultado_final = _mapear_campos_seccion_identificacion(resultado_final, mapa_formularios, datos_empresa)
+
+    # ── 6.76 Hard-Gate Bloque Final de Firma ("Nombre :" en Fila 130) ──
+    resultado_final = _mapear_campos_seccion_firma_nombre(resultado_final, mapa_formularios, datos_empresa)
 
     # ── 6.8 Muro de Seguridad final de Ubicación: NOMBRES / APELLIDOS en cabeceras ──
     for item in resultado_final:
