@@ -509,10 +509,9 @@ def rellenar_formulario_excel(
     null_count      = sum(1 for r in reporte if r["estado"] == "NULL")
     err_count       = sum(1 for r in reporte if r["estado"] == "ERROR")
     preserved_count = sum(1 for r in reporte if r["estado"] == "PRESERVED")
+    # Formatear resumen con emojis solicitados, sin PRESERVED
     summary_msg = (
-        f"\n[AutoForm Writer] Resumen: "
-        f"OK={ok_count}  SKIP={skip_count}  PRESERVED={preserved_count}  NULL={null_count}  ERROR={err_count}\n"
-
+        f"\n📊 Resumen: ✅ OK={ok_count}  ⏭️ SKIP={skip_count}  🔕 NULL={null_count}  ❌ ERROR={err_count}\n"
     )
     try:
         print(summary_msg)

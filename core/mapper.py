@@ -19,7 +19,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple   # ← FIX: Tuple estaba ausente
+from typing import Any, Dict, List, Optional, Set, Tuple   # ← FIX: Tuple y Set importados
 
 from core import semantic_cache
 from core.llm_client import invocar_llm, STRICT_SYSTEM_PROMPT
