@@ -158,8 +158,88 @@ Responde ÚNICAMENTE con un objeto JSON válido con la clave "mappings":
 }"""
 
 
+def consultar_llm(
+    prompt_usuario: str,
+    sistema: Optional[str] = None,
+    json_mode: bool = False,
+    timeout: int = 60,
+) -> str:
+    """Consulta al modelo de OpenAI o Azure OpenAI configurado en .env."""
+    if sistema is None:
+        sistema = STRICT_SYSTEM_PROMPT
+
+    usar_azure = bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY)
+    if not usar_azure and not OPENAI_API_KEY:
+        raise RuntimeError("Configura tus credenciales de Azure OpenAI u OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
+
+    mensajes: List[Dict[str, str]] = []
+    if sistema:
+        mensajes.append({"role": "system", "content": sistema})
+    mensajes.append({"role": "user", "content": prompt_usuario})
+
+    if usar_azure:
+        endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
+        url_target = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
+        headers = {
+            "api-key": AZURE_OPENAI_API_KEY,
+            "Content-Type": "application/json",
+        }
+        body: Dict[str, Any] = {
+            "messages": mensajes,
+            "temperature": 0.0,
+            "seed": 42,
+        }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+    else:
+        url_target = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {OPENAI_API_KEY}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o-mini",
+            "messages": mensajes,
+            "temperature": 0.0,
+            "seed": 42,
+        }
+        if json_mode:
+            body["response_format"] = {"type": "json_object"}
+
+    MAX_REINTENTOS = 3
+    ultimo_error: Exception = RuntimeError("Error desconocido al consultar el LLM")
+
+    for intento in range(1, MAX_REINTENTOS + 1):
+        try:
+            res_http = requests.post(url_target, json=body, headers=headers, timeout=timeout)
+            if res_http.status_code >= 500:
+                ultimo_error = RuntimeError(f"Error del servidor LLM ({res_http.status_code}): {res_http.text}")
+                if intento < MAX_REINTENTOS:
+                    time.sleep(2 ** (intento - 1))
+                    continue
+                raise ultimo_error
+            res_http.raise_for_status()
+            datos = res_http.json()
+            if "choices" in datos and datos["choices"]:
+                contenido = datos["choices"][0].get("message", {}).get("content")
+                if contenido is not None:
+                    return str(contenido).strip()
+            raise RuntimeError(f"Respuesta vacía o sin elecciones del LLM: {datos}")
+        except Exception as exc:
+            ultimo_error = exc
+            if intento < MAX_REINTENTOS:
+                time.sleep(2 ** (intento - 1))
+                continue
+            raise ultimo_error
+
+    raise ultimo_error
+
+
 def invocar_llm(prompt: str, sistema: str = "", timeout: int = 60) -> str:
-    return consultar_llm(prompt, sistema=STRICT_SYSTEM_PROMPT, json_mode=True, timeout=timeout)
+    sistema_completo = STRICT_SYSTEM_PROMPT
+    if sistema:
+        sistema_completo = f"{sistema}\n\n{sistema_completo}"
+    return consultar_llm(prompt, sistema=sistema_completo, json_mode=True, timeout=timeout)
 
 
 def consultar_llm_semantico(
