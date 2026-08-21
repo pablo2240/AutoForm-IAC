@@ -132,6 +132,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             "contacto": {
                 "correo": str(plano.get("correo_representante") or plano.get("correo", "")),
                 "telefono": str(plano.get("telefono_representante") or plano.get("telefono", "")),
+                "celular": str(plano.get("celular") or plano.get("celular_representante", "")),
             }
         },
         "financiero": {
@@ -200,6 +201,7 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "direccion": "",
         "telefono": "",
         "correo": "",
+        "tipo_documento": "C.C.",
         "cedula": "",
         "expedicion": "",
         "ciudad": "",
@@ -208,6 +210,7 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "representante_legal": "",
         "representante_nombres": "",
         "representante_apellidos": "",
+        "celular": "",
         "pais": "Colombia",
         "banco": "",
         "numero_cuenta": "",

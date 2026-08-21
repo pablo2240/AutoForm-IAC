@@ -1,4 +1,4 @@
-﻿{
+{
   "empresa": {
     "identidad": {
       "razon_social": "Ingeniería Asistida Por Computador S.A.S",
@@ -28,7 +28,8 @@
     },
     "contacto": {
       "correo": "guillermo.canon@iaclatam.com",
-      "telefono": "2656868"
+      "telefono": "2656868",
+      "celular": "3104120217"
     }
   },
   "financiero": {
