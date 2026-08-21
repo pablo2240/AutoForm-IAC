@@ -121,20 +121,45 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
 
 
 def _obtener_relleno_preservado(celda_origen, celda_destino) -> Optional[PatternFill]:
-    """WRITER-01: Preserva PatternFill de la celda destino u origen."""
-    for c in (celda_destino, celda_origen):
-        if c and hasattr(c, "fill") and c.fill and getattr(c.fill, "fill_type", None):
-            return copy(c.fill)
+    """WRITER-01: Preserva el fondo original de la celda destino únicamente.
+    NUNCA copia el color de fondo del rótulo/encabezado (celda_origen) hacia el área de escritura.
+    """
+    if celda_destino and hasattr(celda_destino, "fill") and celda_destino.fill:
+        fill_type = getattr(celda_destino.fill, "fill_type", None)
+        if fill_type is not None and fill_type != "none":
+            return copy(celda_destino.fill)
     return None
 
 
 def _obtener_fuente_preservada(celda_origen, celda_destino) -> Optional[Font]:
-    """WRITER-02: Preserva Font de la celda destino u origen."""
-    for c in (celda_destino, celda_origen):
-        if c and hasattr(c, "font") and c.font:
-            if c.font.name or c.font.size or c.font.bold or c.font.color:
-                return copy(c.font)
-    return None
+    """WRITER-02: Preserva la tipografía (nombre de fuente, tamaño) adaptada para escritura.
+    Hereda la familia y tamaño de fuente del rótulo origen o celda destino, manteniendo
+    el texto legible en estilo normal (no negrita decorativa de encabezado).
+    """
+    # 1. Heredar familia y tamaño del rótulo origen (con bold=False para texto de entrada limpio)
+    if celda_origen and hasattr(celda_origen, "font") and celda_origen.font:
+        f_orig = celda_origen.font
+        if f_orig.name or f_orig.size:
+            return Font(
+                name=f_orig.name or "Calibri",
+                size=f_orig.size or 10,
+                bold=False,
+                italic=bool(f_orig.italic),
+                color=copy(f_orig.color) if f_orig.color else None,
+            )
+
+    # 2. Si la celda destino tiene fuente propia definida
+    if celda_destino and hasattr(celda_destino, "font") and celda_destino.font:
+        f_dest = celda_destino.font
+        return Font(
+            name=f_dest.name or "Calibri",
+            size=f_dest.size or 10,
+            bold=False,
+            italic=bool(f_dest.italic),
+            color=copy(f_dest.color) if f_dest.color else None,
+        )
+
+    return Font(name="Calibri", size=10, bold=False)
 
 
 def _obtener_borde_completo(celda_origen, celda_destino) -> Optional[Border]:
