@@ -446,61 +446,83 @@ with st.sidebar:
     ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
     datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
 
-    # ✏️ Editor Visual de Datos del Perfil Activo
+    # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     with st.expander("✏️ Editar Datos de Empresa", expanded=False):
-        tab_id, tab_ub, tab_bn = st.tabs(["🪪 ID", "📍 Contacto", "🏦 Banco"])
+        tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
         
-        with tab_id:
+        with tab_emp:
+            st.markdown("##### 📌 Identificación Corporativa")
             razon_social = st.text_input("Razón Social", value=datos_empresa.get("razon_social", ""))
-            nit = st.text_input("NIT", value=datos_empresa.get("nit", ""))
-            representante_legal = st.text_input("Representante Legal", value=datos_empresa.get("representante_legal", ""))
-            cedula = st.text_input("Cédula Representante", value=datos_empresa.get("cedula", ""))
-            expedicion = st.text_input("Ciudad de Expedición (Cédula)", value=datos_empresa.get("expedicion", ""),
-                                       help="Ciudad donde fue expedida la cédula del representante legal. Ej: Medellín")
-            rep_nombres = st.text_input("Nombres Rep.", value=datos_empresa.get("representante_nombres", ""))
-            rep_apellidos = st.text_input("Apellidos Rep.", value=datos_empresa.get("representante_apellidos", ""))
+            nit = st.text_input("NIT / Identificación Tributaria", value=datos_empresa.get("nit", ""))
+            tipo_sociedad = st.text_input("Tipo de Sociedad", value=datos_empresa.get("tipo_sociedad", "S.A.S"))
 
-        with tab_ub:
+            st.markdown("##### 📍 Ubicación Principal")
             direccion = st.text_input("Dirección Principal", value=datos_empresa.get("direccion", ""))
-            ciudad = st.text_input("Ciudad", value=datos_empresa.get("ciudad", ""))
+            ciudad = st.text_input("Ciudad / Municipio", value=datos_empresa.get("ciudad", ""))
             departamento = st.text_input("Departamento", value=datos_empresa.get("departamento", ""))
             pais = st.text_input("País", value=datos_empresa.get("pais", "Colombia"))
-            telefono = st.text_input("Teléfono", value=datos_empresa.get("telefono", ""))
-            correo = st.text_input("Correo Electrónico", value=datos_empresa.get("correo", ""))
+
+            st.markdown("##### 📞 Contacto Institucional")
+            telefono = st.text_input("Teléfono PBX", value=datos_empresa.get("telefono", ""))
+            correo = st.text_input("Correo Institucional", value=datos_empresa.get("correo", ""))
             pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web", ""))
 
-        with tab_bn:
-            banco = st.text_input("Banco", value=datos_empresa.get("banco", ""))
-            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta", ""))
+        with tab_rep:
+            st.markdown("##### 🪪 Identidad del Representante")
+            representante_legal = st.text_input("Nombre Completo", value=datos_empresa.get("representante_legal", ""))
+            rep_nombres = st.text_input("Nombres", value=datos_empresa.get("representante_nombres", ""))
+            rep_apellidos = st.text_input("Apellidos", value=datos_empresa.get("representante_apellidos", ""))
             
+            tipo_doc_val = str(datos_empresa.get("tipo_documento", "C.C.")).strip()
+            idx_tdoc = 0 if "C.C" in tipo_doc_val.upper() else (1 if "C.E" in tipo_doc_val.upper() else 2)
+            tipo_documento = st.selectbox("Tipo de Documento / Tipo ID", options=["C.C.", "C.E.", "PASAPORTE", "OTRO"], index=idx_tdoc)
+            
+            cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula", ""))
+            expedicion = st.text_input("Ciudad de Expedición", value=datos_empresa.get("expedicion", ""),
+                                       help="Ciudad donde fue expedido el documento del representante. Ej: Medellín")
+
+            st.markdown("##### 📱 Contacto Directo")
+            celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular", ""))
+            correo_rep = st.text_input("Correo del Representante", value=datos_empresa.get("correo_representante") or datos_empresa.get("correo", ""))
+
+        with tab_fin:
+            st.markdown("##### 🏦 Entidad Bancaria")
+            banco = st.text_input("Banco", value=datos_empresa.get("banco", ""))
+            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal", ""))
+
+            st.markdown("##### 💳 Cuenta para Pagos")
+            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta", ""))
             tipo_cta_actual = str(datos_empresa.get("tipo_cuenta", "AHORROS")).upper()
             idx_tipo = 0 if "AHORRO" in tipo_cta_actual else (1 if "CORRIENTE" in tipo_cta_actual else 2)
             tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo)
-            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal", ""))
 
         if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
                 "razon_social": razon_social,
                 "nit": nit,
+                "tipo_sociedad": tipo_sociedad,
                 "direccion": direccion,
-                "telefono": telefono,
-                "correo": correo,
-                "cedula": cedula,
-                "expedicion": expedicion,
                 "ciudad": ciudad,
                 "departamento": departamento,
+                "pais": pais,
+                "telefono": telefono,
+                "correo": correo,
                 "pagina_web": pagina_web,
                 "representante_legal": representante_legal,
                 "representante_nombres": rep_nombres,
                 "representante_apellidos": rep_apellidos,
-                "pais": pais,
+                "tipo_documento": tipo_documento,
+                "cedula": cedula,
+                "expedicion": expedicion,
+                "celular": celular,
+                "correo_representante": correo_rep,
                 "banco": banco,
+                "sucursal": sucursal,
                 "numero_cuenta": numero_cuenta,
                 "tipo_cuenta": tipo_cuenta,
-                "sucursal": sucursal,
             }
             if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados):
-                st.success("✅ ¡Datos del perfil guardados!")
+                st.success("✅ ¡Datos del perfil guardados en Taxonomía Semántica!")
                 datos_empresa = datos_actualizados
                 _safe_rerun()
 
