@@ -52,9 +52,25 @@ if load_dotenv is not None:
 else:
     _manual_load_dotenv()
 
-# OpenAI Configuration (Motor Principal)
+# Soporte automático para Streamlit Community Cloud Secrets (st.secrets)
+try:
+    import streamlit as st
+    if hasattr(st, "secrets"):
+        for k, v in st.secrets.items():
+            if isinstance(v, str) and k not in os.environ:
+                os.environ[k] = v
+except Exception:
+    pass
+
+# OpenAI Configuration (Motor Estándar)
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+
+# Azure OpenAI Configuration (Motor Corporativo)
+AZURE_OPENAI_ENDPOINT = os.getenv("AZURE_OPENAI_ENDPOINT")
+AZURE_OPENAI_API_KEY = os.getenv("AZURE_OPENAI_API_KEY")
+AZURE_OPENAI_DEPLOYMENT_NAME = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4.1-mini")
+AZURE_OPENAI_API_VERSION = os.getenv("AZURE_OPENAI_API_VERSION", "2024-08-01-preview")
 
 
 
@@ -230,21 +246,110 @@ def _consultar_openai(
     raise ultimo_exc_openai
 
 
+def _consultar_azure_openai(
+    prompt_usuario: str,
+    sistema: str = "",
+    json_mode: bool = False,
+    timeout: int = 60,
+) -> str:
+    """Invocación optimizada a Azure OpenAI Service con instructor y REST fallback."""
+    if not AZURE_OPENAI_ENDPOINT or not AZURE_OPENAI_API_KEY:
+        raise RuntimeError("AZURE_OPENAI_ENDPOINT o AZURE_OPENAI_API_KEY no configuradas en .env")
+
+    # Opción A: Usar 'instructor' con cliente AzureOpenAI
+    if instructor is not None and openai is not None and hasattr(openai, "AzureOpenAI"):
+        try:
+            raw_client = openai.AzureOpenAI(
+                azure_endpoint=AZURE_OPENAI_ENDPOINT,
+                api_key=AZURE_OPENAI_API_KEY,
+                api_version=AZURE_OPENAI_API_VERSION,
+            )
+            client = instructor.from_openai(raw_client)
+            mensajes_inst = []
+            if sistema:
+                mensajes_inst.append({"role": "system", "content": sistema})
+            mensajes_inst.append({"role": "user", "content": prompt_usuario})
+
+            res_pydantic: PlanMapeoSemantico = client.chat.completions.create(
+                model=AZURE_OPENAI_DEPLOYMENT_NAME,
+                response_model=PlanMapeoSemantico,
+                max_retries=2,
+                messages=mensajes_inst,
+                temperature=0.0,
+                seed=42,
+            )
+            if res_pydantic and res_pydantic.mappings:
+                return res_pydantic.model_dump_json()
+        except Exception as exc:
+            print(f"[AutoForm AI Azure Warning] Instructor Azure falló ({exc}). Intentando REST directo...")
+
+    # Opción B: Usar REST API nativa de Azure OpenAI
+    mensajes: List[Dict[str, str]] = []
+    if sistema:
+        mensajes.append({"role": "system", "content": sistema})
+    mensajes.append({"role": "user", "content": prompt_usuario})
+
+    endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
+    url_azure = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
+
+    headers = {
+        "api-key": AZURE_OPENAI_API_KEY,
+        "Content-Type": "application/json",
+    }
+
+    cuerpo: Dict[str, Any] = {
+        "messages": mensajes,
+        "temperature": 0.0,
+        "seed": 42,
+    }
+    if json_mode:
+        cuerpo["response_format"] = {"type": "json_object"}
+
+    try:
+        respuesta = requests.post(url_azure, headers=headers, json=cuerpo, timeout=timeout)
+        respuesta.raise_for_status()
+        datos = respuesta.json()
+        choices = datos.get("choices", [])
+        if choices:
+            msg = choices[0].get("message", {})
+            content = msg.get("content", "").strip()
+            if content:
+                return content
+    except Exception as exc:
+        raise RuntimeError(f"Error en llamada a Azure OpenAI ({AZURE_OPENAI_DEPLOYMENT_NAME}): {exc}")
+
+    raise RuntimeError("Azure OpenAI no devolvió ninguna respuesta válida.")
+
+
 def consultar_llm(
     prompt_usuario: str,
     sistema: Optional[str] = None,
     json_mode: bool = False,
     timeout: int = 60,
 ) -> str:
+    modelo_nombre = AZURE_OPENAI_DEPLOYMENT_NAME if (AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY) else OPENAI_MODEL
     if sistema is None:
-        sistema = f"Eres el asistente inteligente de AutoForm AI, impulsado por OpenAI {OPENAI_MODEL}. Responde únicamente en formato JSON válido."
+        sistema = f"Eres el asistente inteligente de AutoForm AI, impulsado por {modelo_nombre}. Responde únicamente en formato JSON válido."
 
+    # 1. Prioridad: Azure OpenAI Corporativo
+    if AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY:
+        try:
+            return _consultar_azure_openai(
+                prompt_usuario, sistema=sistema, json_mode=json_mode, timeout=timeout
+            )
+        except Exception as exc_azure:
+            print(f"[AutoForm AI Warning] Falló Azure OpenAI ({exc_azure}). Probando fallback...")
+
+    # 2. Respaldo: OpenAI API directa
     if OPENAI_API_KEY:
         return _consultar_openai(
             prompt_usuario, sistema=sistema, json_mode=json_mode, timeout=timeout
         )
 
-    raise RuntimeError("No se configuró ninguna clave OPENAI_API_KEY en el archivo .env")
+    raise RuntimeError(
+        "No se configuró ninguna clave de IA válida. "
+        "Verifica AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT o OPENAI_API_KEY en tu archivo .env"
+    )
 
 
 def invocar_llm(prompt: str, sistema: str = "", timeout: int = 60) -> str:
@@ -304,13 +409,14 @@ def invocar_llm_vision(
     timeout: int = 90,
 ) -> List[Dict[str, Any]]:
     """Analiza visualmente páginas PDF (imágenes PNG) y extrae las coordenadas de las casillas
-    (bounding boxes normalizadas 0-1000) usando OpenAI GPT-4o Vision (Base64).
+    (bounding boxes normalizadas 0-1000) usando Azure OpenAI / OpenAI GPT-4o Vision (Base64).
     """
     if not imagenes_png:
         return []
 
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY no configurada en .env para motor de Visión")
+    usar_azure = bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY)
+    if not usar_azure and not OPENAI_API_KEY:
+        raise RuntimeError("No se configuró AZURE_OPENAI_API_KEY ni OPENAI_API_KEY en .env para motor de Visión")
 
     datos_json = json.dumps(datos_empresa, ensure_ascii=False, indent=2)
 
@@ -338,7 +444,7 @@ def invocar_llm_vision(
     )
 
     try:
-        print("[AutoForm AI Vision] Procesando imagen PDF con OpenAI GPT-4o Vision (Base64)...")
+        print("[AutoForm AI Vision] Procesando imagen PDF con GPT-4o Vision (Base64)...")
 
         content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt_vision}]
 
@@ -349,19 +455,34 @@ def invocar_llm_vision(
                 "image_url": {"url": f"data:image/png;base64,{b64_img}"}
             })
 
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4.1-mini",
-            "messages": [{"role": "user", "content": content_parts}],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.0,
-            "seed": 42,
-        }
+        if usar_azure:
+            endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
+            url_target = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
+            headers = {
+                "api-key": AZURE_OPENAI_API_KEY,
+                "Content-Type": "application/json",
+            }
+            body = {
+                "messages": [{"role": "user", "content": content_parts}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+                "seed": 42,
+            }
+        else:
+            url_target = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o-mini",
+                "messages": [{"role": "user", "content": content_parts}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+                "seed": 42,
+            }
 
-        res_http = requests.post("https://api.openai.com/v1/chat/completions", json=body, headers=headers, timeout=timeout)
+        res_http = requests.post(url_target, json=body, headers=headers, timeout=timeout)
         res_http.raise_for_status()
         text_out = res_http.json()["choices"][0]["message"]["content"]
 
@@ -373,7 +494,7 @@ def invocar_llm_vision(
                 return res_json
 
     except Exception as exc:
-        print(f"[AutoForm AI Vision Error] Falló visión con OpenAI: {exc}")
+        print(f"[AutoForm AI Vision Error] Falló visión con LLM: {exc}")
 
     return []
 
@@ -384,16 +505,13 @@ def consultar_llm_vision(
     clave_resultado: str,
     timeout: int = 90,
 ) -> List[Dict[str, Any]]:
-    """Invocación genérica a OpenAI Vision (Base64) que extrae una lista JSON bajo `clave_resultado`.
-
-    Se usa para tareas de visión distintas a la detección de campos (p. ej. validación
-    visual post-llenado y auto-corrección de bounding boxes).
-    """
+    """Invocación genérica a Vision (Base64) con soporte para Azure OpenAI y OpenAI nativo."""
     if not imagenes_png:
         return []
 
-    if not OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY no configurada en .env para motor de Visión")
+    usar_azure = bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY)
+    if not usar_azure and not OPENAI_API_KEY:
+        raise RuntimeError("No se configuró AZURE_OPENAI_API_KEY ni OPENAI_API_KEY en .env para motor de Visión")
 
     try:
         content_parts: List[Dict[str, Any]] = [{"type": "text", "text": prompt_usuario}]
@@ -405,19 +523,34 @@ def consultar_llm_vision(
                 "image_url": {"url": f"data:image/png;base64,{b64_img}"}
             })
 
-        headers = {
-            "Authorization": f"Bearer {OPENAI_API_KEY}",
-            "Content-Type": "application/json",
-        }
-        body = {
-            "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4.1-mini",
-            "messages": [{"role": "user", "content": content_parts}],
-            "response_format": {"type": "json_object"},
-            "temperature": 0.0,
-            "seed": 42,
-        }
+        if usar_azure:
+            endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
+            url_target = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
+            headers = {
+                "api-key": AZURE_OPENAI_API_KEY,
+                "Content-Type": "application/json",
+            }
+            body = {
+                "messages": [{"role": "user", "content": content_parts}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+                "seed": 42,
+            }
+        else:
+            url_target = "https://api.openai.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {OPENAI_API_KEY}",
+                "Content-Type": "application/json",
+            }
+            body = {
+                "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o-mini",
+                "messages": [{"role": "user", "content": content_parts}],
+                "response_format": {"type": "json_object"},
+                "temperature": 0.0,
+                "seed": 42,
+            }
 
-        res_http = requests.post("https://api.openai.com/v1/chat/completions", json=body, headers=headers, timeout=timeout)
+        res_http = requests.post(url_target, json=body, headers=headers, timeout=timeout)
         res_http.raise_for_status()
         text_out = res_http.json()["choices"][0]["message"]["content"]
 
@@ -429,6 +562,6 @@ def consultar_llm_vision(
                 return res_json
 
     except Exception as exc:
-        print(f"[AutoForm AI Vision Error] Falló consulta genérica de visión con OpenAI: {exc}")
+        print(f"[AutoForm AI Vision Error] Falló consulta genérica de visión con LLM: {exc}")
 
     return []

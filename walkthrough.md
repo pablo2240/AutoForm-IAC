@@ -1,31 +1,23 @@
-# Walkthrough: Integración del Ecosistema Avanzado de UI en Streamlit
+# Walkthrough: Integración Exitosa de Microsoft Azure OpenAI Service (gpt-4.1-mini)
 
-Se integró exitosamente el conjunto de componentes avanzados de interfaz de usuario sin modificar la lógica del núcleo (`core/`).
-
----
-
-## 🎨 Componentes Avanzados Integrados
-
-1. **Tabla Enterprise `streamlit-aggrid` (`render_aggrid_coincidencias`)**:
-   - Pestaña de visualización de coordenadas con ordenamiento, filtrado por columna, edición inline de celdas y paginación nativa de 10 elementos.
-
-2. **Menú de Navegación `streamlit-option-menu`**:
-   - Navegación estilizada en el panel lateral con pestañas (*Diligenciar Formulario*, *Perfil Empresarial*, *Probador Agente*), estado activo con borde amarillo e íconos de Bootstrap.
-
-3. **Animaciones y Helpers (`streamlit-lottie` & `streamlit-extras`)**:
-   - Integración con fallback para animaciones interactivas Lottie en placeholders de carga y espaciado de pantalla `add_vertical_space`.
-
-4. **Gestión de Dependencias**:
-   - Actualización de [`requirements.txt`](file:///c:/Users/Asus%20Vivobook%2016/Documents/GitHub/autoform-ai/requirements.txt) con `streamlit-extras`, `streamlit-option-menu`, `streamlit-aggrid`, `streamlit-lottie` y `requests`.
+Se implementó y verificó con éxito la conexión con **Microsoft Azure OpenAI Service** utilizando el despliegue `gpt-4.1-mini`.
 
 ---
 
-## 🧪 Pruebas y Validación
-- **Compilación Python**: Ejecutada con `python -m py_compile app1.py` (Exit Code 0).
-- **Entorno de Ejecución**: Paquetes instalados y verificados en el venv local.
+## 🚀 Cambios Implementados
+
+1. **Soporte Nativo para Azure OpenAI ([`core/llm_client.py`](file:///c:/Users/Asus%20Vivobook%2016/Documents/GitHub/autoform-ai/core/llm_client.py))**:
+   - Variables de entorno integradas: `AZURE_OPENAI_ENDPOINT`, `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_DEPLOYMENT_NAME` (default: `gpt-4.1-mini`), `AZURE_OPENAI_API_VERSION`.
+   - Función `_consultar_azure_openai(...)` con validación estricta Pydantic (`instructor`) y fallback REST HTTP nativo.
+   - Soporte de Visión en PDFs escaneados (`invocar_llm_vision` y `consultar_llm_vision`) adaptado para Azure OpenAI.
+
+2. **Interfaz de Usuario Streamlit ([`app1.py`](file:///c:/Users/Asus%20Vivobook%2016/Documents/GitHub/autoform-ai/app1.py))**:
+   - Badge superior del Header actualizado para reflejar dinámicamente: `● MOTOR AZURE OPENAI (GPT-4.1-MINI) ACTIVE`.
+   - Validación del botón *"Procesar Formulario"* para aceptar credenciales corporativas de Azure OpenAI.
 
 ---
 
-## 📦 Commits en GitHub
-- **Plan de Integración**: [`implementation_plan.md`](file:///c:/Users/Asus%20Vivobook%2016/.gemini/antigravity/brain/9e2f1425-1980-458b-9a80-4c439de590fc/implementation_plan.md)
-- **Código Fuente**: [`8e6848b`](https://github.com/pablo2240/AutoForm-IAC/commit/8e6848b)
+## 🧪 Pruebas de Conexión Realizadas
+- **Test de Conexión con Azure OpenAI**: Ejecutado exitosamente vía [`scratch/test_azure_connection.py`](file:///c:/Users/Asus%20Vivobook%2016/Documents/GitHub/autoform-ai/scratch/test_azure_connection.py).
+- **Resultado de Inferencia**: `{"mappings": [{"id": 1, "campo": "Conexión Exitosa con Azure OpenAI", "ubicacion": "misma"}]}` (Exit Code 0).
+- **Compilación de Sintaxis**: `python -m py_compile core/llm_client.py app1.py` (Exit Code 0).

@@ -69,6 +69,15 @@ if load_dotenv is not None:
 else:
     _manual_load_dotenv()
 
+# Soporte automático para Streamlit Community Cloud Secrets (st.secrets)
+try:
+    if hasattr(st, "secrets"):
+        for k, v in st.secrets.items():
+            if isinstance(v, str) and k not in os.environ:
+                os.environ[k] = v
+except Exception:
+    pass
+
 
 def _safe_rerun():
     if hasattr(st, "experimental_rerun"):
@@ -386,17 +395,18 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 # 3. Header Hero Institucional
-st.markdown("""
+nombre_despliegue = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
+motor_label = f"AZURE OPENAI ({nombre_despliegue.upper()}) ACTIVE" if (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")) else f"OPENAI {nombre_despliegue.upper()} ACTIVE"
+
+st.markdown(f"""
     <div class="iac-header">
         <div>
             <h1 class="iac-title">⚡ AutoForm <span>AI</span></h1>
             <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
         </div>
         <div class="iac-badge">
-            <span>●</span> MOTOR OPENAI GPT-4.1-MINI ACTIVE
+            <span>●</span> MOTOR {motor_label}
         </div>
-
-
     </div>
 """, unsafe_allow_html=True)
 
@@ -697,8 +707,12 @@ if uploaded_file is not None:
 
         if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
             if file_type in ["xlsx", "xls", "pdf"]:
-                if not os.getenv("OPENAI_API_KEY"):
-                    st.error("Configura OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
+                tiene_azure = bool(os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY"))
+                tiene_openai = bool(os.getenv("OPENAI_API_KEY"))
+
+                if not tiene_azure and not tiene_openai:
+                    st.error("Configura tus credenciales de Azure OpenAI (AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT) u OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
+                    st.stop()
 
 
                 progress_placeholder = st.empty()
