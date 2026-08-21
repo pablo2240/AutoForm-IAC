@@ -15,14 +15,26 @@ except ImportError:
 import sys
 import importlib
 
-# Recargar módulos de core para asegurar que los cambios se reflejen en Streamlit sin reiniciar
-for modulo in ["core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor"]:
+# Recargar módulos de core, pipeline y ui para asegurar que los cambios se reflejen en Streamlit sin reiniciar
+for modulo in [
+    "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
+    "pipeline.context", "pipeline.orchestrator", "pipeline.handlers.document_detector",
+    "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
+    "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
+    "pipeline.stages.stage_3_llm_mapper", "pipeline.stages.stage_5_writer",
+    "ui.page_verify", "ui.page_download", "ui.page_upload", "template_store.store",
+]:
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
 from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor, llm_client
 from core import pdf_vision
 from core.mapper import get_debug_info as _get_debug_info
+
+from pipeline.context import PipelineContext
+from pipeline.orchestrator import PipelineOrchestrator
+from ui.page_verify import render_pantalla_verificacion
+from ui.page_download import render_pantalla_descarga
 
 # ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
 try:
@@ -711,261 +723,55 @@ if uploaded_file is not None:
                 tiene_openai = bool(os.getenv("OPENAI_API_KEY"))
 
                 if not tiene_azure and not tiene_openai:
-                    st.error("Configura tus credenciales de Azure OpenAI (AZURE_OPENAI_API_KEY / AZURE_OPENAI_ENDPOINT) u OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
+                    st.error("Configura tus credenciales de Azure OpenAI u OPENAI_API_KEY en tu archivo .env para ejecutar la IA.")
                     st.stop()
 
-
                 progress_placeholder = st.empty()
-                progress_placeholder.markdown(render_stepper_progress(1, 15, "Iniciando motor espacial..."), unsafe_allow_html=True)
                 try:
                     uploaded_file.seek(0)
                     archivo_bytes = uploaded_file.read()
 
-                    # Paso 1 & 2: Carga y Estructura
-                    if file_type == "pdf":
-                        progress_placeholder.markdown(render_stepper_progress(1, 30, "Detectando tipo de PDF (digital/escaneado)..."), unsafe_allow_html=True)
-                        tipo_info = pdf_vision.detectar_tipo_pdf(archivo_bytes)
-                        tipo_pdf = tipo_info.get("tipo", "digital")
+                    ctx = PipelineContext(
+                        archivo_bytes=archivo_bytes,
+                        nombre_archivo=file_name,
+                        datos_empresa=datos_empresa,
+                    )
 
-                        if tipo_pdf == "escaneado":
-                            progress_placeholder.markdown(render_stepper_progress(2, 55, "PDF escaneado: OCR + IA Visual (Vision)..."), unsafe_allow_html=True)
-                            mapa_formularios = pdf_vision.construir_mapa_desde_ocr(archivo_bytes)
-                            elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
-                            if elementos_vision:
-                                resultados = pdf_processor.construir_mapa_desde_vision(archivo_bytes, elementos_vision)
-                            elif mapa_formularios:
-                                resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
-                            else:
-                                resultados = []
-                        else:
-                            progress_placeholder.markdown(render_stepper_progress(1, 35, "Escaneando coordenadas bidireccionales del PDF..."), unsafe_allow_html=True)
-                            mapa_formularios = pdf_processor.escanear_mapa_pdf(archivo_bytes)
+                    def callback_progreso(msg: str, pct: float):
+                        paso = min(3, int(pct * 3) + 1)
+                        progress_placeholder.markdown(render_stepper_progress(paso, int(pct * 100), msg), unsafe_allow_html=True)
 
-                            if len(mapa_formularios) < 8:
-                                progress_placeholder.markdown(render_stepper_progress(2, 60, "Analizando imagen del PDF con IA Visual (Vision)..."), unsafe_allow_html=True)
-                                elementos_vision = pdf_vision.detectar_campos_vision_llm(archivo_bytes, datos_empresa)
-                                if elementos_vision:
-                                    resultados = pdf_processor.construir_mapa_desde_vision(archivo_bytes, elementos_vision)
-                                else:
-                                    resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
-                            else:
-                                progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico bidireccional..."), unsafe_allow_html=True)
-                                resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
-                    else:
-                        progress_placeholder.markdown(render_stepper_progress(1, 25, "Leyendo estructura espacial del libro Excel..."), unsafe_allow_html=True)
-                        libro = excel_parser.cargar_libro(BytesIO(archivo_bytes))
-                        progress_placeholder.markdown(render_stepper_progress(1, 45, "Analizando celdas vacías y líneas de captura..."), unsafe_allow_html=True)
-                        mapa_formularios = excel_parser.escanear_mapa_formularios(libro)
-                        progress_placeholder.markdown(render_stepper_progress(2, 75, "Invocando IA para mapeo semántico..."), unsafe_allow_html=True)
-                        resultados = mapper.mapeo_formularios(mapa_formularios, datos_empresa)
+                    # Ejecutar análisis modular (Stage 1 -> Stage 2 -> Stage 3)
+                    ctx = PipelineOrchestrator.analizar_formulario(ctx, on_progress=callback_progreso)
+                    progress_placeholder.empty()
 
-                    # LLM-04: Detectar caché
-                    mapa_purgado_ui = mapper._purgar_mapa(mapa_formularios) if mapa_formularios else []
-                    form_hash_ui = mapper._hash_mapa(mapa_purgado_ui) if mapa_purgado_ui else "vision_mode"
-                    debug_info = _get_debug_info(form_hash_ui)
+                    st.session_state["pipeline_ctx"] = ctx
+                    st.session_state["processed_file_id"] = current_file_id
 
-                    # Paso 4: Escritura
-                    progress_placeholder.markdown(render_stepper_progress(3, 90, "Inyectando datos y preservando plantilla..."), unsafe_allow_html=True)
-
-                    resultados_limpios = [r for r in resultados if r.get("hoja") and r.get("campo")] if resultados else []
-
-                    # FIX: deduplicar por campo (evita escribir el mismo dato en múltiples posiciones)
-                    resultados_limpios = _deduplicar_por_campo(resultados_limpios)
-
-                    if resultados_limpios:
-                        # FIX: el sanitizado (sin claves _pdf_*) solo alimenta el DataFrame
-                        # de pantalla; el relleno y la validación reciben los originales.
-                        resultados_sanitizados = _sanitizar_resultados(resultados_limpios)
-                        # Construir DataFrame Arrow-safe (forzar todo a str)
-                        df_resultado = pd.DataFrame.from_records(resultados_sanitizados)
-                        df_resultado = df_resultado.map(lambda x: str(x) if x is not None else "").astype(str)
-
-                        if file_type == "pdf":
-                            bytes_relleno = pdf_processor.rellenar_pdf(archivo_bytes, resultados_limpios, datos_empresa)
-                            # Motor PDF v2: validación visual + auto-corrección de bounding boxes
-                            advertencias_visuales = []
-                            if any(r.get("_pdf_page") is not None for r in resultados_limpios):
-                                bytes_relleno, advertencias_visuales = pdf_vision.validar_relleno_vision(
-                                    archivo_bytes, bytes_relleno, resultados_limpios, datos_empresa
-                                )
-                            reporte_inyeccion = []
-                            st.session_state["resultado_advertencias_pdf"] = advertencias_visuales
-                            file_extension = "pdf"
-                            mime_type = "application/pdf"
-                        else:
-                            # HITO 2: Escanear celdas pre-diligenciadas para reprocesamiento incremental
-                            from core.excel_parser import escanear_celdas_prellenadas as _escanear_prellenadas
-                            from io import BytesIO as _BytesIO
-                            _wb_previo = excel_parser.cargar_libro(_BytesIO(archivo_bytes))
-                            _celdas_pre = _escanear_prellenadas(_wb_previo)
-                            bytes_relleno, reporte_inyeccion = excel_writer.rellenar_formulario_excel(
-                                archivo_bytes, resultados_sanitizados, datos_empresa, celdas_prellenadas=_celdas_pre
-                            )
-                            file_extension = "xlsx"
-                            mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-
-                        progress_placeholder.empty()
-
-                        # Guardar en st.session_state para evitar reseteos al hacer click
-                        st.session_state["processed_file_id"] = current_file_id
-                        st.session_state["resultado_bytes"] = bytes_relleno
-                        st.session_state["resultado_reporte_inyeccion"] = reporte_inyeccion
-                        st.session_state["resultado_df"] = df_resultado
-                        st.session_state["resultado_file_name"] = file_name
-                        st.session_state["resultado_extension"] = file_extension
-                        st.session_state["resultado_mime"] = mime_type
-                        st.session_state["resultado_debug"] = debug_info
-                    else:
-                        progress_placeholder.markdown(render_stepper_progress(3, 100, "Proceso finalizado."), unsafe_allow_html=True)
-                        st.info(
-                            "No se encontraron campos compatibles para rellenar en este formulario. "
-                            "Verifica que el perfil de empresa tenga datos y que el formulario PDF "
-                            "contenga etiquetas reconocibles o casillas de entrada."
-                        )
                 except Exception as e:
                     progress_placeholder.empty()
                     st.error(f"⚠️ Se produjo un error durante el procesamiento: {str(e)}")
                     with st.expander("Ver detalles técnicos del error"):
                         st.text(traceback.format_exc())
 
-        # Renderizado persistente desde st.session_state (Fuera de st.button, no se resetea al hacer click en descargar)
-        if st.session_state.get("processed_file_id") == current_file_id and "resultado_bytes" in st.session_state:
-            bytes_relleno = st.session_state["resultado_bytes"]
-            df_resultado = st.session_state["resultado_df"]
-            file_name_out = st.session_state["resultado_file_name"]
-            file_ext_out = st.session_state["resultado_extension"]
-            mime_type_out = st.session_state["resultado_mime"]
-            debug_info_out = st.session_state.get("resultado_debug")
+    # ── Renderizado del Pipeline Modular (Verificación y Descarga) ──
+    if st.session_state.get("pipeline_ctx") is not None and st.session_state.get("processed_file_id") == current_file_id:
+        pipeline_context: PipelineContext = st.session_state["pipeline_ctx"]
 
-            if debug_info_out:
-                with st.expander("🔍 Panel de Debug — Mapeo Semántico IA", expanded=False):
-                    c1, c2, c3, c4 = st.columns(4)
-                    with c1:
-                        st.markdown(render_kpi_card(str(debug_info_out["rotulos_enviados"]), "Rótulos Enviados", "#F8B126", "📝"), unsafe_allow_html=True)
-                    with c2:
-                        st.markdown(render_kpi_card(str(debug_info_out["campos_mapeados"]), "Campos Mapeados", "#10B981", "✅"), unsafe_allow_html=True)
-                    faltantes_list = debug_info_out.get("campos_faltantes_detectados", [])
-                    with c3:
-                        st.markdown(render_kpi_card(str(len(faltantes_list)), "Campos Faltantes", "#FF6B00" if faltantes_list else "#3B82F6", "⚠️"), unsafe_allow_html=True)
-                    with c4:
-                        st.markdown(render_kpi_card(str(debug_info_out["hash"][:8]), "Hash Formulario", "#64748B", "🔑"), unsafe_allow_html=True)
-
-                    if faltantes_list:
-                        st.warning(f"🚫 Campos omitidos o no encontrados: `{'`, `'.join(faltantes_list)}`")
-
-                    tab_payload, tab_response = st.tabs(["📤 Payload Enviado", "📥 Respuesta RAW LLM"])
-                    with tab_payload:
-                        try:
-                            payload_dict = json.loads(debug_info_out["prompt_payload"])
-                            st.json(payload_dict)
-                        except Exception:
-                            st.code(debug_info_out["prompt_payload"], language="json")
-                    with tab_response:
-                        try:
-                            respuesta_dict = json.loads(debug_info_out["respuesta_llm"])
-                            st.json(respuesta_dict)
-                        except Exception:
-                            st.code(debug_info_out["respuesta_llm"], language="json")
-
-            if debug_info_out and debug_info_out.get("tipo_cache") == "SEMANTIC_FUZZY_HIT":
-                score_fuzzy = debug_info_out.get("score_similaridad", 95.0)
-                st.markdown(f"""
-                    <div class="iac-alert iac-alert-cache">
-                        <div>⚡ <strong>Caché Semántico HIT ({score_fuzzy:.1f}% Similitud)</strong></div>
-                        <div style="font-size: 0.82rem; opacity: 0.9;">Mapeado inteligente adaptado en &lt; 0.05s ($0 consumo de API).</div>
-                    </div>
-                """, unsafe_allow_html=True)
-
-            st.markdown("""
-                <div class="iac-alert iac-alert-warning">
-                    <div>🎉 <strong>Formulario Diligenciado Correctamente</strong></div>
-                    <div style="font-size: 0.82rem; opacity: 0.9;">Se inyectaron los datos respetando diseño nativo del documento.</div>
-                </div>
-            """, unsafe_allow_html=True)
-
-            st.download_button(
-                f"📥 Descargar Formulario Rellenado (.{file_ext_out})",
-                data=bytes_relleno,
-                file_name=f"{os.path.splitext(file_name_out)[0]}_diligenciado.{file_ext_out}",
-                mime=mime_type_out,
-            )
-
-            # Panel de Auditoría y Verificación Completa
-            if debug_info_out and "verificacion_auditoria" in debug_info_out:
-                audit_rep = debug_info_out["verificacion_auditoria"]
-                cobertura_pct = audit_rep.get("porcentaje_cobertura", 100.0)
-                total_map = audit_rep.get("total_mapeados", len(df_resultado))
-                omitidos = audit_rep.get("campos_omitidos", [])
-
-                st.markdown("### 🔍 Reporte de Auditoría y Verificación de Integridad")
-                col_m1, col_m2, col_m3 = st.columns(3)
-                with col_m1:
-                    st.metric("Campos Inyectados", f"{total_map} celdas")
-                with col_m2:
-                    st.metric("Cobertura de DatosEmpresa", f"{cobertura_pct}%")
-                with col_m3:
-                    st.metric("Estado de Verificación", "✅ VERIFICADO OK" if not omitidos else "⚠️ REVISIÓN FOCALIZADA")
-
-                if omitidos:
-                    with st.expander(f"⚠️ Detalle de campos omitidos por la plantilla ({len(omitidos)})"):
-                        st.write("Los siguientes campos de tu perfil de empresa no fueron solicitados en esta plantilla:", omitidos)
-
-            reporte_inyeccion = st.session_state.get("resultado_reporte_inyeccion", [])
-
-            st.markdown("### 📍 Coordenadas e Información Inyectada")
-
-            # Panel de reporte de inyección (nuevo)
-            if reporte_inyeccion:
-                df_reporte = pd.DataFrame(reporte_inyeccion)
-                df_reporte = df_reporte.astype(str).fillna("")
-                ok   = df_reporte[df_reporte["estado"] == "OK"]
-                skip = df_reporte[df_reporte["estado"] == "SKIP"]
-                null = df_reporte[df_reporte["estado"] == "NULL"]
-                err  = df_reporte[df_reporte["estado"] == "ERROR"]
-
-                preserved = df_reporte[df_reporte["estado"] == "PRESERVED"]
-                c1, c2, c3, c4, c5 = st.columns(5)
-                with c1:
-                    st.markdown(render_kpi_card(str(len(ok)),        "Escritos OK",        "#10B981", "OK"), unsafe_allow_html=True)
-                with c2:
-                    st.markdown(render_kpi_card(str(len(preserved)), "Preservados",        "#6366F1", "OK"), unsafe_allow_html=True)
-                with c3:
-                    st.markdown(render_kpi_card(str(len(skip)),      "Saltados (ocupados)", "#F8B126", "!"), unsafe_allow_html=True)
-                with c4:
-                    st.markdown(render_kpi_card(str(len(null)),      "Sin valor (NULL)",   "#3B82F6", "?"), unsafe_allow_html=True)
-                with c5:
-                    st.markdown(render_kpi_card(str(len(err)),       "Errores",            "#EF4444", "X"), unsafe_allow_html=True)
-
-                with st.expander("Ver reporte completo de inyeccion por campo", expanded=len(err) > 0 or len(skip) > 2):
-                    no_ok = df_reporte[~df_reporte["estado"].isin(["OK", "PRESERVED"])]
-                    if not no_ok.empty:
-                        st.warning(f"⚠️ {len(no_ok)} campos no se escribieron correctamente:")
-                        st.dataframe(
-                            no_ok[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
-                            width="stretch",
-                            height=min(300, len(no_ok) * 40 + 40),
-                        )
-                    else:
-                        st.success("✅ Todos los campos fueron escritos sin problemas.")
-
-                    st.markdown("**Todos los campos:**")
-                    st.dataframe(
-                        df_reporte[["estado", "campo", "valor_intentado", "hoja", "fila_destino", "columna_destino", "motivo"]],
-                        width="stretch",
-                        height=min(400, len(df_reporte) * 40 + 40),
-                    )
-
-            advertencias_pdf = st.session_state.get("resultado_advertencias_pdf", [])
-            if advertencias_pdf:
-                with st.expander(f"🔍 Validación Visual PDF (auto-corrección) — {len(advertencias_pdf)} advertencia(s)", expanded=len(advertencias_pdf) > 0):
-                    df_adv = pd.DataFrame(advertencias_pdf).astype(str).fillna("")
-                    st.dataframe(df_adv, width="stretch", height=min(300, len(df_adv) * 40 + 40))
-                    st.caption("Las bounding boxes problemáticas se corrigieron automáticamente con visión LLM.")
-
-                if AgGrid is not None:
-                    render_aggrid_coincidencias(df_resultado)
-                else:
-                    st.dataframe(df_resultado, width="stretch")
+        if not pipeline_context.archivo_resultado:
+            st.markdown("---")
+            confirmado, plan_verificado = render_pantalla_verificacion(pipeline_context, key_prefix="app1_main_flow")
+            if confirmado:
+                with st.spinner("⚡ Inyectando datos en el documento y preservando formato original..."):
+                    pipeline_context = PipelineOrchestrator.rellenar_formulario(pipeline_context)
+                    st.session_state["pipeline_ctx"] = pipeline_context
+                    st.rerun()
+        else:
+            st.markdown("---")
+            render_pantalla_descarga(pipeline_context, key_prefix="app1_main_flow")
+            if st.button("🔄 Diligenciar Otro Formulario", key="app1_btn_restart_doc"):
+                del st.session_state["pipeline_ctx"]
+                st.rerun()
 
 else:
     st.markdown("""
