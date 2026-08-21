@@ -1,4 +1,4 @@
-﻿"""Stage 3: LLM Mapper y Búsqueda en Template Store (Pipeline AutoForm AI).
+"""Stage 3: LLM Mapper y Búsqueda en Template Store (Pipeline AutoForm AI).
 
 Orquesta el mapeo semántico de campos de dos maneras:
 1. Ruta Rápida (Template Store): Si el formulario o uno muy similar ya fue verificado,
@@ -157,10 +157,13 @@ def ejecutar_stage_3_mapper(
             for idx, elem in enumerate(elementos)
         ]
 
-    # Construir payload compacto
+    from core.profile_manager import estructurar_perfil_taxonomia
+
+    # Construir payload compacto estructurado con Taxonomía Semántica
+    taxonomia_d = estructurar_perfil_taxonomia(ctx.datos_empresa)
     payload = {
         "F": [{"id": c["id"], "rotulo": c["rotulo"], "seccion": c["seccion"]} for c in campos_viables],
-        "D": ctx.datos_empresa,
+        "D": taxonomia_d,
     }
     
     prompt_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
@@ -173,7 +176,11 @@ def ejecutar_stage_3_mapper(
 
     for item in asignaciones_raw:
         item_id = item.get("id")
-        campo_empresa = item.get("campo")
+        campo_empresa = str(item.get("campo") or "").strip()
+        if "." in campo_empresa:
+            campo_terminal = campo_empresa.split(".")[-1]
+            if campo_terminal in ctx.datos_empresa or campo_terminal in ("razon_social", "nit", "cedula", "expedicion", "direccion", "telefono", "correo", "representante_legal", "representante_nombres", "representante_apellidos", "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "ciudad", "departamento", "pais"):
+                campo_empresa = campo_terminal
         
         if item_id in indice_campos and campo_empresa:
             c_info = indice_campos[item_id]

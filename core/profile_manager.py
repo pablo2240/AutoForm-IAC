@@ -50,43 +50,124 @@ def listar_perfiles() -> Dict[str, Path]:
     return perfiles
 
 
-def cargar_perfil(ruta: Path) -> Dict[str, Any]:
-    """Carga los datos JSON del perfil especificado."""
-    if not ruta.exists():
-        datos = _obtener_plantilla_vacia()
-    else:
-        try:
-            with ruta.open("r", encoding="utf-8") as f:
-                datos = json.load(f)
-        except Exception as exc:
-            print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
-            datos = _obtener_plantilla_vacia()
+def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
+    """Convierte un perfil con taxonomía jerárquica a un diccionario plano con claves estándar."""
+    plano: Dict[str, Any] = {}
 
-    # Generación dinámica bidireccional de nombres, apellidos y representante_legal
-    rep_full = str(datos.get("representante_legal", "")).strip()
-    rep_nom = str(datos.get("representante_nombres", "")).strip()
-    rep_ape = str(datos.get("representante_apellidos", "")).strip()
+    def _extraer(d: Any, prefijo: str = "") -> None:
+        if isinstance(d, dict):
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    _extraer(v, prefijo)
+                else:
+                    plano[k] = v
+                    if prefijo:
+                        plano[f"{prefijo}.{k}"] = v
+
+    # Extraer datos de las 3 ramas principales
+    if "empresa" in datos or "representante_legal" in datos or "financiero" in datos:
+        if "empresa" in datos:
+            _extraer(datos["empresa"], "empresa")
+        if "representante_legal" in datos:
+            _extraer(datos["representante_legal"], "representante_legal")
+        if "financiero" in datos:
+            _extraer(datos["financiero"], "financiero")
+        # Mantener claves adicionales que puedan estar en la raíz
+        for k, v in datos.items():
+            if k not in ("empresa", "representante_legal", "financiero") and not isinstance(v, dict):
+                plano[k] = v
+    else:
+        # Ya es plano
+        plano = dict(datos)
+
+    # Generación dinámica de representante_legal, nombres y apellidos
+    rep_full = str(plano.get("representante_legal", "")).strip()
+    rep_nom = str(plano.get("representante_nombres", "")).strip()
+    rep_ape = str(plano.get("representante_apellidos", "")).strip()
 
     if not rep_full and (rep_nom or rep_ape):
-        datos["representante_legal"] = f"{rep_nom} {rep_ape}".strip()
+        plano["representante_legal"] = f"{rep_nom} {rep_ape}".strip()
     elif rep_full:
         partes = rep_full.split()
         if not rep_nom:
-            datos["representante_nombres"] = " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
+            plano["representante_nombres"] = " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
         if not rep_ape:
-            datos["representante_apellidos"] = " ".join(partes[-2:]) if len(partes) >= 2 else ""
+            plano["representante_apellidos"] = " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
-    return datos
+    return plano
 
 
+def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
+    """Convierte un perfil plano o semiestructurado en la taxonomía semántica estándar de 3 niveles."""
+    plano = aplanar_perfil(datos)
+
+    return {
+        "empresa": {
+            "identidad": {
+                "razon_social": str(plano.get("razon_social", "")),
+                "nit": str(plano.get("nit", "")),
+                "tipo_sociedad": str(plano.get("tipo_sociedad", "S.A.S")),
+            },
+            "ubicacion": {
+                "direccion": str(plano.get("direccion", "")),
+                "ciudad": str(plano.get("ciudad", "")),
+                "departamento": str(plano.get("departamento", "")),
+                "pais": str(plano.get("pais", "Colombia")),
+            },
+            "contacto": {
+                "telefono": str(plano.get("telefono", "")),
+                "correo": str(plano.get("correo", "")),
+                "pagina_web": str(plano.get("pagina_web", "")),
+            }
+        },
+        "representante_legal": {
+            "identidad": {
+                "representante_legal": str(plano.get("representante_legal", "")),
+                "representante_nombres": str(plano.get("representante_nombres", "")),
+                "representante_apellidos": str(plano.get("representante_apellidos", "")),
+                "tipo_documento": str(plano.get("tipo_documento", "C.C.")),
+                "cedula": str(plano.get("cedula", "")),
+                "expedicion": str(plano.get("expedicion", "")),
+            },
+            "contacto": {
+                "correo": str(plano.get("correo_representante") or plano.get("correo", "")),
+                "telefono": str(plano.get("telefono_representante") or plano.get("telefono", "")),
+            }
+        },
+        "financiero": {
+            "banco": {
+                "banco": str(plano.get("banco", "")),
+                "sucursal": str(plano.get("sucursal", "")),
+            },
+            "cuenta": {
+                "numero_cuenta": str(plano.get("numero_cuenta", "")),
+                "tipo_cuenta": str(plano.get("tipo_cuenta", "AHORROS")),
+            }
+        }
+    }
+
+
+def cargar_perfil(ruta: Path) -> Dict[str, Any]:
+    """Carga los datos JSON del perfil especificado (aplana o estructura según necesidad)."""
+    if not ruta.exists():
+        return _obtener_plantilla_vacia()
+    
+    try:
+        with ruta.open("r", encoding="utf-8-sig") as f:
+            datos_raw = json.load(f)
+        return aplanar_perfil(datos_raw)
+    except Exception as exc:
+        print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
+        return _obtener_plantilla_vacia()
 
 
 def guardar_perfil(ruta: Path, datos: Dict[str, Any]) -> bool:
-    """Guarda los datos empresariales en el archivo JSON indicado."""
+    """Guarda los datos empresariales estructurados en taxonomía semántica en el archivo JSON."""
     asegurar_directorio_config()
     try:
+        taxonomia = estructurar_perfil_taxonomia(datos)
         with ruta.open("w", encoding="utf-8") as f:
-            json.dump(datos, f, indent=2, ensure_ascii=False)
+            json.dump(taxonomia, f, indent=2, ensure_ascii=False)
         return True
     except Exception as exc:
         print(f"[AutoForm AI] Error guardando perfil {ruta}: {exc}")

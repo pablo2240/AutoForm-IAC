@@ -1,4 +1,4 @@
-﻿"""Componente de Verificación Visual con Dropdowns para AutoForm AI (Versión Completa).
+"""Componente de Verificación Visual con Dropdowns para AutoForm AI (Versión Completa).
 
 Muestra TODOS los rótulos detectados en el formulario (tanto los asignados por IA como
 los candidatos viables pendientes) para que el usuario tenga control total de asignación.
@@ -97,51 +97,49 @@ def _resolver_valor_campo(datos_empresa: Dict[str, Any], campo: str) -> str:
     if not campo or campo == OPCION_OMITIR:
         return ""
 
-    if campo == "nit_sin_dv" and "nit" in datos_empresa:
-        val = str(datos_empresa["nit"])
+    from core.profile_manager import aplanar_perfil
+    plano = aplanar_perfil(datos_empresa)
+
+    if campo == "nit_sin_dv" and "nit" in plano:
+        val = str(plano["nit"])
         return val.split("-")[0] if "-" in val else val
 
-    if campo == "nit_dv" and "nit" in datos_empresa:
-        val = str(datos_empresa["nit"])
+    if campo == "nit_dv" and "nit" in plano:
+        val = str(plano["nit"])
         return val.split("-")[-1] if "-" in val else ""
 
     if campo == "representante_nombres":
-        if "representante_nombres" in datos_empresa and datos_empresa["representante_nombres"]:
-            return str(datos_empresa["representante_nombres"])
-        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        if "representante_nombres" in plano and plano["representante_nombres"]:
+            return str(plano["representante_nombres"])
+        rep_full = str(plano.get("representante_legal", "")).strip()
         if rep_full:
             partes = rep_full.split()
             return " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
 
     if campo == "representante_apellidos":
-        if "representante_apellidos" in datos_empresa and datos_empresa["representante_apellidos"]:
-            return str(datos_empresa["representante_apellidos"])
-        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        if "representante_apellidos" in plano and plano["representante_apellidos"]:
+            return str(plano["representante_apellidos"])
+        rep_full = str(plano.get("representante_legal", "")).strip()
         if rep_full:
             partes = rep_full.split()
             return " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
-    if campo in datos_empresa:
-        val = datos_empresa[campo]
-        return "" if val is None else str(val)
-
-    # Búsqueda por ruta anidada "seccion.subcampo"
-    valor = datos_empresa
-    for parte in campo.split("."):
-        if isinstance(valor, dict) and parte in valor:
-            valor = valor[parte]
-        else:
-            valor = None
-            break
-    if valor is not None:
-        return str(valor)
+    if campo in plano:
+        val = plano[campo]
+        if not isinstance(val, dict):
+            return "" if val is None else str(val)
 
     return ""
 
 
 def obtener_opciones_campos_empresa(datos_empresa: Dict[str, Any]) -> List[str]:
     """Construye la lista ordenada de opciones seleccionables en el dropdown."""
-    claves = set(datos_empresa.keys()) | set(CAMPOS_VIRTUALES)
+    from core.profile_manager import aplanar_perfil
+    plano = aplanar_perfil(datos_empresa)
+    
+    # Filtrar solo claves no compuestas (sin punto) para una lista limpia y legible
+    claves_limpias = {k for k in plano.keys() if "." not in k and not isinstance(plano[k], dict)}
+    claves = claves_limpias | set(CAMPOS_VIRTUALES)
     lista_ordenada = sorted(list(claves))
     return [OPCION_OMITIR] + lista_ordenada
 

@@ -70,54 +70,51 @@ def _buscar_campo_anidado(obj: Any, campo: str) -> Any:
 
 
 def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
-    """Resuelve el valor del campo, incluyendo campos virtuales nit_sin_dv / nit_dv."""
-    if campo == "nit_sin_dv" and "nit" in datos_empresa:
-        nit_val = str(datos_empresa["nit"])
+    """Resuelve el valor del campo, incluyendo campos virtuales nit_sin_dv / nit_dv y taxonomía jerárquica."""
+    from core.profile_manager import aplanar_perfil
+    plano = aplanar_perfil(datos_empresa)
+
+    if campo == "nit_sin_dv" and "nit" in plano:
+        nit_val = str(plano["nit"])
         return nit_val.split("-")[0] if "-" in nit_val else nit_val
 
-    if campo == "nit_dv" and "nit" in datos_empresa:
-        nit_val = str(datos_empresa["nit"])
+    if campo == "nit_dv" and "nit" in plano:
+        nit_val = str(plano["nit"])
         return nit_val.split("-")[-1] if "-" in nit_val else ""
 
     if campo == "representante_nombres":
-        val = datos_empresa.get("representante_nombres")
+        val = plano.get("representante_nombres")
         if val and str(val).strip():
             return val
-        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        rep_full = str(plano.get("representante_legal", "")).strip()
         if rep_full:
             partes = rep_full.split()
             return " ".join(partes[:-2]) if len(partes) > 2 else (partes[0] if partes else rep_full)
 
     if campo == "representante_apellidos":
-        val = datos_empresa.get("representante_apellidos")
+        val = plano.get("representante_apellidos")
         if val and str(val).strip():
             return val
-        rep_full = str(datos_empresa.get("representante_legal", "")).strip()
+        rep_full = str(plano.get("representante_legal", "")).strip()
         if rep_full:
             partes = rep_full.split()
             return " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
-    if campo in datos_empresa:
-        return datos_empresa[campo]
+    if campo in plano:
+        val = plano[campo]
+        if not isinstance(val, dict):
+            return val
 
-    if campo == "identificacion" and "identificacion" not in datos_empresa:
-        return datos_empresa.get("cedula")
+    if campo == "identificacion" and "identificacion" not in plano:
+        return plano.get("cedula")
 
+    # Acceso por ruta anidada terminal
+    if "." in campo:
+        subcampo = campo.split(".")[-1]
+        if subcampo in plano and not isinstance(plano[subcampo], dict):
+            return plano[subcampo]
 
-
-
-    # Acceso por ruta anidada "seccion.subcampo"
-    valor = datos_empresa
-    for parte in campo.split("."):
-        if isinstance(valor, dict) and parte in valor:
-            valor = valor[parte]
-        else:
-            valor = None
-            break
-    if valor is not None:
-        return valor
-
-    return _buscar_campo_anidado(datos_empresa, campo)
+    return None
 
 
 def _obtener_relleno_preservado(celda_origen, celda_destino) -> Optional[PatternFill]:
