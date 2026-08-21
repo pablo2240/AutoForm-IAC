@@ -447,54 +447,56 @@ with st.sidebar:
     datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
 
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
+    slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
+
     with st.expander("✏️ Editar Datos de Empresa", expanded=False):
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
         
         with tab_emp:
             st.markdown("##### 📌 Identificación Corporativa")
-            razon_social = st.text_input("Razón Social", value=datos_empresa.get("razon_social", ""))
-            nit = st.text_input("NIT / Identificación Tributaria", value=datos_empresa.get("nit", ""))
-            tipo_sociedad = st.text_input("Tipo de Sociedad", value=datos_empresa.get("tipo_sociedad", "S.A.S"))
+            razon_social = st.text_input("Razón Social", value=datos_empresa.get("razon_social") or "Ingeniería Asistida Por Computador S.A.S", key=f"pe_{slug_perfil}_rs")
+            nit = st.text_input("NIT / Identificación Tributaria", value=datos_empresa.get("nit") or "811004721-2", key=f"pe_{slug_perfil}_nit")
+            tipo_sociedad = st.text_input("Tipo de Sociedad", value=datos_empresa.get("tipo_sociedad") or "S.A.S", key=f"pe_{slug_perfil}_tsoc")
 
             st.markdown("##### 📍 Ubicación Principal")
-            direccion = st.text_input("Dirección Principal", value=datos_empresa.get("direccion", ""))
-            ciudad = st.text_input("Ciudad / Municipio", value=datos_empresa.get("ciudad", ""))
-            departamento = st.text_input("Departamento", value=datos_empresa.get("departamento", ""))
-            pais = st.text_input("País", value=datos_empresa.get("pais", "Colombia"))
+            direccion = st.text_input("Dirección Principal", value=datos_empresa.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key=f"pe_{slug_perfil}_dir")
+            ciudad = st.text_input("Ciudad / Municipio", value=datos_empresa.get("ciudad") or "Medellin", key=f"pe_{slug_perfil}_ciu")
+            departamento = st.text_input("Departamento", value=datos_empresa.get("departamento") or "Antioquia", key=f"pe_{slug_perfil}_dep")
+            pais = st.text_input("País", value=datos_empresa.get("pais") or "Colombia", key=f"pe_{slug_perfil}_pais")
 
             st.markdown("##### 📞 Contacto Institucional")
-            telefono = st.text_input("Teléfono PBX", value=datos_empresa.get("telefono", ""))
-            correo = st.text_input("Correo Institucional", value=datos_empresa.get("correo", ""))
-            pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web", ""))
+            telefono = st.text_input("Teléfono PBX", value=datos_empresa.get("telefono") or "2656868", key=f"pe_{slug_perfil}_tel")
+            correo = st.text_input("Correo Institucional", value=datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor")
+            pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web") or "iaclatam.com", key=f"pe_{slug_perfil}_web")
 
         with tab_rep:
             st.markdown("##### 🪪 Identidad del Representante")
-            representante_legal = st.text_input("Nombre Completo", value=datos_empresa.get("representante_legal", ""))
-            rep_nombres = st.text_input("Nombres", value=datos_empresa.get("representante_nombres", ""))
-            rep_apellidos = st.text_input("Apellidos", value=datos_empresa.get("representante_apellidos", ""))
+            representante_legal = st.text_input("Nombre Completo", value=datos_empresa.get("representante_legal") or "Guillermo Humberto Cañón Sarria", key=f"pe_{slug_perfil}_rep_nom")
+            rep_nombres = st.text_input("Nombres", value=datos_empresa.get("representante_nombres") or "Guillermo Humberto", key=f"pe_{slug_perfil}_r_nom")
+            rep_apellidos = st.text_input("Apellidos", value=datos_empresa.get("representante_apellidos") or "Cañón Sarria", key=f"pe_{slug_perfil}_r_ape")
             
-            tipo_doc_val = str(datos_empresa.get("tipo_documento", "C.C.")).strip()
-            idx_tdoc = 0 if "C.C" in tipo_doc_val.upper() else (1 if "C.E" in tipo_doc_val.upper() else 2)
-            tipo_documento = st.selectbox("Tipo de Documento / Tipo ID", options=["C.C.", "C.E.", "PASAPORTE", "OTRO"], index=idx_tdoc)
+            tipo_doc_val = str(datos_empresa.get("tipo_documento") or "C.C.").strip()
+            idx_tdoc = 0 if "C.C" in tipo_doc_val.upper() else (1 if "C.E" in tipo_doc_val.upper() else (2 if "PASAPORTE" in tipo_doc_val.upper() else 3))
+            tipo_documento = st.selectbox("Tipo de Documento / Tipo ID", options=["C.C.", "C.E.", "PASAPORTE", "OTRO"], index=idx_tdoc, key=f"pe_{slug_perfil}_tdoc")
             
-            cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula", ""))
-            expedicion = st.text_input("Ciudad de Expedición", value=datos_empresa.get("expedicion", ""),
-                                       help="Ciudad donde fue expedido el documento del representante. Ej: Medellín")
+            cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula") or "98555384", key=f"pe_{slug_perfil}_ced")
+            expedicion = st.text_input("Ciudad de Expedición", value=datos_empresa.get("expedicion") or "Envigado",
+                                       help="Ciudad donde fue expedido el documento del representante. Ej: Medellín", key=f"pe_{slug_perfil}_exp")
 
             st.markdown("##### 📱 Contacto Directo")
-            celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular", ""))
-            correo_rep = st.text_input("Correo del Representante", value=datos_empresa.get("correo_representante") or datos_empresa.get("correo", ""))
+            celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular") or "3104120217", key=f"pe_{slug_perfil}_cel")
+            correo_rep = st.text_input("Correo del Representante", value=datos_empresa.get("correo_representante") or datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor_rep")
 
         with tab_fin:
             st.markdown("##### 🏦 Entidad Bancaria")
-            banco = st.text_input("Banco", value=datos_empresa.get("banco", ""))
-            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal", ""))
+            banco = st.text_input("Banco", value=datos_empresa.get("banco") or "BANCOLOMBIA", key=f"pe_{slug_perfil}_banco")
+            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal") or "Medellin", key=f"pe_{slug_perfil}_suc")
 
             st.markdown("##### 💳 Cuenta para Pagos")
-            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta", ""))
-            tipo_cta_actual = str(datos_empresa.get("tipo_cuenta", "AHORROS")).upper()
+            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta") or "00300833888", key=f"pe_{slug_perfil}_num_cta")
+            tipo_cta_actual = str(datos_empresa.get("tipo_cuenta") or "AHORROS").upper()
             idx_tipo = 0 if "AHORRO" in tipo_cta_actual else (1 if "CORRIENTE" in tipo_cta_actual else 2)
-            tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo)
+            tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo, key=f"pe_{slug_perfil}_tip_cta")
 
         if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
