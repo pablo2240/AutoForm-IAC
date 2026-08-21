@@ -466,7 +466,6 @@ with st.sidebar:
 
             st.markdown("##### 📞 Contacto Institucional")
             telefono = st.text_input("Teléfono PBX", value=datos_empresa.get("telefono") or "2656868", key=f"pe_{slug_perfil}_tel")
-            correo = st.text_input("Correo Institucional", value=datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor")
             pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web") or "iaclatam.com", key=f"pe_{slug_perfil}_web")
 
         with tab_rep:
@@ -485,7 +484,7 @@ with st.sidebar:
 
             st.markdown("##### 📱 Contacto Directo")
             celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular") or "3104120217", key=f"pe_{slug_perfil}_cel")
-            correo_rep = st.text_input("Correo del Representante", value=datos_empresa.get("correo_representante") or datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor_rep")
+            correo = st.text_input("Correo Electrónico", value=datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor")
 
         with tab_fin:
             st.markdown("##### 🏦 Entidad Bancaria")
@@ -508,7 +507,6 @@ with st.sidebar:
                 "departamento": departamento,
                 "pais": pais,
                 "telefono": telefono,
-                "correo": correo,
                 "pagina_web": pagina_web,
                 "representante_legal": representante_legal,
                 "representante_nombres": rep_nombres,
@@ -517,7 +515,7 @@ with st.sidebar:
                 "cedula": cedula,
                 "expedicion": expedicion,
                 "celular": celular,
-                "correo_representante": correo_rep,
+                "correo": correo,
                 "banco": banco,
                 "sucursal": sucursal,
                 "numero_cuenta": numero_cuenta,

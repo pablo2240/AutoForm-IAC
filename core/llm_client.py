@@ -82,7 +82,7 @@ Los datos maestros de la empresa se organizan en 3 dominios taxonómicos jerárq
 1. `empresa`:
    - `identidad`: `razon_social` (Nombre/Razón Social de la persona jurídica), `nit` (Número de Identificación Tributaria), `tipo_sociedad` (S.A.S, S.A., Ltda).
    - `ubicacion`: `direccion` (Domicilio principal), `ciudad` (Municipio/Ciudad fiscal), `departamento`, `pais`.
-   - `contacto`: `telefono` (PBX institucional), `correo` (Email institucional/notificaciones), `pagina_web`.
+   - `contacto`: `telefono` (PBX institucional), `pagina_web`.
 2. `representante_legal`:
    - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre), `representante_apellidos` (Primer y segundo apellido), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `expedicion` (Ciudad/Lugar donde se expidió la cédula).
    - `contacto`: `correo`, `telefono`, `celular` (Teléfono móvil / Celular del representante).

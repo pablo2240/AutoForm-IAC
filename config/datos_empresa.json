@@ -2,8 +2,8 @@
   "empresa": {
     "identidad": {
       "razon_social": "Ingeniería Asistida Por Computador S.A.S",
-      "nit": "811004721-2",
-      "tipo_sociedad": "S.A.S"
+      "nit": "8110047212",
+      "tipo_sociedad": "IAC SAS"
     },
     "ubicacion": {
       "direccion": "Carrera 63 B # 32 E -25 OFC 206",
@@ -13,7 +13,6 @@
     },
     "contacto": {
       "telefono": "2656868",
-      "correo": "guillermo.canon@iaclatam.com",
       "pagina_web": "iaclatam.com"
     }
   },
@@ -35,7 +34,7 @@
   "financiero": {
     "banco": {
       "banco": "BANCOLOMBIA",
-      "sucursal": "Medellin"
+      "sucursal": ""
     },
     "cuenta": {
       "numero_cuenta": "00300833888",

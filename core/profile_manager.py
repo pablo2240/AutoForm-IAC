@@ -116,7 +116,6 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             },
             "contacto": {
                 "telefono": str(plano.get("telefono", "")),
-                "correo": str(plano.get("correo", "")),
                 "pagina_web": str(plano.get("pagina_web", "")),
             }
         },
