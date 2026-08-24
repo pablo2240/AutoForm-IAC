@@ -72,14 +72,14 @@ _PATRON_PREGUNTAS_CERRADAS = re.compile(
 )
 
 _TERMINOS_CABECERA_SECCION = re.compile(
-    r"^(?:datos|informaci[oó]n|documentaci[oó]n|proponente|oferente|titulo|secci[oó]n|bloque|cap[ií]tulo|numeral|anexo|composici[oó]n|declaraci[oó]n|referencias)\b",
+    r"^(?:datos|informaci[oó]n|documentaci[oó]n|proponente|oferente|titulo|secci[oó]n|bloque|cap[ií]tulo|numeral|anexo|composici[oó]n|declaraci[oó]n|referencias|representante|[oó]rganos|conflicto|autorizaci[oó]n|cumplimiento)\b",
     re.IGNORECASE
 )
 
 _TERMINOS_CAMPO_CORTO = re.compile(
     r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombre|tel[eé]fono|celular|direcci[oó]n|"
     r"correo|email|ciudad|municipio|departamento|pa[ií]s|cargo|banco|cuenta|"
-    r"representante|p[aá]gina|web|objeto|actividad|expedici[oó]n|matr[ií]cula|"
+    r"p[aá]gina|web|objeto|actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
     r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede)\b",
     re.IGNORECASE
 )
@@ -109,7 +109,7 @@ def es_titulo_seccion(texto: str) -> bool:
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
         return False
 
-    # Si empieza con número + punto (ej. "1. DATOS DEL REPRESENTANTE" vs "1. NIT")
+    # Si empieza con número + punto (ej. "3. REPRESENTANTE LEGAL (aplica para...)" vs "1. NIT")
     m_num = re.match(r"^\s*(?:\d+[\.]|[I|V|X]+\.?)\s+(.+)$", t_clean)
     if m_num:
         resto = m_num.group(1).strip()
@@ -117,11 +117,12 @@ def es_titulo_seccion(texto: str) -> bool:
         if _TERMINOS_CABECERA_SECCION.search(resto):
             return True
         # Si es un campo corto con término directo -> no es título (es campo)
-        if len(resto.split()) <= 4 and _TERMINOS_CAMPO_CORTO.search(resto):
+        if len(resto.split()) <= 3 and _TERMINOS_CAMPO_CORTO.search(resto):
             return False
+        return True
 
     # 1. Empieza con encabezado de sección explícito
-    if re.search(r"^\s*(?:\d+[\.]|[I|V|X]+\.?)\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS)", t_clean, re.IGNORECASE):
+    if re.search(r"^\s*(?:\d+[\.]|[I|V|X]+\.?)\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)", t_clean, re.IGNORECASE):
         return True
 
     # 2. Mayúsculas sostenidas típicas de títulos

@@ -228,6 +228,7 @@ def preparar_tabla_verificacion(
 
             # Clasificación y asignación según el rol funcional
             if tipo_clasif in (
+                ClasificacionElemento.TITULO_SECCION.value,
                 ClasificacionElemento.OPCION_SELECCION.value,
                 ClasificacionElemento.TEXTO_LEGAL.value,
                 ClasificacionElemento.INSTRUCCION_TEXTO.value,
