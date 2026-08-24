@@ -195,6 +195,11 @@ def ejecutar_stage_3_mapper(
             if campo_empresa == "tipo_documento" and re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", rotulo_clean):
                 campo_empresa = "nit"
 
+            # En la sección del Representante Legal, 'telefono' corresponde al celular/móvil
+            sec_padre = str(elem_orig.get("seccion_padre") or c_info.get("seccion") or "").lower()
+            if campo_empresa == "telefono" and any(k in sec_padre for k in ("representante", "apoderado", "persona natural")):
+                campo_empresa = "celular"
+
             # Barrera de seguridad: NUNCA asignar lugar_expedicion a rótulos de FECHA
             if campo_empresa in ("lugar_expedicion", "expedicion") and re.search(r"\bfecha\b", rotulo_clean):
                 print(f"[AutoForm Stage 3 Mapper Safety] Omitida asignación de '{campo_empresa}' al rótulo de fecha: '{c_info.get('rotulo')}'")

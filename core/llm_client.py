@@ -116,7 +116,7 @@ Recibes un objeto JSON con:
   * Rótulos explícitos de solo el Tipo de Documento, Tipo ID, Tipo de Identificación, Tipo Doc -> "tipo_documento" (inscribirá C.C.)
   * Rótulos de C.C., Cédula, Documento de Identidad, No. de Documento del Representante -> "cedula"
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
-  * Rótulos de Celular del Representante, Teléfono Móvil, Móvil, No. Celular -> "celular"
+  * Rótulos de Teléfono, Celular, Teléfono Móvil, Móvil, No. Celular en la sección del Representante -> "celular" (inscribirá el móvil del apoderado, ej. "3104120217", ya que en la sección personal se solicita su contacto directo/móvil).
 
 - Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA:
   * Rótulos de Banco, Entidad Financiera, Nombre de la Entidad Financiera, Institución Bancaria -> "banco"

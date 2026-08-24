@@ -1047,7 +1047,7 @@ _PAT_SECCION_RL = re.compile(
 _ROTULOS_SECCION_RL: List[Tuple[re.Pattern, str]] = [
     (re.compile(r"^\s*(?:nombre\s*/\s*apellidos|nombres?\s+y\s+apellidos?|nombre\s+completo)\s*$", re.IGNORECASE), "representante_legal"),
     (re.compile(r"^\s*(?:id|c\.?c\.?|cedula|identificaci[oó]n)\s*$", re.IGNORECASE), "cedula"),
-    (re.compile(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bfono\b", re.IGNORECASE),    "telefono"),
+    (re.compile(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bfono\b", re.IGNORECASE),    "celular"),
     (re.compile(r"\bemail\b|\bcorreo\b|\be-mail\b|\bmail\b",          re.IGNORECASE),    "correo"),
     (re.compile(r"^\s*(?:direcci[oó]n|domicilio)\s*$",                re.IGNORECASE),    "direccion"),
     (re.compile(r"^\s*nombres?\s*$",                                    re.IGNORECASE),    "representante_nombres"),

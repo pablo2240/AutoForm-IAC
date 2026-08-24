@@ -66,7 +66,7 @@ def _normalizar(txt: str) -> str:
     return re.sub(r"[\s_\.\:\-\;\,\(\)\[\]\/\\]+", " ", nfd).strip()
 
 
-def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Optional[str]:
+def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str], seccion_padre: str = "") -> Optional[str]:
     """Intenta sugerir una coincidencia parcial para un rótulo no asignado usando tokenización de palabra completa."""
     r_norm = _normalizar(rotulo)
     if not r_norm or len(r_norm) < 3:
@@ -83,6 +83,11 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Op
     # Rótulos compuestos de tipos de identificación para la empresa (ej: CC/CE/PAS/NIT, CC/NIT) -> 'nit'
     if re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", r_norm):
         return "nit"
+
+    # En la sección del Representante Legal, teléfono / celular corresponde al móvil ('celular')
+    if seccion_padre and any(k in seccion_padre.lower() for k in ("representante", "apoderado", "persona natural")):
+        if re.search(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bcel\b|\bno\.?\s*celular\b", r_norm):
+            return "celular"
 
     # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa
     for campo, sinonimos in _SINONIMOS_RAPIDOS.items():
@@ -251,7 +256,8 @@ def preparar_tabla_verificacion(
                 estado = "⚠️ Requiere revisión"
 
             else:
-                sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles)
+                sec_padre_e = str(elem.get("seccion_padre") or elem.get("seccion") or "")
+                sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles, seccion_padre=sec_padre_e)
                 if sugerido:
                     campo_final = sugerido
                     valor_final = _resolver_valor_campo(datos_empresa, campo_final)
