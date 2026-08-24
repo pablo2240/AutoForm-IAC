@@ -448,9 +448,23 @@ def rellenar_formulario_excel(
 
         escrito = _escribir_valor_en_celda(celda_destino, valor, es_misma, hoja=ws)
 
-        if not escrito:
-            reporte.append(_log_item("SKIP", item, valor, fila_destino, columna_destino, "Celda no escribible o ya contiene contenido preexistente"))
-            continue
+        # ── FALLBACK AUTOMÁTICO A ABAJO SI DERECHA ESTÁ BLOQUEADA O FUERA DE LÍMITE ──
+        if (not escrito or columna_destino >= max_col) and ubicacion == "derecha":
+            if rango_origen is not None:
+                fb_fila = rango_origen.max_row + 1
+                fb_col  = rango_origen.min_col
+            else:
+                fb_fila = fila_origen + 1
+                fb_col  = columna_origen
+
+            if 1 <= fb_fila <= max_fila and 1 <= fb_col <= max_col:
+                celda_fb = _obtener_celda_escribible(ws, fb_fila, fb_col)
+                if _escribir_valor_en_celda(celda_fb, valor, False, hoja=ws):
+                    fila_destino = fb_fila
+                    columna_destino = fb_col
+                    celda_destino = celda_fb
+                    escrito = True
+                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada o en el límite del formulario.")
 
 
 
