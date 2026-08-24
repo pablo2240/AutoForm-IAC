@@ -1,4 +1,4 @@
-﻿"""Stage 2: Clasificador Determinista de Campos vs Títulos (Pipeline AutoForm AI).
+"""Stage 2: Clasificador Determinista de Campos vs Títulos (Pipeline AutoForm AI).
 
 Analiza los rótulos crudos extraídos en Stage 1 y los clasifica en:
   - CAMPO_ENTRADA: Campos reales que esperan recibir datos de la empresa.
@@ -22,12 +22,16 @@ from typing import Any, Dict, List, Optional, Set, Tuple
 
 class ClasificacionElemento(str, Enum):
     CAMPO_ENTRADA = "CAMPO_ENTRADA"
+    OPCION_SELECCION = "OPCION_SELECCION"
+    PREGUNTA_CERRADA = "PREGUNTA_CERRADA"
     TITULO_SECCION = "TITULO_SECCION"
     TABLA_CABECERA = "TABLA_CABECERA"
-    USO_EXCLUSIVO = "USO_EXCLUSIVO"
-    CONTROL_DOCUMENTAL = "CONTROL_DOCUMENTAL"
-    FIRMA_ESPACIO = "FIRMA_ESPACIO"
     INSTRUCCION_TEXTO = "INSTRUCCION_TEXTO"
+    TEXTO_LEGAL = "TEXTO_LEGAL"
+    CONTROL_DOCUMENTAL = "CONTROL_DOCUMENTAL"
+    USO_EXCLUSIVO = "USO_EXCLUSIVO"
+    FIRMA_ESPACIO = "FIRMA_ESPACIO"
+    NO_APLICA = "NO_APLICA"
 
 
 # ── Patrones de Clasificación ──
@@ -43,12 +47,27 @@ _PATRON_USO_EXCLUSIVO = re.compile(
 )
 
 _PATRON_FIRMAS = re.compile(
-    r"^\s*(?:firma\s+del\s+representante|firma\s+autorizada|firma\s+y\s+huella|firma\s*:?|signature)\b",
+    r"^\s*(?:firma\s+del\s+representante|firma\s+autorizada|firma\s+y\s+huella|firma\s*:?|signature|huella\s+dactilar|sello\s+y\s+firma)\b",
     re.IGNORECASE
 )
 
 _PATRON_INSTRUCCIONES_ANEXOS = re.compile(
-    r"^\s*(?:copia\s+de|fotocopia\s+de|adjuntar|anexo|certificado\s+de|certificaci[oó]n|documentos?\s+a\s+(?:presentar|adjuntar)|requisitos?)\b",
+    r"^\s*(?:diligencie|llene|marque|se[ñn]ale|adjuntar|adjunte|anexar|anexo|copia\s+de|fotocopia\s+de|nota\s*:|importante\s*:|instrucciones|requisitos|favor|recuerde|certificaci[oó]n|documentos?\s+a\s+(?:presentar|adjuntar))\b",
+    re.IGNORECASE
+)
+
+_PATRON_OPCIONES_SELECCION = re.compile(
+    r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|persona\s+natural|persona\s+jur[ií]dica|urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n)\s*$",
+    re.IGNORECASE
+)
+
+_PATRON_TEXTO_LEGAL = re.compile(
+    r"(?:autorizo\s+a|declaro\s+bajo|certifico\s+que|en\s+cumplimiento\s+de|manifiesto\s+que|bajo\s+la\s+gravedad|habeas\s+data|tratamiento\s+de\s+datos|pol[ií]tica\s+de\s+privacidad|sagrilaft|lavado\s+de\s+activos|financiamiento\s+del\s+terrorismo|origen\s+de\s+fondos|origen\s+de\s+bienes|cl[aá]usula|autorizaci[oó]n\s+para)",
+    re.IGNORECASE
+)
+
+_PATRON_PREGUNTAS_CERRADAS = re.compile(
+    r"^\s*¿.*?\?\s*$|^\s*(?:es\s+usted|declara\s+usted|autoriza\s+a|tiene\s+v[ií]nculo|es\s+pep|es\s+sujeto|obliga|responsable\s+de\s+iva|gran\s+contribuyente|autorretenedor|r[eé]gimen\s+com[uú]n|declarante\s+de\s+renta)\b",
     re.IGNORECASE
 )
 
@@ -125,10 +144,10 @@ def es_titulo_seccion(texto: str) -> bool:
 
 
 def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[str, Any]] = None) -> ClasificacionElemento:
-    """Clasifica un rótulo individual según sus características semánticas y geométricas."""
+    """Clasifica un rótulo individual según sus características semánticas y funcionales."""
     txt = str(rotulo or "").strip()
     if not txt:
-        return ClasificacionElemento.INSTRUCCION_TEXTO
+        return ClasificacionElemento.NO_APLICA
 
     # 1. Control documental
     if _PATRON_CONTROL_DOCUMENTAL.search(txt):
@@ -142,15 +161,27 @@ def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[s
     if _PATRON_FIRMAS.search(txt):
         return ClasificacionElemento.FIRMA_ESPACIO
 
-    # 4. Instrucciones y requisitos
-    if _PATRON_INSTRUCCIONES_ANEXOS.search(txt) and len(txt) > 30:
+    # 4. Opciones de selección directa (SI, NO, Ahorros, Corriente, etc.)
+    if _PATRON_OPCIONES_SELECCION.match(txt):
+        return ClasificacionElemento.OPCION_SELECCION
+
+    # 5. Texto legal extenso o autorizaciones (SAGRILAFT, Habeas Data, etc.)
+    if _PATRON_TEXTO_LEGAL.search(txt) or (len(txt) > 75 and not txt.endswith(":") and not re.search(r"_{2,}|\.{3,}", txt)):
+        return ClasificacionElemento.TEXTO_LEGAL
+
+    # 6. Instrucciones de diligenciamiento o anexos
+    if _PATRON_INSTRUCCIONES_ANEXOS.search(txt):
         return ClasificacionElemento.INSTRUCCION_TEXTO
 
-    # 5. Títulos de sección
+    # 7. Preguntas cerradas (¿...? o Gran Contribuyente, PEP, etc.)
+    if _PATRON_PREGUNTAS_CERRADAS.search(txt):
+        return ClasificacionElemento.PREGUNTA_CERRADA
+
+    # 8. Títulos de sección
     if es_titulo_seccion(txt):
         return ClasificacionElemento.TITULO_SECCION
 
-    # 6. Cabeceras de tabla
+    # 9. Cabeceras de tabla
     if _PATRON_CABECERAS_TABLA.match(txt):
         return ClasificacionElemento.TABLA_CABECERA
 

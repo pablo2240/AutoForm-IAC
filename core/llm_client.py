@@ -119,18 +119,21 @@ Recibes un objeto JSON con:
   * Rótulos de Celular del Representante, Teléfono Móvil, Móvil, No. Celular -> "celular"
 
 - Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA:
-  * Rótulos de Banco, Entidad Financiera -> "banco"
+  * Rótulos de Banco, Entidad Financiera, Nombre de la Entidad Financiera, Institución Bancaria -> "banco"
   * Rótulos de Número de Cuenta, No. Cuenta -> "numero_cuenta"
   * Rótulos de Tipo de Cuenta (Ahorros/Corriente) -> "tipo_cuenta"
+  * Rótulos de Sucursal Bancaria -> "sucursal"
 
 ### ETAPA 2: BARRERAS SEMÁNTICAS NEGATIVAS (ANTI-CONFUSIÓN ESTRICTO)
 - NUNCA cruces dominios:
+  * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
+  * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
   * NO asignes "cedula" a rótulos de NIT de la empresa.
   * NO asignes "nit" a casillas de cédula del representante.
   * NO asignes "razon_social" a casillas de representante legal persona natural.
   * NO asignes "expedicion" a rótulos que pidan FECHA de expedición (día/mes/año). 'expedicion' contiene exclusivamente la CIUDAD o LUGAR.
   * NO asignes datos a porcentajes de participación accionaria (% de acciones).
-  * NO asignes datos a instrucciones de anexos o copias de documentos (ej. 'Adjuntar copia del RUT', 'Fotocopia de cédula').
+  * NO asignes datos a instrucciones de anexos, textos legales o preguntas de SI/NO / Gran Contribuyente.
 
 ### ETAPA 3: TEXTOS DECLARATIVOS INLINE Y CASILLAS
 - Si el rótulo contiene marcadores inline como `____` dentro de un texto declarativo (ej: 'Yo, _____ identificado con documento _____ expedido en _____'):
@@ -139,7 +142,7 @@ Recibes un objeto JSON con:
   * Marca como true o 'X' la casilla correspondiente a 'C.C.'.
 
 ### ETAPA 4: AUDITORÍA DE CERO ALUCINACIÓN Y UNICIDAD
-- Si el formulario solicita un dato que no existe en "D" (ej. Matrícula Mercantil, CIIU, Sector Económico), OMITE ESE RÓTULO (no incluyas su id).
+- Si el formulario solicita un dato que no existe en "D" (ej. Matrícula Mercantil, CIIU, Sector Económico, Gran Contribuyente, Autorretenedor), OMITE ESE RÓTULO (no incluyas su id).
 - UNICIDAD: Cada campo de "D" debe asignarse a un único id para evitar sobreescrituras repetidas.
 
 ## FORMATO DE SALIDA (ESTRICTO JSON)

@@ -31,30 +31,30 @@ CAMPOS_VIRTUALES = [
     "representante_apellidos",
 ]
 
-# Sinónimos para sugerir coincidencias parciales en rótulos no asignados
+# Sinónimos robustos para sugerir coincidencias parciales (solo palabras significativas >= 3 letras)
 _SINONIMOS_RAPIDOS = {
-    "razon_social": ["nombre", "razon social", "empresa", "proveedor", "denominacion", "sociedad"],
-    "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal"],
+    "razon_social": ["razon social", "empresa", "proveedor", "denominacion social", "sociedad", "solicitante"],
+    "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria"],
     "nit_sin_dv": ["nit sin dv", "nit base"],
-    "nit_dv": ["dv", "digito de verificacion"],
+    "nit_dv": ["digito de verificacion", "digito verificacion"],
     "tipo_documento": ["tipo de documento", "tipo documento", "tipo id", "tipo de id", "tipo identificacion", "tipo de identificacion", "clase de documento", "tipo doc"],
-    "cedula": ["cedula", "cc", "c.c", "documento de identidad", "dni", "id", "identificacion del representante", "no documento"],
-    "representante_legal": ["representante legal", "gerente", "apoderado", "director general"],
-    "representante_nombres": ["nombres", "primer nombre", "segundo nombre"],
-    "representante_apellidos": ["apellidos", "primer apellido", "segundo apellido"],
-    "direccion": ["direccion", "domicilio", "sede principal", "ubicacion"],
-    "telefono": ["telefono", "tel", "fijo", "pbx", "contacto"],
-    "celular": ["celular", "movil", "cel", "telefono movil", "celular del representante", "no celular"],
-    "correo": ["correo", "email", "e-mail", "correo electronico"],
-    "pagina_web": ["pagina web", "web", "sitio web", "url", "portal"],
-    "banco": ["banco", "entidad bancaria", "institucion financiera"],
-    "numero_cuenta": ["numero de cuenta", "no. cuenta", "nro cuenta", "cuenta bancaria", "no cuenta"],
-    "tipo_cuenta": ["tipo de cuenta", "tipo cuenta", "modalidad de cuenta", "ahorros", "corriente"],
-    "sucursal": ["sucursal", "agencia", "oficina bancaria"],
-    "ciudad": ["ciudad", "municipio", "localidad"],
-    "departamento": ["departamento", "dpto", "provincia"],
-    "pais": ["pais", "nacionalidad", "country"],
-    "expedicion": ["lugar de expedicion", "expedida en", "ciudad de expedicion", "expedicion"],
+    "cedula": ["cedula", "cedula de ciudadania", "documento de identidad", "documento de identificacion", "no de documento", "identificacion del representante"],
+    "representante_legal": ["representante legal", "apoderado", "director general"],
+    "representante_nombres": ["nombres del representante", "primer nombre", "segundo nombre"],
+    "representante_apellidos": ["apellidos del representante", "primer apellido", "segundo apellido"],
+    "direccion": ["direccion", "domicilio principal", "sede principal", "direccion fiscal", "direccion de notificacion"],
+    "telefono": ["telefono", "telefono fijo", "pbx institucional", "telefono corporativo"],
+    "celular": ["celular", "telefono movil", "celular del representante", "numero de celular"],
+    "correo": ["correo", "email", "e-mail", "correo electronico", "correo institucional"],
+    "pagina_web": ["pagina web", "sitio web", "portal web", "url institucional"],
+    "banco": ["banco", "entidad bancaria", "institucion financiera", "nombre de la entidad financiera", "entidad financiera"],
+    "numero_cuenta": ["numero de cuenta", "no de cuenta", "nro cuenta", "cuenta bancaria"],
+    "tipo_cuenta": ["tipo de cuenta", "tipo cuenta", "modalidad de cuenta"],
+    "sucursal": ["sucursal", "agencia bancaria", "oficina bancaria", "sucursal bancaria"],
+    "ciudad": ["ciudad", "municipio", "ciudad fiscal", "ciudad de domicilio"],
+    "departamento": ["departamento", "provincia"],
+    "pais": ["pais", "nacionalidad"],
+    "expedicion": ["lugar de expedicion", "expedida en", "ciudad de expedicion"],
 }
 
 
@@ -66,26 +66,33 @@ def _normalizar(txt: str) -> str:
 
 
 def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Optional[str]:
-    """Intenta sugerir una coincidencia parcial para un rótulo no asignado."""
+    """Intenta sugerir una coincidencia parcial para un rótulo no asignado usando tokenización de palabra completa."""
     r_norm = _normalizar(rotulo)
-    if not r_norm or len(r_norm) < 2:
+    if not r_norm or len(r_norm) < 3:
         return None
 
-    # 1. Búsqueda por sinónimos
+    # Omitir palabras reservadas de opciones o preguntas
+    if r_norm in ("si", "no", "s", "n", "m", "f", "ahorros", "corriente", "otro", "otra", "na", "n a"):
+        return None
+
+    # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa
     for campo, sinonimos in _SINONIMOS_RAPIDOS.items():
         if campo in campos_disponibles or campo in CAMPOS_VIRTUALES:
             for s in sinonimos:
-                if s in r_norm or r_norm in s:
+                if s == r_norm:
+                    return campo
+                # Si el sinónimo tiene más de 3 letras, verificar coincidencia con límites de palabra (\b)
+                if len(s) >= 4 and re.search(r"\b" + re.escape(s) + r"\b", r_norm):
                     return campo
 
-    # 2. Búsqueda difusa con rapidfuzz
-    if fuzz is not None:
+    # 2. Búsqueda difusa estricta con rapidfuzz (token_sort_ratio >= 88)
+    if fuzz is not None and len(r_norm) >= 4:
         mejor_campo = None
         mejor_score = 0.0
         for campo in campos_disponibles:
             c_norm = _normalizar(campo)
-            score = float(fuzz.partial_ratio(r_norm, c_norm))
-            if score >= 80.0 and score > mejor_score:
+            score = float(fuzz.token_sort_ratio(r_norm, c_norm))
+            if score >= 88.0 and score > mejor_score:
                 mejor_score = score
                 mejor_campo = campo
         if mejor_campo:
@@ -151,7 +158,9 @@ def preparar_tabla_verificacion(
     datos_empresa: Dict[str, Any],
     elementos_raw: Optional[List[Dict[str, Any]]] = None,
 ) -> pd.DataFrame:
-    """Transforma el plan de mapeo y TODOS los rótulos detectados en un DataFrame interactivo."""
+    """Transforma el plan de mapeo y TODOS los rótulos detectados en un DataFrame interactivo con estados funcionales."""
+    from pipeline.stages.stage_2_classifier import clasificar_rotulo_individual, ClasificacionElemento
+
     filas = []
     claves_disponibles = list(datos_empresa.keys()) + CAMPOS_VIRTUALES
     
@@ -192,7 +201,7 @@ def preparar_tabla_verificacion(
         })
         coordenadas_mapeadas.add((hoja, fila, col))
 
-    # 2. Agregar todos los demás rótulos candidatos viables detectados en elementos_raw
+    # 2. Agregar todos los demás elementos detectados en elementos_raw con su rol funcional
     if elementos_raw:
         n_extra = len(filas) + 1
         for elem in elementos_raw:
@@ -205,15 +214,42 @@ def preparar_tabla_verificacion(
             if (hoja_e, fila_e, col_e) in coordenadas_mapeadas or not rot_e:
                 continue
 
-            # Omitir textos muy largos que son párrafos legales o instrucciones
-            if len(rot_e) > 80:
-                continue
+            tipo_clasif = elem.get("tipo_clasificacion")
+            if not tipo_clasif:
+                tipo_clasif_enum = clasificar_rotulo_individual(rot_e, elem)
+                tipo_clasif = tipo_clasif_enum.value
 
-            # Sugerencia inteligente para rótulos candidatos
-            sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles)
-            campo_final = sugerido if sugerido else OPCION_OMITIR
-            valor_final = _resolver_valor_campo(datos_empresa, campo_final)
-            estado = "🟡 Coincidencia parcial" if sugerido else "⚪ Candidato viable"
+            r_norm = _normalizar(rot_e)
+
+            # Clasificación y asignación según el rol funcional
+            if tipo_clasif in (
+                ClasificacionElemento.OPCION_SELECCION.value,
+                ClasificacionElemento.TEXTO_LEGAL.value,
+                ClasificacionElemento.INSTRUCCION_TEXTO.value,
+                ClasificacionElemento.CONTROL_DOCUMENTAL.value,
+                ClasificacionElemento.USO_EXCLUSIVO.value,
+                ClasificacionElemento.FIRMA_ESPACIO.value,
+                ClasificacionElemento.NO_APLICA.value,
+            ):
+                campo_final = OPCION_OMITIR
+                valor_final = ""
+                estado = "⚫ No es un campo"
+
+            elif r_norm in ("identificacion", "id", "documento", "identificacion no", "no identificacion") and not elem.get("seccion_padre"):
+                campo_final = OPCION_OMITIR
+                valor_final = ""
+                estado = "⚠️ Requiere revisión"
+
+            else:
+                sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles)
+                if sugerido:
+                    campo_final = sugerido
+                    valor_final = _resolver_valor_campo(datos_empresa, campo_final)
+                    estado = "🟡 Coincidencia parcial"
+                else:
+                    campo_final = OPCION_OMITIR
+                    valor_final = ""
+                    estado = "⚪ Sin asignar"
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             ubic = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
@@ -302,7 +338,7 @@ def render_pantalla_verificacion(
 ) -> Tuple[bool, List[Dict[str, Any]]]:
     """Renderiza la interfaz de verificación visual interactiva en Streamlit."""
     plan_activo = ctx.obtener_plan_activo()
-    elementos_todos = ctx.elementos_raw if ctx.elementos_raw else plan_activo
+    elementos_todos = ctx.elementos_clasificados if ctx.elementos_clasificados else ctx.elementos_raw
 
     if not plan_activo and not elementos_todos:
         st.warning("⚠️ No se encontraron campos detectados para verificar en este formulario.")
@@ -312,36 +348,37 @@ def render_pantalla_verificacion(
 
     st.markdown("### 📋 Verificación y Asignación de Campos")
     st.markdown(
-        "A continuación se muestran **todos los rótulos detectados** en el formulario. "
+        "A continuación se muestran los **elementos y campos detectados** en el formulario clasificados por rol funcional. "
         "Los campos sugeridos por la IA ya vienen pre-seleccionados. Puedes asignar datos a los candidatos viables o cambiar cualquier selector."
     )
 
-    # ── Preparar DataFrame Completo ──
-    df_inicial = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, ctx.elementos_raw)
+    # ── Preparar DataFrame Completo con Clasificación Funcional ──
+    df_inicial = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, elementos_todos)
 
     total_detectados = len(df_inicial)
     total_asignados = sum(1 for c in df_inicial["Campo Asignado"] if c != OPCION_OMITIR)
-    total_pendientes = total_detectados - total_asignados
+    total_pendientes = sum(1 for _, r in df_inicial.iterrows() if r["Campo Asignado"] == OPCION_OMITIR and r["Estado"] != "⚫ No es un campo")
+    total_no_campos = sum(1 for e in df_inicial["Estado"] if e == "⚫ No es un campo")
 
     # ── Métricas Resumidas ──
     col1, col2, col3, col4 = st.columns(4)
     with col1:
         st.metric("📄 Formulario", ctx.nombre_archivo or "Documento")
     with col2:
-        st.metric("🏷️ Total Rótulos Detectados", f"{total_detectados}")
+        st.metric("🏷️ Total Detectados", f"{total_detectados}")
     with col3:
         st.metric("✅ Campos Asignados", f"{total_asignados}")
     with col4:
-        st.metric("⚪ Pendientes / Candidatos", f"{total_pendientes}")
+        st.metric("⚪ Pendientes / Revisión", f"{total_pendientes}")
 
     # ── Barra de Búsqueda y Filtros ──
-    col_search, col_filter = st.columns([2, 1.5])
+    col_search, col_filter = st.columns([2, 2])
     with col_search:
         filtro_texto = st.text_input("🔍 Buscar rótulo o campo...", key=f"{key_prefix}_search_input", placeholder="Ej: Representante, Cuenta, NIT, Banco...").strip().lower()
     with col_filter:
         vista_filtro = st.radio(
             "Ver:",
-            ["Todos", "Solo Asignados", "Solo Pendientes / Candidatos"],
+            ["Todos", "Solo Asignados", "Solo Pendientes / Revisión", "Omitidos (No campo)"],
             horizontal=True,
             key=f"{key_prefix}_vista_filter",
         )
@@ -356,8 +393,10 @@ def render_pantalla_verificacion(
 
     if vista_filtro == "Solo Asignados":
         df_filtrado = df_filtrado[df_filtrado["Campo Asignado"] != OPCION_OMITIR]
-    elif vista_filtro == "Solo Pendientes / Candidatos":
-        df_filtrado = df_filtrado[df_filtrado["Campo Asignado"] == OPCION_OMITIR]
+    elif vista_filtro == "Solo Pendientes / Revisión":
+        df_filtrado = df_filtrado[(df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (df_filtrado["Estado"] != "⚫ No es un campo")]
+    elif vista_filtro == "Omitidos (No campo)":
+        df_filtrado = df_filtrado[df_filtrado["Estado"] == "⚫ No es un campo"]
 
     # Configuración de columnas interactivas
     config_columnas = {
