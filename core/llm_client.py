@@ -103,7 +103,7 @@ Recibes un objeto JSON con:
 ### ETAPA 1: ASIGNACIÓN SEGÚN EL DOMINIO DE LA SECCIÓN
 - Si la sección o el rótulo hace referencia a la EMPRESA / PROPONENTE / SOLICITANTE / PERSONA JURÍDICA:
   * Rótulos que soliciten nombre de la empresa, denominación social, solicitante -> "razon_social"
-  * Rótulos de NIT, RUT, Identificación Tributaria -> "nit"
+  * Rótulos de NIT, RUT, Identificación Tributaria, o listas de tipos como "CC/CE/PAS/NIT", "CC/NIT", "NIT/CC", "Identificación", "No. Documento" -> "nit" (la empresa es persona jurídica y su número de identificación tributaria es el NIT).
   * Rótulos de Domicilio, Sede Principal, Dirección -> "direccion"
   * Rótulos de Municipio, Ciudad de domicilio -> "ciudad"
   * Rótulos de Teléfono corporativo, PBX -> "telefono"
@@ -113,7 +113,7 @@ Recibes un objeto JSON con:
   * Rótulos de Nombre del Representante, Representante Legal -> "representante_legal"
   * Rótulos específicos de Primer/Segundo Nombre -> "representante_nombres"
   * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
-  * Rótulos de Tipo de Documento, Tipo ID, Tipo de Identificación, Tipo Doc -> "tipo_documento" (inscribirá C.C.)
+  * Rótulos explícitos de solo el Tipo de Documento, Tipo ID, Tipo de Identificación, Tipo Doc -> "tipo_documento" (inscribirá C.C.)
   * Rótulos de C.C., Cédula, Documento de Identidad, No. de Documento del Representante -> "cedula"
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
   * Rótulos de Celular del Representante, Teléfono Móvil, Móvil, No. Celular -> "celular"
@@ -128,6 +128,7 @@ Recibes un objeto JSON con:
 - NUNCA cruces dominios:
   * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
   * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
+  * REGLA DE RÓTULOS COMPUESTOS (CC/CE/PAS/NIT): NUNCA asignes "tipo_documento" a rótulos compuestos como "CC/CE/PAS/NIT" o "CC/NIT" que piden el número de identificación del proponente/empresa. Debes asignar "nit". "tipo_documento" solo se usa si el formulario pide explícitamente el tipo de documento por separado (ej: 'Tipo Doc:').
   * NO asignes "cedula" a rótulos de NIT de la empresa.
   * NO asignes "nit" a casillas de cédula del representante.
   * NO asignes "razon_social" a casillas de representante legal persona natural.

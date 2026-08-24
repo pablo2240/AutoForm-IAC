@@ -191,6 +191,10 @@ def ejecutar_stage_3_mapper(
             elem_orig = c_info["_elem_orig"]
             rotulo_clean = str(c_info.get("rotulo", "")).strip().lower()
 
+            # Normalizar rótulos compuestos de identificación (ej: CC/CE/PAS/NIT) a 'nit'
+            if campo_empresa == "tipo_documento" and re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", rotulo_clean):
+                campo_empresa = "nit"
+
             # Barrera de seguridad: NUNCA asignar lugar_expedicion a rótulos de FECHA
             if campo_empresa in ("lugar_expedicion", "expedicion") and re.search(r"\bfecha\b", rotulo_clean):
                 print(f"[AutoForm Stage 3 Mapper Safety] Omitida asignación de '{campo_empresa}' al rótulo de fecha: '{c_info.get('rotulo')}'")

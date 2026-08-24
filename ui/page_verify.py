@@ -34,7 +34,7 @@ CAMPOS_VIRTUALES = [
 # Sinónimos robustos para sugerir coincidencias parciales (solo palabras significativas >= 3 letras)
 _SINONIMOS_RAPIDOS = {
     "razon_social": ["razon social", "empresa", "proveedor", "denominacion social", "sociedad", "solicitante"],
-    "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria"],
+    "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria", "cc ce pas nit", "cc ce nit", "cc nit", "nit cc", "cc nit rut"],
     "nit_sin_dv": ["nit sin dv", "nit base"],
     "nit_dv": ["digito de verificacion", "digito verificacion"],
     "tipo_documento": ["tipo de documento", "tipo documento", "tipo id", "tipo de id", "tipo identificacion", "tipo de identificacion", "clase de documento", "tipo doc"],
@@ -79,6 +79,10 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Op
     # Si el rótulo solicita una FECHA (día/mes/año), NUNCA sugerir 'lugar_expedicion' ni 'expedicion' (que son ciudades)
     if "fecha" in r_norm:
         return None
+
+    # Rótulos compuestos de tipos de identificación para la empresa (ej: CC/CE/PAS/NIT, CC/NIT) -> 'nit'
+    if re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", r_norm):
+        return "nit"
 
     # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa
     for campo, sinonimos in _SINONIMOS_RAPIDOS.items():
