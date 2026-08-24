@@ -54,7 +54,7 @@ _SINONIMOS_RAPIDOS = {
     "ciudad": ["ciudad", "municipio", "ciudad fiscal", "ciudad de domicilio"],
     "departamento": ["departamento", "provincia"],
     "pais": ["pais", "nacionalidad"],
-    "expedicion": ["lugar de expedicion", "expedida en", "ciudad de expedicion"],
+    "expedicion": ["lugar de expedicion", "ciudad de expedicion", "expedida en", "municipio de expedicion", "lugar expedicion"],
 }
 
 
@@ -73,6 +73,10 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Op
 
     # Omitir palabras reservadas de opciones o preguntas
     if r_norm in ("si", "no", "s", "n", "m", "f", "ahorros", "corriente", "otro", "otra", "na", "n a"):
+        return None
+
+    # Si el rótulo solicita una FECHA (día/mes/año), NUNCA sugerir 'expedicion' (que es ciudad/lugar)
+    if "fecha" in r_norm:
         return None
 
     # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa
@@ -243,9 +247,10 @@ def preparar_tabla_verificacion(
             else:
                 sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles)
                 if sugerido:
-                    campo_final = sugerido
-                    valor_final = _resolver_valor_campo(datos_empresa, campo_final)
-                    estado = "🟡 Coincidencia parcial"
+                    # Coincidencias parciales nacen como sugerencia visual en -- Omitir -- para revisión manual
+                    campo_final = OPCION_OMITIR
+                    valor_final = ""
+                    estado = f"🟡 Coincidencia parcial (Sugerido: {sugerido})"
                 else:
                     campo_final = OPCION_OMITIR
                     valor_final = ""
@@ -270,12 +275,28 @@ def preparar_tabla_verificacion(
                 "_requiereMerge": bool(ancho_l > 1),
                 "_celdasAMergear": ancho_l,
                 "_anchoLinea": ancho_l,
-                "_orig_idx": None,
+                "_orig_idx": -1,
             })
             coordenadas_mapeadas.add((hoja_e, fila_e, col_e))
             n_extra += 1
 
     df = pd.DataFrame(filas)
+    if not df.empty:
+        df["N°"] = df["N°"].astype(int)
+        df["Rótulo en el Formulario"] = df["Rótulo en el Formulario"].astype(str)
+        df["Ubicación"] = df["Ubicación"].astype(str)
+        df["Estado"] = df["Estado"].astype(str)
+        df["Campo Asignado"] = df["Campo Asignado"].astype(str)
+        df["Valor a Escribir"] = df["Valor a Escribir"].astype(str)
+        df["Dirección"] = df["Dirección"].astype(str)
+        df["_hoja"] = df["_hoja"].astype(str)
+        df["_fila"] = df["_fila"].astype(int)
+        df["_columna"] = df["_columna"].astype(int)
+        df["_requiereMerge"] = df["_requiereMerge"].astype(bool)
+        df["_celdasAMergear"] = df["_celdasAMergear"].astype(int)
+        df["_anchoLinea"] = df["_anchoLinea"].astype(int)
+        df["_orig_idx"] = df["_orig_idx"].astype(int)
+
     return df
 
 
@@ -433,7 +454,7 @@ def render_pantalla_verificacion(
     df_editado = st.data_editor(
         df_filtrado,
         column_config=config_columnas,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         num_rows="fixed",
         key=f"{key_prefix}_data_editor",
