@@ -86,7 +86,7 @@ _TERMINOS_CAMPO_CORTO = re.compile(
 
 _PATRON_CABECERAS_TABLA = re.compile(
     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
-    r"nombre\s*/?\s*raz[oó]n\s+social|nombre\s+socio|identificaci[oó]n\s*/?\s*tipo\s+id|"
+    r"nombre\s+socio|identificaci[oó]n\s*/?\s*tipo\s+id|"
     r"porcentaje|%\s*participaci[oó]n|valor|parentesco|vinculo)\s*$",
     re.IGNORECASE
 )
@@ -241,10 +241,22 @@ def clasificar_elementos_formulario(
             if tipo_clasif == ClasificacionElemento.TITULO_SECCION:
                 seccion_actual = rotulo
 
-            # Determinar dirección de escritura recomendada
-            ubicacion_sugerida = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-            if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+            # Determinar dirección de escritura recomendada con PRIORIDAD a la física real de la celda
+            derecha_vacia = bool(elem.get("derechaVacia", False))
+            abajo_vacia = bool(elem.get("abajoVacia", False))
+
+            if derecha_vacia and not abajo_vacia:
+                ubicacion_sugerida = "derecha"
+                if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+                    tipo_clasif = ClasificacionElemento.CAMPO_ENTRADA
+            elif abajo_vacia and not derecha_vacia:
                 ubicacion_sugerida = "abajo"
+            else:
+                ubicacion_sugerida = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
+                if ubicacion_sugerida not in ("derecha", "abajo", "misma"):
+                    ubicacion_sugerida = "derecha"
+                if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+                    ubicacion_sugerida = "abajo"
 
             elem_clasificado = {
                 **elem,
