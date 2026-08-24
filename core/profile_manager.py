@@ -94,6 +94,12 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
         if not rep_ape:
             plano["representante_apellidos"] = " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
+    # Compatibilidad bidireccional lugar_expedicion <-> expedicion
+    if "lugar_expedicion" in plano and plano["lugar_expedicion"]:
+        plano["expedicion"] = plano["lugar_expedicion"]
+    elif "expedicion" in plano and plano["expedicion"]:
+        plano["lugar_expedicion"] = plano["expedicion"]
+
     return plano
 
 
@@ -126,7 +132,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
                 "representante_apellidos": str(plano.get("representante_apellidos", "")),
                 "tipo_documento": str(plano.get("tipo_documento", "C.C.")),
                 "cedula": str(plano.get("cedula", "")),
-                "expedicion": str(plano.get("expedicion", "")),
+                "lugar_expedicion": str(plano.get("lugar_expedicion") or plano.get("expedicion", "")),
             },
             "contacto": {
                 "correo": str(plano.get("correo_representante") or plano.get("correo", "")),
@@ -202,6 +208,7 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "correo": "",
         "tipo_documento": "C.C.",
         "cedula": "",
+        "lugar_expedicion": "",
         "expedicion": "",
         "ciudad": "",
         "departamento": "",

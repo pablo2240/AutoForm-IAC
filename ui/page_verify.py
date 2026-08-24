@@ -54,7 +54,8 @@ _SINONIMOS_RAPIDOS = {
     "ciudad": ["ciudad", "municipio", "ciudad fiscal", "ciudad de domicilio"],
     "departamento": ["departamento", "provincia"],
     "pais": ["pais", "nacionalidad"],
-    "expedicion": ["lugar de expedicion", "expedida en", "ciudad de expedicion"],
+    "lugar_expedicion": ["lugar de expedicion", "ciudad de expedicion", "expedida en", "municipio de expedicion", "lugar expedicion", "expedida"],
+    "expedicion": ["lugar de expedicion", "ciudad de expedicion", "expedida en", "municipio de expedicion", "lugar expedicion"],
 }
 
 
@@ -73,6 +74,10 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str]) -> Op
 
     # Omitir palabras reservadas de opciones o preguntas
     if r_norm in ("si", "no", "s", "n", "m", "f", "ahorros", "corriente", "otro", "otra", "na", "n a"):
+        return None
+
+    # Si el rótulo solicita una FECHA (día/mes/año), NUNCA sugerir 'lugar_expedicion' ni 'expedicion' (que son ciudades)
+    if "fecha" in r_norm:
         return None
 
     # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa

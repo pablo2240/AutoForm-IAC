@@ -479,8 +479,8 @@ with st.sidebar:
             tipo_documento = st.selectbox("Tipo de Documento / Tipo ID", options=["C.C.", "C.E.", "PASAPORTE", "OTRO"], index=idx_tdoc, key=f"pe_{slug_perfil}_tdoc")
             
             cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula") or "98555384", key=f"pe_{slug_perfil}_ced")
-            expedicion = st.text_input("Ciudad de Expedición", value=datos_empresa.get("expedicion") or "Envigado",
-                                       help="Ciudad donde fue expedido el documento del representante. Ej: Medellín", key=f"pe_{slug_perfil}_exp")
+            lugar_expedicion = st.text_input("Lugar de Expedición (Ciudad)", value=datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or "Envigado",
+                                             help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Medellín, Envigado", key=f"pe_{slug_perfil}_exp")
 
             st.markdown("##### 📱 Contacto Directo")
             celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular") or "3104120217", key=f"pe_{slug_perfil}_cel")
@@ -513,7 +513,8 @@ with st.sidebar:
                 "representante_apellidos": rep_apellidos,
                 "tipo_documento": tipo_documento,
                 "cedula": cedula,
-                "expedicion": expedicion,
+                "lugar_expedicion": lugar_expedicion,
+                "expedicion": lugar_expedicion,
                 "celular": celular,
                 "correo": correo,
                 "banco": banco,

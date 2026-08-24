@@ -84,7 +84,7 @@ Los datos maestros de la empresa se organizan en 3 dominios taxonómicos jerárq
    - `ubicacion`: `direccion` (Domicilio principal), `ciudad` (Municipio/Ciudad fiscal), `departamento`, `pais`.
    - `contacto`: `telefono` (PBX institucional), `pagina_web`.
 2. `representante_legal`:
-   - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre), `representante_apellidos` (Primer y segundo apellido), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `expedicion` (Ciudad/Lugar donde se expidió la cédula).
+   - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre), `representante_apellidos` (Primer y segundo apellido), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `lugar_expedicion` (Ciudad/Lugar donde se expidió la cédula, ej. "Envigado").
    - `contacto`: `correo`, `telefono`, `celular` (Teléfono móvil / Celular del representante).
 3. `financiero`:
    - `banco`: `banco` (Nombre de la entidad financiera), `sucursal`.
@@ -115,7 +115,7 @@ Recibes un objeto JSON con:
   * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
   * Rótulos de Tipo de Documento, Tipo ID, Tipo de Identificación, Tipo Doc -> "tipo_documento" (inscribirá C.C.)
   * Rótulos de C.C., Cédula, Documento de Identidad, No. de Documento del Representante -> "cedula"
-  * Rótulos de Lugar o Ciudad de Expedición del documento -> "expedicion" (ciudad/lugar, ej. "Envigado").
+  * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
   * Rótulos de Celular del Representante, Teléfono Móvil, Móvil, No. Celular -> "celular"
 
 - Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA:
@@ -131,13 +131,13 @@ Recibes un objeto JSON con:
   * NO asignes "cedula" a rótulos de NIT de la empresa.
   * NO asignes "nit" a casillas de cédula del representante.
   * NO asignes "razon_social" a casillas de representante legal persona natural.
-  * NO asignes "expedicion" a rótulos que pidan FECHA de expedición (día/mes/año). 'expedicion' contiene exclusivamente la CIUDAD o LUGAR.
+  * REGLA CRÍTICA DE FECHAS: NUNCA asignes "lugar_expedicion" (ni ningún otro campo) a rótulos que pidan FECHA de expedición (día/mes/año), 'FECHA EXPEDICIÓN ID', 'FECHA DOC', etc. El perfil empresarial NO contiene fechas de expedición, solo contiene el lugar/ciudad ('lugar_expedicion'). Si el formulario pide una FECHA de expedición, OMITE ESE RÓTULO (no incluyas su id).
   * NO asignes datos a porcentajes de participación accionaria (% de acciones).
   * NO asignes datos a instrucciones de anexos, textos legales o preguntas de SI/NO / Gran Contribuyente.
 
 ### ETAPA 3: TEXTOS DECLARATIVOS INLINE Y CASILLAS
 - Si el rótulo contiene marcadores inline como `____` dentro de un texto declarativo (ej: 'Yo, _____ identificado con documento _____ expedido en _____'):
-  * Asigna en orden secuencial: "representante_legal" -> "cedula" -> "expedicion".
+  * Asigna en orden secuencial: "representante_legal" -> "cedula" -> "lugar_expedicion".
 - Si el formulario tiene casillas de verificación para Tipo de Documento (ej. C.C. [ ], C.E. [ ], NIT [ ]):
   * Marca como true o 'X' la casilla correspondiente a 'C.C.'.
 

@@ -1023,10 +1023,10 @@ def _validar_hard_gates_mapeo(
     # No permitir la inyección del lugar de expedición en rótulos que soliciten la FECHA de expedición
     mapeo_limpio = []
     for item in mapeo_resultado:
-        if item.get("campo") == "expedicion":
+        if item.get("campo") in ("lugar_expedicion", "expedicion"):
             val_rotulo = str(item.get("valor", "")).strip().lower()
             if re.search(r"fecha|dia|d[ií]a|mes|a[ñn]o|dd|mm|aaaa|yy", val_rotulo):
-                print(f"[AutoForm AI Mapper Safety] Omitida asignación de 'expedicion' (lugar/ciudad 'Envigado') al rótulo de fecha: '{item.get('valor')}'")
+                print(f"[AutoForm AI Mapper Safety] Omitida asignación de '{item.get('campo')}' (lugar/ciudad 'Envigado') al rótulo de fecha: '{item.get('valor')}'")
                 continue
         mapeo_limpio.append(item)
 

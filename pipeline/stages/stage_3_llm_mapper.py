@@ -179,13 +179,23 @@ def ejecutar_stage_3_mapper(
         campo_empresa = str(item.get("campo") or "").strip()
         if "." in campo_empresa:
             campo_terminal = campo_empresa.split(".")[-1]
-            if campo_terminal in ctx.datos_empresa or campo_terminal in ("razon_social", "nit", "cedula", "expedicion", "direccion", "telefono", "correo", "representante_legal", "representante_nombres", "representante_apellidos", "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "ciudad", "departamento", "pais"):
+            if campo_terminal in ctx.datos_empresa or campo_terminal in ("razon_social", "nit", "cedula", "lugar_expedicion", "expedicion", "direccion", "telefono", "correo", "representante_legal", "representante_nombres", "representante_apellidos", "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "ciudad", "departamento", "pais"):
                 campo_empresa = campo_terminal
         
+        # Normalizar expedicion a lugar_expedicion
+        if campo_empresa == "expedicion":
+            campo_empresa = "lugar_expedicion"
+
         if item_id in indice_campos and campo_empresa:
             c_info = indice_campos[item_id]
             elem_orig = c_info["_elem_orig"]
-            
+            rotulo_clean = str(c_info.get("rotulo", "")).strip().lower()
+
+            # Barrera de seguridad: NUNCA asignar lugar_expedicion a rótulos de FECHA
+            if campo_empresa in ("lugar_expedicion", "expedicion") and re.search(r"\bfecha\b", rotulo_clean):
+                print(f"[AutoForm Stage 3 Mapper Safety] Omitida asignación de '{campo_empresa}' al rótulo de fecha: '{c_info.get('rotulo')}'")
+                continue
+
             ancho_l = int(elem_orig.get("anchoLinea", 1) or 1)
             ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
             if ubic not in ("derecha", "abajo", "misma"):
