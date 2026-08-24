@@ -227,8 +227,8 @@ def validar_y_sanitizar_mapeo(
         try:
             parsed = _extraer_json_robusto(payload_raw)
             return validar_y_sanitizar_mapeo(parsed)
-        except Exception:
-            print(f"[AutoForm AI Pydantic] Error: No se pudo parsear el JSON ({payload_raw[:100]}...)")
+        except Exception as exc:
+            print(f"[AutoForm AI Pydantic] Error: No se pudo parsear el JSON ({exc}): {payload_raw[:100]}...")
             return []
 
     # Validar cada objeto individualmente con MapeoSemanticoItem o MapeoItem de Pydantic
@@ -236,18 +236,19 @@ def validar_y_sanitizar_mapeo(
     for item in datos_dict:
         if isinstance(item, dict):
             try:
+                # 1. Si tiene coordenadas físicas completas, validar con MapeoItem
                 if "hoja" in item and "fila" in item and "columna" in item:
                     modelo = MapeoItem.model_validate(item)
                     elementos_validos.append(modelo.model_dump())
-                elif "id" in item or "campo" in item:
-                    modelo = MapeoSemanticoItem.model_validate(item)
-                    elementos_validos.append(modelo.model_dump())
+                # 2. Si tiene id y campo (salida semántica del LLM), validar con MapeoSemanticoItem
+                elif "id" in item and "campo" in item:
+                    modelo_semantico = MapeoSemanticoItem.model_validate(item)
+                    elementos_validos.append(modelo_semantico.model_dump())
                 else:
                     elementos_validos.append(item)
             except Exception as exc:
-                if "id" in item and "campo" in item:
-                    elementos_validos.append(item)
-                else:
-                    print(f"[AutoForm AI Pydantic Warning] Item omitido por error de validación ({exc}): {item}")
+                print(f"[AutoForm AI Pydantic Warning] Item omitido por error de validación ({exc}): {item}")
+        else:
+            print(f"[AutoForm AI Pydantic Warning] Item no es un diccionario válido: {item}")
 
     return elementos_validos
