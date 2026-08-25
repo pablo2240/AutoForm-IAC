@@ -272,7 +272,7 @@ def preparar_tabla_verificacion(
             if ubic not in ("derecha", "abajo", "misma"):
                 ubic = "derecha"
 
-            filas.append({
+            fila_dict = {
                 "N°": n_extra,
                 "Rótulo en el Formulario": rot_e,
                 "Ubicación": f"{hoja_e} (F{fila_e}:C{col_e})" if hoja_e else f"Fila {fila_e}, Col {col_e}",
@@ -287,7 +287,12 @@ def preparar_tabla_verificacion(
                 "_celdasAMergear": ancho_l,
                 "_anchoLinea": ancho_l,
                 "_orig_idx": None,
-            })
+            }
+            # Preservar metadatos físicos de PDF si existen
+            for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
+                if k in elem:
+                    fila_dict[k] = elem[k]
+            filas.append(fila_dict)
             coordenadas_mapeadas.add((hoja_e, fila_e, col_e))
             n_extra += 1
 
@@ -342,6 +347,10 @@ def aplicar_cambios_verificacion(
                 for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
                     if k in orig_item:
                         item_final[k] = orig_item[k]
+        else:
+            for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
+                if k in row and not pd.isna(row.get(k)):
+                    item_final[k] = row[k]
 
         plan_resultado.append(item_final)
 
@@ -368,13 +377,16 @@ def render_pantalla_verificacion(
         "Los campos sugeridos por la IA ya vienen pre-seleccionados. Puedes asignar datos a los candidatos viables o cambiar cualquier selector."
     )
 
-    # ── Preparar DataFrame Completo con Clasificación Funcional ──
-    df_inicial = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, elementos_todos)
+    # ── Gestión de Estado Maestro en Session State ──
+    master_key = f"{key_prefix}_master_df"
+    if master_key not in st.session_state or st.session_state[master_key] is None:
+        st.session_state[master_key] = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, elementos_todos)
 
-    total_detectados = len(df_inicial)
-    total_asignados = sum(1 for c in df_inicial["Campo Asignado"] if c != OPCION_OMITIR)
-    total_pendientes = sum(1 for _, r in df_inicial.iterrows() if r["Campo Asignado"] == OPCION_OMITIR and r["Estado"] != "⚫ No es un campo")
-    total_no_campos = sum(1 for e in df_inicial["Estado"] if e == "⚫ No es un campo")
+    master_df: pd.DataFrame = st.session_state[master_key]
+
+    total_detectados = len(master_df)
+    total_asignados = sum(1 for c in master_df["Campo Asignado"] if c != OPCION_OMITIR)
+    total_pendientes = sum(1 for _, r in master_df.iterrows() if r["Campo Asignado"] == OPCION_OMITIR and r["Estado"] != "⚫ No es un campo")
 
     # ── Métricas Resumidas ──
     col1, col2, col3, col4 = st.columns(4)
@@ -399,12 +411,12 @@ def render_pantalla_verificacion(
             key=f"{key_prefix}_vista_filter",
         )
 
-    # Aplicar filtrado al DataFrame visual
-    df_filtrado = df_inicial.copy()
+    # Aplicar filtrado al DataFrame visual desde master_df
+    df_filtrado = master_df.copy()
     if filtro_texto:
         df_filtrado = df_filtrado[
-            df_filtrado["Rótulo en el Formulario"].str.lower().str.contains(filtro_texto) |
-            df_filtrado["Campo Asignado"].str.lower().str.contains(filtro_texto)
+            df_filtrado["Rótulo en el Formulario"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Campo Asignado"].astype(str).str.lower().str.contains(filtro_texto)
         ]
 
     if vista_filtro == "Solo Asignados":
@@ -443,6 +455,13 @@ def render_pantalla_verificacion(
         "_celdasAMergear": None,
         "_anchoLinea": None,
         "_orig_idx": None,
+        "_pdf_page": None,
+        "_pdf_bbox": None,
+        "_pdf_target_rect": None,
+        "_pdf_es_caja": None,
+        "_pdf_es_casilla": None,
+        "_pdf_es_acroform": None,
+        "_pdf_widget_name": None,
     }
 
     # Render del editor de datos de Streamlit
@@ -455,16 +474,39 @@ def render_pantalla_verificacion(
         key=f"{key_prefix}_data_editor",
     )
 
-    # Actualizar valores resultantes en el plan completo
-    # Si hubo filtro, fusionar con las filas no visibles para no perder datos
-    if len(df_filtrado) < len(df_inicial):
-        indices_editados = set(df_editado["N°"])
-        df_no_editadas = df_inicial[~df_inicial["N°"].isin(indices_editados)]
-        df_consolidado = pd.concat([df_editado, df_no_editadas]).sort_values("N°")
-    else:
-        df_consolidado = df_editado
+    # ── Sincronizar ediciones del usuario hacia master_df ──
+    hubo_cambios = False
+    if df_editado is not None and not df_editado.empty:
+        for _, edit_row in df_editado.iterrows():
+            num_item = edit_row["N°"]
+            match_idx = master_df[master_df["N°"] == num_item].index
+            if not match_idx.empty:
+                idx = match_idx[0]
+                campo_nuevo = str(edit_row.get("Campo Asignado", "")).strip()
+                dir_nueva = str(edit_row.get("Dirección", "derecha")).lower()
+                
+                campo_antiguo = str(master_df.at[idx, "Campo Asignado"]).strip()
+                dir_antigua = str(master_df.at[idx, "Dirección"]).lower()
 
-    plan_actualizado = aplicar_cambios_verificacion(df_consolidado, plan_activo, ctx.datos_empresa)
+                if campo_nuevo != campo_antiguo or dir_nueva != dir_antigua:
+                    hubo_cambios = True
+                    master_df.at[idx, "Campo Asignado"] = campo_nuevo
+                    master_df.at[idx, "Dirección"] = dir_nueva
+                    if campo_nuevo and campo_nuevo != OPCION_OMITIR:
+                        master_df.at[idx, "Valor a Escribir"] = _resolver_valor_campo(ctx.datos_empresa, campo_nuevo)
+                        estado_prev = str(master_df.at[idx, "Estado"])
+                        if not estado_prev.startswith("✅"):
+                            master_df.at[idx, "Estado"] = "✏️ Asignado por Usuario"
+                    else:
+                        master_df.at[idx, "Valor a Escribir"] = ""
+                        estado_prev = str(master_df.at[idx, "Estado"])
+                        if estado_prev != "⚫ No es un campo":
+                            master_df.at[idx, "Estado"] = "⚪ Sin asignar"
+
+        if hubo_cambios:
+            st.session_state[master_key] = master_df
+
+    plan_actualizado = aplicar_cambios_verificacion(master_df, plan_activo, ctx.datos_empresa)
 
     st.markdown("---")
 
@@ -473,6 +515,7 @@ def render_pantalla_verificacion(
 
     with col_guardar:
         if st.button("💾 Guardar como Plantilla Permanente", key=f"{key_prefix}_btn_save", help="Guarda esta configuración para que futuros formularios iguales se llenen automáticamente."):
+            plan_actualizado = aplicar_cambios_verificacion(master_df, plan_activo, ctx.datos_empresa)
             plantilla_id = ctx.plantilla_id or calcular_hash_formulario(ctx.elementos_raw or plan_activo)
             ruta_guardada = guardar_plantilla(
                 plantilla_id=plantilla_id,
@@ -494,12 +537,15 @@ def render_pantalla_verificacion(
             help="Inyecta los datos confirmados en el archivo original y genera la descarga.",
         )
         if confirmar_click:
+            plan_actualizado = aplicar_cambios_verificacion(master_df, plan_activo, ctx.datos_empresa)
             ctx.plan_verificado = plan_actualizado
             ctx.log(f"Plan de mapeo verificado y confirmado por el usuario ({len(plan_actualizado)} campos).")
             return True, plan_actualizado
 
     with col_reset:
         if st.button("🔄 Restablecer", key=f"{key_prefix}_btn_reset", help="Restaura las sugerencias iniciales de la IA"):
+            if master_key in st.session_state:
+                del st.session_state[master_key]
             ctx.plan_verificado = []
             st.rerun()
 
