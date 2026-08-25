@@ -211,6 +211,8 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
     if valor_actual is not None:
         txt_actual = str(valor_actual).replace("\xa0", " ").replace("\t", " ").strip()
 
+    patron_placeholder = r'_{2,}|\.{3,}'
+
     # Si la celda contiene una fórmula o comilla simple que el usuario ve vacía en Excel, permitir sobreescritura
     es_formula_o_vacio_visualmente = bool(
         not txt_actual or
@@ -219,19 +221,62 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         re.match(r"^[\s_\.\:\-]+$", txt_actual)
     )
 
-    if not es_formula_o_vacio_visualmente and not es_misma_celda:
-        patron_placeholder = r'_{2,}|\.{3,}'
-        if re.search(patron_placeholder, txt_actual):
-            try:
-                celda.value = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
-                return True
-            except AttributeError:
-                return False
-        # Celda con contenido descriptivo real pre-impreso: no sobreescribir
-        return False
+    # CASO A: Escritura en celda adyacente (derecha / abajo)
+    if not es_misma_celda:
+        if not es_formula_o_vacio_visualmente:
+            if re.search(patron_placeholder, txt_actual):
+                try:
+                    celda.value = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
+                    return True
+                except AttributeError:
+                    return False
+            # Celda con contenido descriptivo real pre-impreso: no sobreescribir
+            return False
 
+        try:
+            celda.value = valor
+            return True
+        except AttributeError:
+            return False
+
+    # CASO B: Escritura en la MISMA celda (dirección = "misma")
+    if es_formula_o_vacio_visualmente:
+        # Celda estaba vacía o solo contenía líneas/guiones puros
+        try:
+            celda.value = valor
+            return True
+        except AttributeError:
+            return False
+
+    # 1. Si contiene líneas/guiones inline combinados con texto (ej: "NIT: ________" o "Yo, ________"):
+    if re.search(patron_placeholder, txt_actual):
+        try:
+            celda.value = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
+            return True
+        except AttributeError:
+            return False
+
+    # 2. Si termina en dos puntos (ej: "NOMBRE / RAZON SOCIAL:" o "DIRECCIÓN:")
+    if txt_actual.endswith(":"):
+        try:
+            celda.value = f"{txt_actual} {valor}"
+            return True
+        except AttributeError:
+            return False
+
+    # 3. Si contiene dos puntos en el texto (ej: "Ciudad : ")
+    if ":" in txt_actual:
+        partes = txt_actual.split(":", 1)
+        rotulo_limpio = partes[0].strip()
+        try:
+            celda.value = f"{rotulo_limpio}: {valor}"
+            return True
+        except AttributeError:
+            return False
+
+    # 4. Si es un rótulo sin dos puntos (ej: "NOMBRE / RAZON SOCIAL"):
     try:
-        celda.value = valor
+        celda.value = f"{txt_actual}: {valor}"
         return True
     except AttributeError:
         return False
