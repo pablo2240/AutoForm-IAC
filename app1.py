@@ -768,6 +768,11 @@ if uploaded_file is not None:
                     ctx = PipelineOrchestrator.analizar_formulario(ctx, on_progress=callback_progreso)
                     progress_placeholder.empty()
 
+                    # Limpiar estados de tablas de verificación previas
+                    for k in list(st.session_state.keys()):
+                        if "master_df" in k or "data_editor" in k or "search_input" in k or "vista_filter" in k:
+                            del st.session_state[k]
+
                     st.session_state["pipeline_ctx"] = ctx
                     st.session_state["processed_file_id"] = current_file_id
 

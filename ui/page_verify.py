@@ -297,6 +297,21 @@ def preparar_tabla_verificacion(
             n_extra += 1
 
     df = pd.DataFrame(filas)
+    if not df.empty:
+        df["N°"] = df["N°"].fillna(0).astype(int)
+        df["Rótulo en el Formulario"] = df["Rótulo en el Formulario"].fillna("").astype(str)
+        df["Ubicación"] = df["Ubicación"].fillna("").astype(str)
+        df["Estado"] = df["Estado"].fillna("⚪ Sin asignar").astype(str)
+        df["Campo Asignado"] = df["Campo Asignado"].fillna(OPCION_OMITIR).astype(str)
+        df["Valor a Escribir"] = df["Valor a Escribir"].fillna("").astype(str)
+        df["Dirección"] = df["Dirección"].fillna("derecha").astype(str)
+        df["_hoja"] = df["_hoja"].fillna("").astype(str)
+        df["_fila"] = df["_fila"].fillna(0).astype(int)
+        df["_columna"] = df["_columna"].fillna(0).astype(int)
+        df["_requiereMerge"] = df["_requiereMerge"].fillna(False).astype(bool)
+        df["_celdasAMergear"] = df["_celdasAMergear"].fillna(1).astype(int)
+        df["_anchoLinea"] = df["_anchoLinea"].fillna(1).astype(int)
+        df["_orig_idx"] = df["_orig_idx"].fillna(-1).astype(int)
     return df
 
 
@@ -340,7 +355,7 @@ def aplicar_cambios_verificacion(
 
         # Preservar metadatos físicos de PDF si existían
         orig_idx = row.get("_orig_idx")
-        if orig_idx is not None and not pd.isna(orig_idx):
+        if orig_idx is not None and not pd.isna(orig_idx) and int(orig_idx) >= 0:
             idx_int = int(orig_idx)
             if 0 <= idx_int < len(plan_original):
                 orig_item = plan_original[idx_int]
@@ -377,8 +392,12 @@ def render_pantalla_verificacion(
         "Los campos sugeridos por la IA ya vienen pre-seleccionados. Puedes asignar datos a los candidatos viables o cambiar cualquier selector."
     )
 
-    # ── Gestión de Estado Maestro en Session State ──
-    master_key = f"{key_prefix}_master_df"
+    # ── Gestión de Estado Maestro en Session State (Aislado por Documento) ──
+    import hashlib
+    doc_hash = hashlib.md5(f"{ctx.nombre_archivo}_{len(ctx.archivo_bytes or b'')}".encode("utf-8", errors="ignore")).hexdigest()[:10]
+    master_key = f"{key_prefix}_master_df_{doc_hash}"
+    editor_key = f"{key_prefix}_data_editor_{doc_hash}"
+
     if master_key not in st.session_state or st.session_state[master_key] is None:
         st.session_state[master_key] = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, elementos_todos)
 
@@ -402,13 +421,13 @@ def render_pantalla_verificacion(
     # ── Barra de Búsqueda y Filtros ──
     col_search, col_filter = st.columns([2, 2])
     with col_search:
-        filtro_texto = st.text_input("🔍 Buscar rótulo o campo...", key=f"{key_prefix}_search_input", placeholder="Ej: Representante, Cuenta, NIT, Banco...").strip().lower()
+        filtro_texto = st.text_input("🔍 Buscar rótulo o campo...", key=f"{key_prefix}_search_input_{doc_hash}", placeholder="Ej: Representante, Cuenta, NIT, Banco...").strip().lower()
     with col_filter:
         vista_filtro = st.radio(
             "Ver:",
             ["Todos", "Solo Asignados", "Solo Pendientes / Revisión", "Omitidos (No campo)"],
             horizontal=True,
-            key=f"{key_prefix}_vista_filter",
+            key=f"{key_prefix}_vista_filter_{doc_hash}",
         )
 
     # Aplicar filtrado al DataFrame visual desde master_df
@@ -468,10 +487,10 @@ def render_pantalla_verificacion(
     df_editado = st.data_editor(
         df_filtrado,
         column_config=config_columnas,
-        use_container_width=True,
+        width="stretch",
         hide_index=True,
         num_rows="fixed",
-        key=f"{key_prefix}_data_editor",
+        key=editor_key,
     )
 
     # ── Sincronizar ediciones del usuario hacia master_df ──
