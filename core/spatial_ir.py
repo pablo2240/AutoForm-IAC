@@ -315,27 +315,50 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     # ── Reglas Visuales y Físicas de Encabezado / Banner ──
     if propiedades:
         color_fondo = str(propiedades.get("colorFondo") or "").strip()
-        es_merge = bool(propiedades.get("esMergePrincipal", False) or propiedades.get("coordMerge"))
+        coord_merge = str(propiedades.get("coordMerge") or "").strip()
+        col_actual = int(propiedades.get("columna", 1) or 1)
+        es_merge = bool(propiedades.get("esMergePrincipal", False) or coord_merge)
         der_vacia = bool(propiedades.get("derechaVacia", False))
         ab_vacia = bool(propiedades.get("abajoVacia", False))
         der_merge = bool(propiedades.get("derechaEsMerge", False))
         tipo_espacio = str(propiedades.get("tipoEspacioEscritura", "derecha")).lower()
 
+        # Calcular extensión física del merge (cuántas columnas abarca)
+        min_col, max_col, span_merge = col_actual, col_actual, 1
+        if coord_merge:
+            try:
+                from openpyxl.utils import range_boundaries
+                min_c, _, max_c, _ = range_boundaries(coord_merge)
+                if min_c and max_c:
+                    min_col, max_col, span_merge = min_c, max_c, max_c - min_c + 1
+            except Exception:
+                pass
+
         tiene_espacio_llenado = der_vacia or der_merge or ab_vacia
 
-        # 1. Franja divisoria con color de fondo (banner):
+        # 1. Banner de Ancho Completo (Ocupa desde el inicio de la celda hasta el final del formulario):
+        # Si la celda combinada inicia cerca del margen izquierdo (columna <= 3) y se extiende
+        # a través de múltiples columnas (span >= 5 o llega hasta col >= 10)
+        es_franja_ancho_completo = (
+            es_merge and min_col <= 3 and (span_merge >= 5 or max_col >= 10)
+        )
+        if es_franja_ancho_completo:
+            if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+                return True
+
+        # 2. Franja divisoria con color de fondo (banner con relleno):
         if color_fondo:
-            # Si tiene fondo sombreado y es una celda combinada ancha o no tiene espacio de llenado directo
-            if es_merge or not tiene_espacio_llenado:
+            # Si tiene fondo sombreado y abarca merge (span >= 2) o no tiene celda de llenado contigua
+            if es_merge or span_merge >= 2 or not tiene_espacio_llenado:
                 if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                     return True
-            # Si el texto es de longitud media en mayúsculas/título con fondo
+            # Si el texto es descriptivo en mayúsculas o título con fondo
             if len(t_clean) >= 6 and (t_clean.isupper() or t_clean.istitle()) and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                 return True
 
-        # 2. Celda combinada ancha (banner sin espacio de entrada):
-        if es_merge and not der_vacia and not der_merge and tipo_espacio != "misma":
-            if len(t_clean) >= 8 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+        # 3. Celda combinada ancha (span >= 4) sin celda de captura a la derecha:
+        if es_merge and span_merge >= 4 and not der_vacia and not der_merge and tipo_espacio != "misma":
+            if len(t_clean) >= 6 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                 return True
 
     return False
