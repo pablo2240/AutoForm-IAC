@@ -6,6 +6,13 @@ Orquesta el mapeo semántico de campos de dos maneras:
 2. Inferencia IA (OpenAI LLM): Si es nuevo, envía únicamente los campos de entrada
    viables (previamente filtrados en Stage 2) junto con su contexto de sección para
    un emparejamiento semántico limpio y sin hard-gates.
+
+HSP Fase 3 — Integración:
+  - Pre-LLM: Si la IR está disponible, filtra elementos por tipo (solo FIELD/UNKNOWN)
+    y agrupa por sección procesable. Reduce tokens y elimina falsos positivos.
+  - Post-LLM: Pasa la respuesta completa por el Validador Determinístico (semantic_validator)
+    que aplica autocorrecciones (CC/CE→nit, telefono→celular en Rep. Legal),
+    bloquea contradicciones (lugar_expedicion→fecha), y asigna nivel de confianza.
 """
 
 from __future__ import annotations
@@ -92,6 +99,129 @@ def _deduplicar_destinos(mapeos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return resultado
 
 
+# ──────────────────────────────────────────────────────────────────────────────
+# HSP Fase 3: Filtro Pre-LLM basado en IR
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _construir_campos_viables_desde_ir(
+    ctx: PipelineContext,
+) -> Optional[List[Dict[str, Any]]]:
+    """Si la IR está disponible, filtra elementos por tipo y sección.
+
+    Retorna solo los elementos clasificados como FIELD o UNKNOWN dentro
+    de secciones procesables. OPTION, SECTION_TITLE, DECORATIVE,
+    INSTRUCTION y LEGAL_TEXT son descartados pre-LLM.
+
+    Returns:
+        Lista de campos viables enriquecidos con sección, o None si la IR no está disponible.
+    """
+    if ctx.documento_ir is None:
+        return None
+
+    try:
+        from core.spatial_ir import TipoElemento, PertinenciaSeccion
+    except ImportError:
+        return None
+
+    campos: List[Dict[str, Any]] = []
+    id_counter = 0
+    tipos_viables = {TipoElemento.FIELD, TipoElemento.UNKNOWN}
+
+    for seccion in ctx.documento_ir.secciones:
+        # Short-circuit: secciones marcadas OMITIR_* se saltan completamente
+        if seccion.pertinencia in (
+            PertinenciaSeccion.OMITIR_TERCEROS,
+            PertinenciaSeccion.OMITIR_USO_INTERNO,
+            PertinenciaSeccion.OMITIR_LEGAL,
+        ):
+            continue
+
+        for fila in seccion.filas:
+            for elem in fila.elementos:
+                # Solo enviar al LLM los elementos clasificados como FIELD o UNKNOWN
+                if elem.tipo_elemento not in tipos_viables:
+                    continue
+
+                id_counter += 1
+
+                # Buscar el elemento raw original para preservar coordenadas
+                elem_orig = elem.propiedades_raw or {}
+
+                campos.append({
+                    "id": id_counter,
+                    "rotulo": elem.texto,
+                    "seccion": seccion.titulo,
+                    "tipoEspacioEscritura": elem.direccion_escritura,
+                    "tipo_elemento": elem.tipo_elemento.value,
+                    "_elem_orig": elem_orig,
+                    "_seccion_titulo": seccion.titulo,
+                })
+
+    return campos if campos else None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# HSP Fase 3: Post-Validación Determinística
+# ──────────────────────────────────────────────────────────────────────────────
+
+def _aplicar_validacion_deterministica(
+    plan_mapeo: List[Dict[str, Any]],
+    ctx: PipelineContext,
+) -> List[Dict[str, Any]]:
+    """Pasa el plan_mapeo por el Validador Determinístico (semantic_validator).
+
+    Aplica autocorrecciones, estados y niveles de confianza.
+    No descarta ítems del plan: solo los enriquece con metadatos de validación
+    para que la UI pueda mostrar semáforos y filtros.
+
+    Returns:
+        Plan enriquecido con estado, motivo, nivel_confianza y campo_final.
+    """
+    try:
+        from core.semantic_validator import (
+            validar_plan_mapeo,
+            generar_resumen_validacion,
+            EstadoMapeo,
+        )
+    except ImportError:
+        # Si el validador no está disponible, retornar el plan sin cambios
+        return plan_mapeo
+
+    # Ejecutar validación completa
+    plan_validado = validar_plan_mapeo(
+        plan_mapeo,
+        ctx.datos_empresa,
+        documento_ir=ctx.documento_ir,
+    )
+
+    # Generar resumen para observabilidad
+    resumen = generar_resumen_validacion(plan_validado)
+    ctx.resumen_validacion = resumen
+
+    # Log de resultados
+    aprobados = resumen["por_estado"].get("APROBADO", 0)
+    revisiones = resumen["por_estado"].get("REVISION", 0)
+    descartados = resumen["por_estado"].get("DESCARTADO", 0)
+    ctx.log(
+        f"[Stage 3b - Validador] Resultado: "
+        f"{aprobados} APROBADOS, {revisiones} REVISION, {descartados} DESCARTADOS "
+        f"(tasa aprobación: {resumen['tasa_aprobacion']}%)"
+    )
+
+    if resumen["autocorrecciones"]:
+        for ac in resumen["autocorrecciones"]:
+            ctx.log(
+                f"[Stage 3b - Validador] Autocorrección: '{ac['rotulo']}' "
+                f"→ {ac['original']} → {ac['corregido']}"
+            )
+
+    return plan_validado
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# FUNCIÓN PRINCIPAL: ejecutar_stage_3_mapper
+# ──────────────────────────────────────────────────────────────────────────────
+
 def ejecutar_stage_3_mapper(
     ctx: PipelineContext,
     umbral_similitud: float = 90.0,
@@ -113,6 +243,8 @@ def ejecutar_stage_3_mapper(
             ctx.es_plantilla_guardada = True
             ctx.score_similitud = 100.0
             ctx.log(f"[Stage 3 - Mapper] ¡Plantilla exacta encontrada en disco! ({len(ctx.plan_mapeo)} campos mapeados a 0 costo).")
+            # Validar incluso plantillas guardadas (pueden tener autocorrecciones pendientes)
+            ctx.plan_mapeo = _aplicar_validacion_deterministica(ctx.plan_mapeo, ctx)
             return ctx
 
         # 1B. Coincidencia Difusa (Fuzzy Matching)
@@ -126,36 +258,52 @@ def ejecutar_stage_3_mapper(
                 ctx.es_plantilla_guardada = True
                 ctx.score_similitud = score
                 ctx.log(f"[Stage 3 - Mapper] ¡Plantilla similar encontrada! (Score: {score:.1f}%, ID: {pid}).")
+                # Validar incluso plantillas difusas
+                ctx.plan_mapeo = _aplicar_validacion_deterministica(ctx.plan_mapeo, ctx)
                 return ctx
 
     # ── RUTA 2: Inferencia con IA (LLM) ──
     ctx.log("[Stage 3 - Mapper] Consultando modelo de lenguaje (OpenAI)...")
     
-    # Filtrar solo campos viables clasificados en Stage 2
-    campos_viables = [
-        {
-            "id": idx + 1,
-            "rotulo": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
-            "seccion": str(elem.get("seccion_padre", "INFORMACIÓN GENERAL")),
-            "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
-            "_elem_orig": elem,
-        }
-        for idx, elem in enumerate(ctx.elementos_clasificados)
-        if elem.get("es_campo_viable", True)
-    ]
-
-    if not campos_viables:
-        # Fallback a elementos crudos si no se ejecutó Stage 2 previamente
+    # HSP Fase 3: Intentar filtro inteligente desde la IR
+    campos_viables_ir = _construir_campos_viables_desde_ir(ctx)
+    
+    if campos_viables_ir is not None:
+        # Ruta HSP: campos pre-filtrados por tipo de elemento desde la IR
+        campos_viables = campos_viables_ir
+        total_raw = len(ctx.elementos_raw)
+        total_filtrado = len(campos_viables)
+        ctx.log(
+            f"[Stage 3 - Pre-LLM] Filtro IR aplicado: {total_raw} elementos → "
+            f"{total_filtrado} campos viables ({total_raw - total_filtrado} descartados pre-LLM: "
+            f"OPTION, DECORATIVE, LEGAL_TEXT, SECTION_TITLE)."
+        )
+    else:
+        # Fallback: usar clasificación de Stage 2 (flujo existente)
         campos_viables = [
             {
                 "id": idx + 1,
                 "rotulo": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
-                "seccion": "INFORMACIÓN GENERAL",
+                "seccion": str(elem.get("seccion_padre", "INFORMACIÓN GENERAL")),
                 "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
                 "_elem_orig": elem,
             }
-            for idx, elem in enumerate(elementos)
+            for idx, elem in enumerate(ctx.elementos_clasificados)
+            if elem.get("es_campo_viable", True)
         ]
+
+        if not campos_viables:
+            # Fallback último: elementos crudos
+            campos_viables = [
+                {
+                    "id": idx + 1,
+                    "rotulo": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
+                    "seccion": "INFORMACIÓN GENERAL",
+                    "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
+                    "_elem_orig": elem,
+                }
+                for idx, elem in enumerate(elementos)
+            ]
 
     from core.profile_manager import estructurar_perfil_taxonomia
 
@@ -189,21 +337,6 @@ def ejecutar_stage_3_mapper(
         if item_id in indice_campos and campo_empresa:
             c_info = indice_campos[item_id]
             elem_orig = c_info["_elem_orig"]
-            rotulo_clean = str(c_info.get("rotulo", "")).strip().lower()
-
-            # Normalizar rótulos compuestos de identificación (ej: CC/CE/PAS/NIT) a 'nit'
-            if campo_empresa == "tipo_documento" and re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", rotulo_clean):
-                campo_empresa = "nit"
-
-            # En la sección del Representante Legal, 'telefono' corresponde al celular/móvil
-            sec_padre = str(elem_orig.get("seccion_padre") or c_info.get("seccion") or "").lower()
-            if campo_empresa == "telefono" and any(k in sec_padre for k in ("representante", "apoderado", "persona natural")):
-                campo_empresa = "celular"
-
-            # Barrera de seguridad: NUNCA asignar lugar_expedicion a rótulos de FECHA
-            if campo_empresa in ("lugar_expedicion", "expedicion") and re.search(r"\bfecha\b", rotulo_clean):
-                print(f"[AutoForm Stage 3 Mapper Safety] Omitida asignación de '{campo_empresa}' al rótulo de fecha: '{c_info.get('rotulo')}'")
-                continue
 
             ancho_l = int(elem_orig.get("anchoLinea", 1) or 1)
             ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
@@ -220,6 +353,9 @@ def ejecutar_stage_3_mapper(
                 "requiereMerge": bool(ancho_l > 1 and ubic == "derecha"),
                 "celdasAMergear": ancho_l,
                 "anchoLinea": ancho_l,
+                # HSP: preservar contexto de sección y tipo para el validador
+                "seccion": c_info.get("_seccion_titulo") or c_info.get("seccion", ""),
+                "tipo_elemento": c_info.get("tipo_elemento", "FIELD"),
             }
 
             # Preservar metadatos de PDF
@@ -231,6 +367,10 @@ def ejecutar_stage_3_mapper(
 
     # Deduplicar
     plan_final = _deduplicar_destinos(plan_reconstruido)
+
+    # ── HSP Fase 3: Post-Validación Determinística ──
+    plan_final = _aplicar_validacion_deterministica(plan_final, ctx)
+
     ctx.plan_mapeo = plan_final
 
     duracion = time.time() - t0

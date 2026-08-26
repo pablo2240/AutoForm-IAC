@@ -1,4 +1,4 @@
-﻿"""Orquestador Central del Pipeline Modular de AutoForm AI.
+"""Orquestador Central del Pipeline Modular de AutoForm AI.
 
 Coordina de forma secuencial y desacoplada las 5 etapas del pipeline:
   1. Stage 1: Parser (Extracción estructural de Excel/PDF)
@@ -48,6 +48,23 @@ class PipelineOrchestrator:
             on_progress("Clasificando campos de entrada y jerarquía de secciones...", 0.45)
         todos_clasif, viables = clasificar_elementos_formulario(ctx.elementos_raw)
         ctx.elementos_clasificados = todos_clasif
+
+        # Etapa 2b: Construir Representación Intermedia Espacial (IR) — HSP Fase 1
+        try:
+            from core.spatial_ir import construir_ir
+            ctx.documento_ir = construir_ir(
+                ctx.elementos_raw,
+                nombre_archivo=ctx.nombre_archivo,
+                tipo_documento=ctx.tipo_documento,
+            )
+            ctx.log(
+                f"[Stage 2b - IR] Representación intermedia construida: "
+                f"{ctx.documento_ir.total_secciones} secciones, "
+                f"{ctx.documento_ir.total_elementos} elementos."
+            )
+        except Exception as e:
+            ctx.log(f"[Stage 2b - IR] Advertencia: no se pudo construir la IR ({e}). "
+                    f"El pipeline continuará sin ella.")
 
         # Etapa 3: LLM Mapper / Template Store (66% -> 100%)
         if on_progress:

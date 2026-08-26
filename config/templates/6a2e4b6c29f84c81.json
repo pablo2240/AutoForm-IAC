@@ -1,0 +1,313 @@
+{
+  "plantilla_id": "6a2e4b6c29f84c81",
+  "nombre_formulario": "FMCA07J.- 6.2.xlsx",
+  "tipo_documento": "excel",
+  "version": "1.0",
+  "fecha_creacion": "2026-08-25T13:49:46.826245Z",
+  "fecha_actualizacion": "2026-08-25T16:32:05.815407Z",
+  "huella": "fmca07j formulario de inscripcion y conocimiento de proveedores clientes nacionales y asociados de negocio v4 1 2025 04 14 00 00 00 pagina 1 de 2 informacion estrictamente confidencial dia mes ano nombre razon social identificacion nit c c direccion ciudad departamento telefonos pagina web pais correo electronico fecha constitucion fabricante distribuidor comercializador agencia de viajes importador otro cual? actividad economica representante legal identificacion nombre y apellidos direccion 4 gestion de la calidad gestion ambiental y responsabilidad social certificacion gestion de la calidad iso 9001 certificado en proceso de certificacion no certificado fecha vencimiento certificado 4 1 certificacion gestion ambiental iso 14001 certificado en proceso de certificacion no certificado fecha vencimiento certificado 4 2 certificacion gestion de seguridad y salud en el trabajo 45001 o cumplimiento de decreto 1072 y resolucion 0312 del ministerio del trabajo certificado en proceso de certificacion no certificado fecha vencimiento certificado 4 3 sistema de gestion tipo de sistema observaciones oea basc iso 28000 sistema la ft padm responsable de iva actividad de ica codigo ciiu tarifa gran contribuyente autorretenedor numero de empleados soy gran empresa mediana pequena personal que realiza directamente la operacion nombres y apellidos correo cargo telefono celular direccion ciudad 7 referencia bancaria banco sucursal no cuenta tipo de cuenta 7 1 referencias comerciales empresa contacto telefono direccion ciudad firma pagina 1 firma representate legal fmca07j formulario de inscripcion y conocimiento de proveedores clientes nacionales y asociados de negocio v4 1 2025 04 14 00 00 00 pagina 2 de 2 7 2 datos financieros terminos de pago cobro contado credito tipo de sociedad sa s a s ltda etc realiza operaciones en moneda extranjera tipo de producto monto de la operacion moneda pais ciudad nombre de la entidad financiera n° de cuenta exportaciones importaciones transferencias otros cual? el representante legal o sus accionistas son pep 7 3 informacion de beneficiarios de las operaciones de comercio exterior diligenciar en caso de que el los beneficiarios de las operaciones de comercio exterior sean terceros diferentes al titular que firma este documento identificado con el documento de identidad expedido en c declaro que el origen de mis recursos producto o servicio proviene del desarrollo de la s siguiente s actividad es favor de nuestra empresa a la cuenta n° tipo banco segun certificacion bancaria vigente y adjunta 10 espacio exclusivo para uso de celsa s a s verificacion de informacion observaciones del lider del proceso funcionario de la empresa y cargo de quien confirmo la informacion funcionario cargo se verifico en lista restrictivas cual? firma 11 anexos requeridos certificado de existencia y representacion legal no mayor a 30 dias rut certificado bancario original no mayor a 30 dias copia de la cedula del representante legal 2 certificaciones comerciales no mayor a 30 dias estados financieros de los 2 ultimos anos declaracion de renta de los ultimos 2 anos en constancia de haberlo leido entendido y aceptado lo anterior firmo el presente documento firma del representante legal sello de la empresa huella nombre",
+  "total_elementos": 164,
+  "total_campos_mapeados": 27,
+  "plan_mapeo": [
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 9,
+      "columna": 2,
+      "valor": "NOMBRE / RAZON SOCIAL",
+      "ubicacion": "derecha",
+      "campo": "razon_social",
+      "requiereMerge": true,
+      "celdasAMergear": 28,
+      "anchoLinea": 28
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 11,
+      "columna": 2,
+      "valor": "IDENTIFICACION          NIT:",
+      "ubicacion": "derecha",
+      "campo": "nit",
+      "requiereMerge": true,
+      "celdasAMergear": 8,
+      "anchoLinea": 8
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 13,
+      "columna": 2,
+      "valor": "DIRECCION:",
+      "ubicacion": "derecha",
+      "campo": "direccion",
+      "requiereMerge": true,
+      "celdasAMergear": 8,
+      "anchoLinea": 8
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 13,
+      "columna": 18,
+      "valor": "CIUDAD:",
+      "ubicacion": "derecha",
+      "campo": "ciudad",
+      "requiereMerge": true,
+      "celdasAMergear": 4,
+      "anchoLinea": 4
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 13,
+      "columna": 26,
+      "valor": "DEPARTAMENTO",
+      "ubicacion": "derecha",
+      "campo": "departamento",
+      "requiereMerge": true,
+      "celdasAMergear": 7,
+      "anchoLinea": 7
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 15,
+      "columna": 2,
+      "valor": "TELEFONOS:",
+      "ubicacion": "derecha",
+      "campo": "telefono",
+      "requiereMerge": true,
+      "celdasAMergear": 8,
+      "anchoLinea": 8
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 15,
+      "columna": 18,
+      "valor": "PAGINA WEB:",
+      "ubicacion": "derecha",
+      "campo": "pagina_web",
+      "requiereMerge": true,
+      "celdasAMergear": 6,
+      "anchoLinea": 6
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 15,
+      "columna": 30,
+      "valor": "PAIS",
+      "ubicacion": "derecha",
+      "campo": "pais",
+      "requiereMerge": true,
+      "celdasAMergear": 6,
+      "anchoLinea": 6
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 17,
+      "columna": 2,
+      "valor": "CORREO ELECTRONICO:",
+      "ubicacion": "derecha",
+      "campo": "correo",
+      "requiereMerge": true,
+      "celdasAMergear": 13,
+      "anchoLinea": 13
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 29,
+      "columna": 2,
+      "valor": "IDENTIFICACION",
+      "ubicacion": "abajo",
+      "campo": "cedula",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 29,
+      "columna": 13,
+      "valor": "NOMBRE Y APELLIDOS",
+      "ubicacion": "abajo",
+      "campo": "representante_legal",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 2,
+      "valor": "BANCO",
+      "ubicacion": "abajo",
+      "campo": "banco",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 86,
+      "columna": 2,
+      "valor": "N° de Cuenta:",
+      "ubicacion": "derecha",
+      "campo": "numero_cuenta",
+      "requiereMerge": true,
+      "celdasAMergear": 10,
+      "anchoLinea": 10
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 31,
+      "valor": "TIPO DE CUENTA",
+      "ubicacion": "abajo",
+      "campo": "tipo_cuenta",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 29,
+      "columna": 27,
+      "valor": "DIRECCIÓN",
+      "ubicacion": "derecha",
+      "campo": "direccion",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 81,
+      "columna": 21,
+      "valor": "Tipo de sociedad ( SA, S.A.S, LTDA, etc): _________________________",
+      "ubicacion": "misma",
+      "campo": "tipo_sociedad",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 84,
+      "columna": 26,
+      "valor": "Pais:",
+      "ubicacion": "derecha",
+      "campo": "pais",
+      "requiereMerge": true,
+      "celdasAMergear": 10,
+      "anchoLinea": 10
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 85,
+      "columna": 2,
+      "valor": "Ciudad:",
+      "ubicacion": "derecha",
+      "campo": "ciudad",
+      "requiereMerge": true,
+      "celdasAMergear": 6,
+      "anchoLinea": 6
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 98,
+      "columna": 12,
+      "valor": "identificado con el documento de identidad:",
+      "ubicacion": "derecha",
+      "campo": "cedula",
+      "requiereMerge": true,
+      "celdasAMergear": 6,
+      "anchoLinea": 6
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 105,
+      "columna": 25,
+      "valor": "BANCO:",
+      "ubicacion": "derecha",
+      "campo": "banco",
+      "requiereMerge": true,
+      "celdasAMergear": 9,
+      "anchoLinea": 9
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 130,
+      "columna": 2,
+      "valor": "Nombre :",
+      "ubicacion": "derecha",
+      "campo": "representante_nombres",
+      "requiereMerge": true,
+      "celdasAMergear": 15,
+      "anchoLinea": 15
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 11,
+      "columna": 18,
+      "valor": "C.C.",
+      "ubicacion": "derecha",
+      "campo": "cedula",
+      "requiereMerge": true,
+      "celdasAMergear": 18,
+      "anchoLinea": 18
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 24,
+      "valor": "No CUENTA",
+      "ubicacion": "abajo",
+      "campo": "numero_cuenta",
+      "requiereMerge": false,
+      "celdasAMergear": 1,
+      "anchoLinea": 1
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 105,
+      "columna": 2,
+      "valor": "favor de nuestra empresa, a la CUENTA N°",
+      "ubicacion": "derecha",
+      "campo": "numero_cuenta",
+      "requiereMerge": true,
+      "celdasAMergear": 6,
+      "anchoLinea": 6
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 105,
+      "columna": 19,
+      "valor": "TIPO:",
+      "ubicacion": "derecha",
+      "campo": "tipo_cuenta",
+      "requiereMerge": true,
+      "celdasAMergear": 3,
+      "anchoLinea": 3
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 98,
+      "columna": 2,
+      "valor": "Yo,",
+      "ubicacion": "derecha",
+      "campo": "representante_legal",
+      "requiereMerge": true,
+      "celdasAMergear": 9,
+      "anchoLinea": 9
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 98,
+      "columna": 30,
+      "valor": "expedido en:",
+      "ubicacion": "derecha",
+      "campo": "lugar_expedicion",
+      "requiereMerge": true,
+      "celdasAMergear": 5,
+      "anchoLinea": 5
+    }
+  ],
+  "metadatos": {
+    "guardado_desde_ui": true
+  }
+}

@@ -1,4 +1,4 @@
-﻿"""Contexto global y estado compartido para el Pipeline Modular de AutoForm AI.
+"""Contexto global y estado compartido para el Pipeline Modular de AutoForm AI.
 
 Define la estructura de datos `PipelineContext` que viaja a través de todas
 las etapas del pipeline (Parser -> Classifier -> LLM Mapper -> Verifier -> Writer).
@@ -48,8 +48,14 @@ class PipelineContext:
     # Etapa 2: Classifier
     elementos_clasificados: List[Dict[str, Any]] = field(default_factory=list)
     
+    # Etapa 2b: Representación Intermedia Espacial (IR) — Fase 1 HSP
+    documento_ir: Optional[Any] = None  # core.spatial_ir.DocumentoIR (lazy import)
+    
     # Etapa 3: LLM Mapper / Template Match
     plan_mapeo: List[Dict[str, Any]] = field(default_factory=list)
+    
+    # Etapa 3b: Resumen de validación determinística — Fase 2 HSP
+    resumen_validacion: Optional[Dict[str, Any]] = None
     
     # Etapa 4: Verifier UI
     plan_verificado: List[Dict[str, Any]] = field(default_factory=list)
