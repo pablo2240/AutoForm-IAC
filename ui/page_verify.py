@@ -1,8 +1,8 @@
-"""Componente de Verificación Visual con Dropdowns para AutoForm AI (Versión Completa).
+"""Componente de Verificación Visual con Dropdowns para AutoForm AI (Fase 4 HSP).
 
-Muestra TODOS los rótulos detectados en el formulario (tanto los asignados por IA como
-los candidatos viables pendientes) para que el usuario tenga control total de asignación.
-Permite búsqueda, filtrado por estado, edición con Dropdowns y guardado de plantillas permanentes.
+Muestra TODOS los rótulos detectados en el formulario estructurados con la jerarquía
+de secciones, semáforos de confianza (🟢/🟡/⚪), y motivos de validación determinística.
+Permite búsqueda, filtrado por sección y estado, edición interactiva y guardado de plantillas.
 """
 
 from __future__ import annotations
@@ -31,7 +31,7 @@ CAMPOS_VIRTUALES = [
     "representante_apellidos",
 ]
 
-# Sinónimos robustos para sugerir coincidencias parciales (solo palabras significativas >= 3 letras)
+# Sinónimos robustos para sugerir coincidencias parciales
 _SINONIMOS_RAPIDOS = {
     "razon_social": ["razon social", "empresa", "proveedor", "denominacion social", "sociedad", "solicitante"],
     "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria", "cc ce pas nit", "cc ce nit", "cc nit", "nit cc", "cc nit rut"],
@@ -76,7 +76,7 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str], secci
     if r_norm in ("si", "no", "s", "n", "m", "f", "ahorros", "corriente", "otro", "otra", "na", "n a"):
         return None
 
-    # Si el rótulo solicita una FECHA (día/mes/año), NUNCA sugerir 'lugar_expedicion' ni 'expedicion' (que son ciudades)
+    # Si el rótulo solicita una FECHA (día/mes/año), NUNCA sugerir 'lugar_expedicion' ni 'expedicion'
     if "fecha" in r_norm:
         return None
 
@@ -95,7 +95,6 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str], secci
             for s in sinonimos:
                 if s == r_norm:
                     return campo
-                # Si el sinónimo tiene más de 3 letras, verificar coincidencia con límites de palabra (\b)
                 if len(s) >= 4 and re.search(r"\b" + re.escape(s) + r"\b", r_norm):
                     return campo
 
@@ -160,11 +159,45 @@ def obtener_opciones_campos_empresa(datos_empresa: Dict[str, Any]) -> List[str]:
     from core.profile_manager import aplanar_perfil
     plano = aplanar_perfil(datos_empresa)
     
-    # Filtrar solo claves no compuestas (sin punto) para una lista limpia y legible
     claves_limpias = {k for k in plano.keys() if "." not in k and not isinstance(plano[k], dict)}
     claves = claves_limpias | set(CAMPOS_VIRTUALES)
     lista_ordenada = sorted(list(claves))
     return [OPCION_OMITIR] + lista_ordenada
+
+
+def _formatear_badge_estado(
+    estado_raw: str,
+    confianza_raw: str,
+    campo_select: str,
+    motivo: str = "",
+) -> str:
+    """Convierte el estado y confianza técnicos en un badge visual intuitivo para el usuario."""
+    if not campo_select or campo_select == OPCION_OMITIR:
+        if estado_raw == "DESCARTADO":
+            return "⚪ Omitido"
+        return "⚪ Sin asignar"
+
+    estado_upper = str(estado_raw or "").upper()
+    confianza_upper = str(confianza_raw or "").upper()
+
+    if estado_upper == "APROBADO":
+        if confianza_upper == "EXACTA":
+            return "🟢 Exacta"
+        if "autocorr" in motivo.lower() or "corregido" in motivo.lower():
+            return "🟢 Alta (Autocorr.)"
+        if confianza_upper == "ALTA":
+            return "🟢 Alta"
+        if confianza_upper == "PARCIAL":
+            return "🟡 Parcial"
+        return "🟢 Aprobado"
+
+    if estado_upper == "REVISION":
+        return "🟡 Requiere Revisión"
+
+    if estado_upper == "DESCARTADO":
+        return "⚪ Omitido"
+
+    return "✅ Sugerido por IA"
 
 
 def preparar_tabla_verificacion(
@@ -172,38 +205,58 @@ def preparar_tabla_verificacion(
     datos_empresa: Dict[str, Any],
     elementos_raw: Optional[List[Dict[str, Any]]] = None,
 ) -> pd.DataFrame:
-    """Transforma el plan de mapeo y TODOS los rótulos detectados en un DataFrame interactivo con estados funcionales."""
+    """Transforma el plan de mapeo enriquecido en un DataFrame interactivo con soporte de jerarquía y validación."""
     from pipeline.stages.stage_2_classifier import clasificar_rotulo_individual, ClasificacionElemento
 
-    filas = []
-    claves_disponibles = list(datos_empresa.keys()) + CAMPOS_VIRTUALES
+    from core.profile_manager import aplanar_perfil
+    plano = aplanar_perfil(datos_empresa)
+    claves_disponibles = set(plano.keys()) | set(CAMPOS_VIRTUALES)
     
+    filas: List[Dict[str, Any]] = []
     # Índice de celdas ya presentes en plan_mapeo
     coordenadas_mapeadas: Set[Tuple[str, int, int]] = set()
 
-    # 1. Agregar primero los campos asignados por IA o Plantilla
+    # 1. Agregar primero los campos mapeados (enriquecidos por Fase 2 y 3)
     for idx, item in enumerate(plan_mapeo):
         hoja = str(item.get("hoja", ""))
         fila = int(item.get("fila", 0) or 0)
         col = int(item.get("columna", 0) or 0)
         rotulo = str(item.get("valor") or item.get("rotulo") or "").strip()
         campo = str(item.get("campo", "")).strip()
+        seccion = str(item.get("seccion") or item.get("seccion_padre") or "INFORMACIÓN GENERAL").strip()
+        
+        estado_raw = str(item.get("estado", "APROBADO")).strip()
+        confianza_raw = str(item.get("nivel_confianza", "ALTA")).strip()
+        motivo = str(item.get("motivo", "")).strip()
+        tipo_elem = str(item.get("tipo_elemento", "FIELD")).strip()
+
         ubicacion = str(item.get("ubicacion", "derecha")).lower()
         if ubicacion not in ("derecha", "abajo", "misma"):
             ubicacion = "derecha"
 
-        campo_select = campo if (campo and (campo in datos_empresa or campo in CAMPOS_VIRTUALES)) else OPCION_OMITIR
+        campo_select = campo if (campo and (campo in claves_disponibles or campo in datos_empresa or "." in campo)) else OPCION_OMITIR
         valor_real = _resolver_valor_campo(datos_empresa, campo_select)
         
-        estado = "✅ Sugerido por IA" if campo_select != OPCION_OMITIR else "⚪ Sin asignar"
+        # Badge visual
+        badge = _formatear_badge_estado(estado_raw, confianza_raw, campo_select, motivo)
+
+        # Motivo legible para el usuario
+        motivo_display = motivo
+        if not motivo_display:
+            if badge == "🟢 Exacta":
+                motivo_display = "Coincidencia directa con datos maestros"
+            elif badge.startswith("🟢"):
+                motivo_display = "Emparejamiento contextual validado"
 
         filas.append({
             "N°": idx + 1,
+            "Sección": seccion,
             "Rótulo en el Formulario": rotulo,
             "Ubicación": f"{hoja} (F{fila}:C{col})" if hoja else f"Fila {fila}, Col {col}",
-            "Estado": estado,
+            "Confianza / Estado": badge,
             "Campo Asignado": campo_select,
             "Valor a Escribir": valor_real,
+            "Motivo / Observación": motivo_display,
             "Dirección": ubicacion,
             "_hoja": hoja,
             "_fila": fila,
@@ -212,6 +265,10 @@ def preparar_tabla_verificacion(
             "_celdasAMergear": int(item.get("celdasAMergear", 1) or 1),
             "_anchoLinea": int(item.get("anchoLinea", 1) or 1),
             "_orig_idx": idx,
+            "_seccion": seccion,
+            "_tipo_elemento": tipo_elem,
+            "_estado_raw": estado_raw,
+            "_confianza_raw": confianza_raw,
         })
         coordenadas_mapeadas.add((hoja, fila, col))
 
@@ -223,6 +280,7 @@ def preparar_tabla_verificacion(
             fila_e = int(elem.get("fila", 0) or 0)
             col_e = int(elem.get("columna", 0) or 0)
             rot_e = str(elem.get("valor") or elem.get("rotulo") or "").strip()
+            sec_e = str(elem.get("seccion_padre") or elem.get("seccion") or "INFORMACIÓN GENERAL").strip()
 
             # Evitar duplicar celdas ya mapeadas o rótulos vacíos
             if (hoja_e, fila_e, col_e) in coordenadas_mapeadas or not rot_e:
@@ -248,24 +306,27 @@ def preparar_tabla_verificacion(
             ):
                 campo_final = OPCION_OMITIR
                 valor_final = ""
-                estado = "⚫ No es un campo"
+                badge = "⚫ No es un campo"
+                motivo_desc = f"Descartado: clasificado como {tipo_clasif}"
 
             elif r_norm in ("identificacion", "id", "documento", "identificacion no", "no identificacion") and not elem.get("seccion_padre"):
                 campo_final = OPCION_OMITIR
                 valor_final = ""
-                estado = "⚠️ Requiere revisión"
+                badge = "🟡 Requiere Revisión"
+                motivo_desc = "Rótulo ambiguo sin sección específica asignada"
 
             else:
-                sec_padre_e = str(elem.get("seccion_padre") or elem.get("seccion") or "")
-                sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles, seccion_padre=sec_padre_e)
+                sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles, seccion_padre=sec_e)
                 if sugerido:
                     campo_final = sugerido
                     valor_final = _resolver_valor_campo(datos_empresa, campo_final)
-                    estado = "🟡 Coincidencia parcial"
+                    badge = "🟡 Coincidencia parcial"
+                    motivo_desc = "Sugerencia por similitud léxica"
                 else:
                     campo_final = OPCION_OMITIR
                     valor_final = ""
-                    estado = "⚪ Sin asignar"
+                    badge = "⚪ Sin asignar"
+                    motivo_desc = "No se encontró dato correspondiente en el perfil"
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             ubic = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
@@ -274,11 +335,13 @@ def preparar_tabla_verificacion(
 
             fila_dict = {
                 "N°": n_extra,
+                "Sección": sec_e,
                 "Rótulo en el Formulario": rot_e,
                 "Ubicación": f"{hoja_e} (F{fila_e}:C{col_e})" if hoja_e else f"Fila {fila_e}, Col {col_e}",
-                "Estado": estado,
+                "Confianza / Estado": badge,
                 "Campo Asignado": campo_final,
                 "Valor a Escribir": valor_final,
+                "Motivo / Observación": motivo_desc,
                 "Dirección": ubic,
                 "_hoja": hoja_e,
                 "_fila": fila_e,
@@ -287,6 +350,10 @@ def preparar_tabla_verificacion(
                 "_celdasAMergear": ancho_l,
                 "_anchoLinea": ancho_l,
                 "_orig_idx": None,
+                "_seccion": sec_e,
+                "_tipo_elemento": tipo_clasif,
+                "_estado_raw": "EXTRA",
+                "_confianza_raw": "SIN_COINCIDENCIA",
             }
             # Preservar metadatos físicos de PDF si existen
             for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
@@ -299,11 +366,13 @@ def preparar_tabla_verificacion(
     df = pd.DataFrame(filas)
     if not df.empty:
         df["N°"] = df["N°"].fillna(0).astype(int)
+        df["Sección"] = df["Sección"].fillna("INFORMACIÓN GENERAL").astype(str)
         df["Rótulo en el Formulario"] = df["Rótulo en el Formulario"].fillna("").astype(str)
         df["Ubicación"] = df["Ubicación"].fillna("").astype(str)
-        df["Estado"] = df["Estado"].fillna("⚪ Sin asignar").astype(str)
+        df["Confianza / Estado"] = df["Confianza / Estado"].fillna("⚪ Sin asignar").astype(str)
         df["Campo Asignado"] = df["Campo Asignado"].fillna(OPCION_OMITIR).astype(str)
         df["Valor a Escribir"] = df["Valor a Escribir"].fillna("").astype(str)
+        df["Motivo / Observación"] = df["Motivo / Observación"].fillna("").astype(str)
         df["Dirección"] = df["Dirección"].fillna("derecha").astype(str)
         df["_hoja"] = df["_hoja"].fillna("").astype(str)
         df["_fila"] = df["_fila"].fillna(0).astype(int)
@@ -312,6 +381,10 @@ def preparar_tabla_verificacion(
         df["_celdasAMergear"] = df["_celdasAMergear"].fillna(1).astype(int)
         df["_anchoLinea"] = df["_anchoLinea"].fillna(1).astype(int)
         df["_orig_idx"] = df["_orig_idx"].fillna(-1).astype(int)
+        df["_seccion"] = df["_seccion"].fillna("").astype(str)
+        df["_tipo_elemento"] = df["_tipo_elemento"].fillna("FIELD").astype(str)
+        df["_estado_raw"] = df["_estado_raw"].fillna("").astype(str)
+        df["_confianza_raw"] = df["_confianza_raw"].fillna("").astype(str)
     return df
 
 
@@ -340,6 +413,7 @@ def aplicar_cambios_verificacion(
         rotulo = str(row.get("Rótulo en el Formulario", ""))
         ancho_l = int(row.get("_anchoLinea", 1) or 1)
         req_merge = bool(row.get("_requiereMerge", False) or (ancho_l > 1 and direccion == "derecha"))
+        seccion = str(row.get("Sección", row.get("_seccion", "")))
 
         item_final = {
             "hoja": hoja,
@@ -351,6 +425,7 @@ def aplicar_cambios_verificacion(
             "requiereMerge": req_merge,
             "celdasAMergear": int(row.get("_celdasAMergear", ancho_l) or ancho_l),
             "anchoLinea": ancho_l,
+            "seccion": seccion,
         }
 
         # Preservar metadatos físicos de PDF si existían
@@ -376,7 +451,7 @@ def render_pantalla_verificacion(
     ctx: PipelineContext,
     key_prefix: str = "verif_ui",
 ) -> Tuple[bool, List[Dict[str, Any]]]:
-    """Renderiza la interfaz de verificación visual interactiva en Streamlit."""
+    """Renderiza la interfaz de verificación visual interactiva enriquecida con HSP en Streamlit."""
     plan_activo = ctx.obtener_plan_activo()
     elementos_todos = ctx.elementos_clasificados if ctx.elementos_clasificados else ctx.elementos_raw
 
@@ -386,10 +461,10 @@ def render_pantalla_verificacion(
 
     opciones_campos = obtener_opciones_campos_empresa(ctx.datos_empresa)
 
-    st.markdown("### 📋 Verificación y Asignación de Campos")
+    st.markdown("### 📋 Verificación y Auditoría Semántica de Campos")
     st.markdown(
-        "A continuación se muestran los **elementos y campos detectados** en el formulario clasificados por rol funcional. "
-        "Los campos sugeridos por la IA ya vienen pre-seleccionados. Puedes asignar datos a los candidatos viables o cambiar cualquier selector."
+        "Revisa y confirma la asignación de datos para cada campo detectado. "
+        "El sistema ha validado la jerarquía de secciones y la coherencia lógica de los datos maestros."
     )
 
     # ── Gestión de Estado Maestro en Session State (Aislado por Documento) ──
@@ -403,62 +478,95 @@ def render_pantalla_verificacion(
 
     master_df: pd.DataFrame = st.session_state[master_key]
 
+    # Conteo de métricas cuantitativas
     total_detectados = len(master_df)
     total_asignados = sum(1 for c in master_df["Campo Asignado"] if c != OPCION_OMITIR)
-    total_pendientes = sum(1 for _, r in master_df.iterrows() if r["Campo Asignado"] == OPCION_OMITIR and r["Estado"] != "⚫ No es un campo")
+    total_alta_confianza = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("🟢") and r["Campo Asignado"] != OPCION_OMITIR)
+    total_revision = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("🟡") or (r["Campo Asignado"] == OPCION_OMITIR and str(r["Confianza / Estado"]) not in ("⚫ No es un campo", "⚪ Omitido")))
+    total_editados = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("✏️"))
 
-    # ── Métricas Resumidas ──
+    # ── Tarjetas Métricas Resumidas ──
     col1, col2, col3, col4 = st.columns(4)
     with col1:
-        st.metric("📄 Formulario", ctx.nombre_archivo or "Documento")
+        st.metric("📄 Formulario", ctx.nombre_archivo or "Documento", help=f"Total elementos analizados: {total_detectados}")
     with col2:
-        st.metric("🏷️ Total Detectados", f"{total_detectados}")
+        st.metric("🟢 Alta Confianza", f"{total_alta_confianza}", help="Campos validados y aprobados automáticamente")
     with col3:
-        st.metric("✅ Campos Asignados", f"{total_asignados}")
+        st.metric("🟡 Requieren Revisión", f"{total_revision}", help="Campos con sugerencia parcial o pendientes de asignar")
     with col4:
-        st.metric("⚪ Pendientes / Revisión", f"{total_pendientes}")
+        st.metric("✏️ Asignados / Editados", f"{total_asignados}", delta=f"{total_editados} manuales" if total_editados > 0 else None)
 
-    # ── Barra de Búsqueda y Filtros ──
-    col_search, col_filter = st.columns([2, 2])
+    # ── Filtros y Búsqueda Avanzada ──
+    col_search, col_sec_filter, col_filter = st.columns([2, 1.5, 1.5])
+    
     with col_search:
-        filtro_texto = st.text_input("🔍 Buscar rótulo o campo...", key=f"{key_prefix}_search_input_{doc_hash}", placeholder="Ej: Representante, Cuenta, NIT, Banco...").strip().lower()
+        filtro_texto = st.text_input(
+            "🔍 Buscar rótulo, sección o campo...",
+            key=f"{key_prefix}_search_input_{doc_hash}",
+            placeholder="Ej: Representante, Cuenta, NIT, Banco...",
+        ).strip().lower()
+
+    # Obtener lista única de secciones
+    secciones_disponibles = sorted(list({str(s) for s in master_df["Sección"].dropna().unique() if str(s).strip()}))
+    
+    with col_sec_filter:
+        filtro_seccion = st.selectbox(
+            "Filtrar por Sección:",
+            ["Todas las secciones"] + secciones_disponibles,
+            key=f"{key_prefix}_sec_filter_{doc_hash}",
+        )
+
     with col_filter:
-        vista_filtro = st.radio(
-            "Ver:",
-            ["Todos", "Solo Asignados", "Solo Pendientes / Revisión", "Omitidos (No campo)"],
-            horizontal=True,
+        vista_filtro = st.selectbox(
+            "Filtrar por Estado:",
+            ["Todos", "🟢 Solo Alta Confianza", "🟡 Solo Requieren Revisión", "✏️ Solo Editados", "⚪ Sin Asignar", "⚫ Omitidos (No campo)"],
             key=f"{key_prefix}_vista_filter_{doc_hash}",
         )
 
     # Aplicar filtrado al DataFrame visual desde master_df
     df_filtrado = master_df.copy()
+    
     if filtro_texto:
         df_filtrado = df_filtrado[
             df_filtrado["Rótulo en el Formulario"].astype(str).str.lower().str.contains(filtro_texto) |
-            df_filtrado["Campo Asignado"].astype(str).str.lower().str.contains(filtro_texto)
+            df_filtrado["Sección"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Campo Asignado"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Motivo / Observación"].astype(str).str.lower().str.contains(filtro_texto)
         ]
 
-    if vista_filtro == "Solo Asignados":
-        df_filtrado = df_filtrado[df_filtrado["Campo Asignado"] != OPCION_OMITIR]
-    elif vista_filtro == "Solo Pendientes / Revisión":
-        df_filtrado = df_filtrado[(df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (df_filtrado["Estado"] != "⚫ No es un campo")]
-    elif vista_filtro == "Omitidos (No campo)":
-        df_filtrado = df_filtrado[df_filtrado["Estado"] == "⚫ No es un campo"]
+    if filtro_seccion != "Todas las secciones":
+        df_filtrado = df_filtrado[df_filtrado["Sección"] == filtro_seccion]
 
-    # Configuración de columnas interactivas
+    if vista_filtro == "🟢 Solo Alta Confianza":
+        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).str.startswith("🟢")]
+    elif vista_filtro == "🟡 Solo Requieren Revisión":
+        df_filtrado = df_filtrado[
+            df_filtrado["Confianza / Estado"].astype(str).str.startswith("🟡") |
+            ((df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (~df_filtrado["Confianza / Estado"].astype(str).isin(["⚫ No es un campo", "⚪ Omitido"])))
+        ]
+    elif vista_filtro == "✏️ Solo Editados":
+        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).str.startswith("✏️")]
+    elif vista_filtro == "⚪ Sin Asignar":
+        df_filtrado = df_filtrado[df_filtrado["Campo Asignado"] == OPCION_OMITIR]
+    elif vista_filtro == "⚫ Omitidos (No campo)":
+        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).isin(["⚫ No es un campo", "⚪ Omitido"])]
+
+    # Configuración de columnas interactivas para st.data_editor
     config_columnas = {
         "N°": st.column_config.NumberColumn("N°", width="small", disabled=True),
-        "Rótulo en el Formulario": st.column_config.TextColumn("Rótulo Detectado en el Formato", width="large", disabled=True),
-        "Ubicación": st.column_config.TextColumn("Ubicación", width="medium", disabled=True),
-        "Estado": st.column_config.TextColumn("Confianza / Estado", width="medium", disabled=True),
+        "Sección": st.column_config.TextColumn("Sección / Bloque", width="medium", disabled=True),
+        "Rótulo en el Formulario": st.column_config.TextColumn("Rótulo en Formulario", width="large", disabled=True),
+        "Ubicación": st.column_config.TextColumn("Ubicación", width="small", disabled=True),
+        "Confianza / Estado": st.column_config.TextColumn("Estado", width="medium", disabled=True),
         "Campo Asignado": st.column_config.SelectboxColumn(
-            "Dato de la Empresa (Dropdown)",
-            help="Selecciona qué dato de tu empresa debe inyectarse en este rótulo",
+            "Dato de la Empresa",
+            help="Selecciona qué dato de tu perfil empresarial debe inyectarse aquí",
             width="large",
             options=opciones_campos,
             required=True,
         ),
-        "Valor a Escribir": st.column_config.TextColumn("Valor Resultante", width="large", disabled=True),
+        "Valor a Escribir": st.column_config.TextColumn("Valor a Escribir", width="large", disabled=True),
+        "Motivo / Observación": st.column_config.TextColumn("Motivo / Auditoría", width="large", disabled=True),
         "Dirección": st.column_config.SelectboxColumn(
             "Dirección",
             help="Hacia dónde se inyectará el dato respecto al rótulo",
@@ -474,6 +582,10 @@ def render_pantalla_verificacion(
         "_celdasAMergear": None,
         "_anchoLinea": None,
         "_orig_idx": None,
+        "_seccion": None,
+        "_tipo_elemento": None,
+        "_estado_raw": None,
+        "_confianza_raw": None,
         "_pdf_page": None,
         "_pdf_bbox": None,
         "_pdf_target_rect": None,
@@ -513,14 +625,14 @@ def render_pantalla_verificacion(
                     master_df.at[idx, "Dirección"] = dir_nueva
                     if campo_nuevo and campo_nuevo != OPCION_OMITIR:
                         master_df.at[idx, "Valor a Escribir"] = _resolver_valor_campo(ctx.datos_empresa, campo_nuevo)
-                        estado_prev = str(master_df.at[idx, "Estado"])
-                        if not estado_prev.startswith("✅"):
-                            master_df.at[idx, "Estado"] = "✏️ Asignado por Usuario"
+                        master_df.at[idx, "Confianza / Estado"] = "✏️ Asignado por Usuario"
+                        master_df.at[idx, "Motivo / Observación"] = "Asignación manual del usuario"
                     else:
                         master_df.at[idx, "Valor a Escribir"] = ""
-                        estado_prev = str(master_df.at[idx, "Estado"])
+                        estado_prev = str(master_df.at[idx, "Confianza / Estado"])
                         if estado_prev != "⚫ No es un campo":
-                            master_df.at[idx, "Estado"] = "⚪ Sin asignar"
+                            master_df.at[idx, "Confianza / Estado"] = "⚪ Sin asignar"
+                            master_df.at[idx, "Motivo / Observación"] = "Omitido por el usuario"
 
         if hubo_cambios:
             st.session_state[master_key] = master_df
