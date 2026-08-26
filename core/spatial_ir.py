@@ -263,17 +263,19 @@ _TERMINOS_CAMPO_CORTO = re.compile(
 )
 
 
-def _es_titulo_seccion(texto: str) -> bool:
-    """Determina si un texto es un título de sección del formulario."""
+def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None) -> bool:
+    """Determina si un texto es un título de sección del formulario,
+    combinando análisis léxico, jerarquía y características visuales (color de fondo y merge).
+    """
     t_clean = str(texto or "").strip()
     if not t_clean:
         return False
 
-    # Campos directos con indicadores inline
+    # Campos directos con indicadores inline nunca son títulos de sección
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
         return False
 
-    # Numeración explícita: "3. REPRESENTANTE LEGAL"
+    # Numeración explícita: "3. REPRESENTANTE LEGAL" o "4.2 COMPOSICIÓN"
     m_num = re.match(r"^\s*(?:\d+(?:\.\d+)*[\.]?|[I|V|X]+\.?)\s+(.+)$", t_clean)
     if m_num:
         resto = m_num.group(1).strip()
@@ -310,6 +312,32 @@ def _es_titulo_seccion(texto: str) -> bool:
         if re.match(pat, t_norm, re.IGNORECASE):
             return True
 
+    # ── Reglas Visuales y Físicas de Encabezado / Banner ──
+    if propiedades:
+        color_fondo = str(propiedades.get("colorFondo") or "").strip()
+        es_merge = bool(propiedades.get("esMergePrincipal", False) or propiedades.get("coordMerge"))
+        der_vacia = bool(propiedades.get("derechaVacia", False))
+        ab_vacia = bool(propiedades.get("abajoVacia", False))
+        der_merge = bool(propiedades.get("derechaEsMerge", False))
+        tipo_espacio = str(propiedades.get("tipoEspacioEscritura", "derecha")).lower()
+
+        tiene_espacio_llenado = der_vacia or der_merge or ab_vacia
+
+        # 1. Franja divisoria con color de fondo (banner):
+        if color_fondo:
+            # Si tiene fondo sombreado y es una celda combinada ancha o no tiene espacio de llenado directo
+            if es_merge or not tiene_espacio_llenado:
+                if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+                    return True
+            # Si el texto es de longitud media en mayúsculas/título con fondo
+            if len(t_clean) >= 6 and (t_clean.isupper() or t_clean.istitle()) and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+                return True
+
+        # 2. Celda combinada ancha (banner sin espacio de entrada):
+        if es_merge and not der_vacia and not der_merge and tipo_espacio != "misma":
+            if len(t_clean) >= 8 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+                return True
+
     return False
 
 
@@ -321,22 +349,22 @@ def clasificar_tipo_elemento(texto: str, propiedades: Optional[Dict[str, Any]] =
     """Clasifica QUÉ TIPO de elemento es un texto, sin intentar mapearlo a datos maestros.
 
     Flujo de decisión:
-      1. ¿Es un título de sección?         → SECTION_TITLE
-      2. ¿Es un texto de control documental? → DECORATIVE
-      3. ¿Es una zona de uso exclusivo?      → INSTRUCTION
-      4. ¿Es una firma?                     → DECORATIVE
-      5. ¿Es una opción de selección?        → OPTION
-      6. ¿Es texto legal extenso?            → LEGAL_TEXT
-      7. ¿Es una instrucción de llenado?     → INSTRUCTION
-      8. ¿Es un campo de entrada viable?     → FIELD
-      9. Default                             → UNKNOWN
+      1. ¿Es un título de sección (léxico o visual con fondo)? → SECTION_TITLE
+      2. ¿Es un texto de control documental?                   → DECORATIVE
+      3. ¿Es una zona de uso exclusivo?                        → INSTRUCTION
+      4. ¿Es una firma?                                       → DECORATIVE
+      5. ¿Es una opción de selección?                          → OPTION
+      6. ¿Es texto legal extenso?                              → LEGAL_TEXT
+      7. ¿Es una instrucción de llenado?                       → INSTRUCTION
+      8. ¿Es un campo de entrada viable?                       → FIELD
+      9. Default                                               → UNKNOWN
     """
     txt = str(texto or "").strip()
     if not txt:
         return TipoElemento.UNKNOWN
 
-    # 1. Título de sección
-    if _es_titulo_seccion(txt):
+    # 1. Título de sección (evaluación combinada léxica + visual con fondo)
+    if _es_titulo_seccion(txt, propiedades):
         return TipoElemento.SECTION_TITLE
 
     # 2. Control documental (versión, código, paginación)
@@ -442,7 +470,7 @@ def construir_ir(
         titulo_indices: List[int] = []
         for i, elem in enumerate(elems_sorted):
             texto = str(elem.get("valor") or "").strip()
-            if _es_titulo_seccion(texto):
+            if _es_titulo_seccion(texto, elem):
                 titulo_indices.append(i)
 
         # Crear particiones: cada sección va desde un título hasta el siguiente
