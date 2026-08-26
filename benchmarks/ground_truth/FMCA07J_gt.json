@@ -1,0 +1,214 @@
+{
+  "document_id": "FMCA07J",
+  "descripcion": "Dataset de referencia Ground Truth para Formato SAGRILAFT Proveedores (FMCA07J)",
+  "expected_elements": [
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 28,
+      "columna": 2,
+      "rotulo_original": "NOMBRE / RAZON SOCIAL",
+      "is_field": true,
+      "expected_campo": "razon_social"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 29,
+      "columna": 2,
+      "rotulo_original": "NIT:",
+      "is_field": true,
+      "expected_campo": "nit"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 30,
+      "columna": 2,
+      "rotulo_original": "CC/CE/PAS/NIT",
+      "is_field": true,
+      "expected_campo": "nit"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 33,
+      "columna": 2,
+      "rotulo_original": "DIRECCION PRINCIPAL:",
+      "is_field": true,
+      "expected_campo": "direccion"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 33,
+      "columna": 24,
+      "rotulo_original": "CIUDAD:",
+      "is_field": true,
+      "expected_campo": "ciudad"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 34,
+      "columna": 2,
+      "rotulo_original": "DEPARTAMENTO:",
+      "is_field": true,
+      "expected_campo": "departamento"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 34,
+      "columna": 24,
+      "rotulo_original": "PAIS:",
+      "is_field": true,
+      "expected_campo": "pais"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 35,
+      "columna": 2,
+      "rotulo_original": "CORREO ELECTRONICO NOTIFICACIONES:",
+      "is_field": true,
+      "expected_campo": "correo"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 36,
+      "columna": 2,
+      "rotulo_original": "PAGINA WEB:",
+      "is_field": true,
+      "expected_campo": "pagina_web"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 37,
+      "columna": 2,
+      "rotulo_original": "3. REPRESENTANTE LEGAL",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 38,
+      "columna": 2,
+      "rotulo_original": "NOMBRE Y APELLIDOS:",
+      "is_field": true,
+      "expected_campo": "representante_legal"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 39,
+      "columna": 2,
+      "rotulo_original": "No. IDENTIFICACION:",
+      "is_field": true,
+      "expected_campo": "cedula"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 40,
+      "columna": 10,
+      "rotulo_original": "Teléfono",
+      "is_field": true,
+      "expected_campo": "celular"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 41,
+      "columna": 19,
+      "rotulo_original": "SI",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 41,
+      "columna": 21,
+      "rotulo_original": "NO",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 51,
+      "columna": 10,
+      "rotulo_original": "SI",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 51,
+      "columna": 15,
+      "rotulo_original": "NO",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 53,
+      "columna": 2,
+      "rotulo_original": "GRAN CONTRIBUYENTE:",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 64,
+      "columna": 2,
+      "rotulo_original": "7. REFERENCIA BANCARIA",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 2,
+      "rotulo_original": "BANCO",
+      "is_field": true,
+      "expected_campo": "banco"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 16,
+      "rotulo_original": "SUCURSAL",
+      "is_field": true,
+      "expected_campo": "sucursal"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 24,
+      "rotulo_original": "No CUENTA",
+      "is_field": true,
+      "expected_campo": "numero_cuenta"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 65,
+      "columna": 31,
+      "rotulo_original": "TIPO DE CUENTA",
+      "is_field": true,
+      "expected_campo": "tipo_cuenta"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 108,
+      "columna": 2,
+      "rotulo_original": "10. ESPACIO EXCLUSIVO PARA USO DE CELSA S.A.S/VERIFICACION DE INFORMACION/OBSERVACIONES DEL LIDER DEL PROCESO",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 129,
+      "columna": 2,
+      "rotulo_original": "Firma del Representante Legal",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    },
+    {
+      "hoja": "FORMATO SAGRILAFT PROVEEDORES",
+      "fila": 129,
+      "columna": 33,
+      "rotulo_original": "HUELLA",
+      "is_field": false,
+      "expected_campo": "OMITIR"
+    }
+  ]
+}

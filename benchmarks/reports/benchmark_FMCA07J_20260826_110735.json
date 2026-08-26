@@ -1,0 +1,22 @@
+{
+  "document_id": "FMCA07J",
+  "timestamp": "2026-08-26T11:07:35.035877",
+  "passed": true,
+  "metrics": {
+    "total_campos_reales": 16,
+    "total_no_campos": 10,
+    "cnt_correcto_auto": 16,
+    "cnt_correcto_revision": 0,
+    "cnt_incorrecto": 0,
+    "cnt_no_detectado": 0,
+    "cnt_omitido_correcto": 10,
+    "cnt_falso_positivo": 0,
+    "unsafe_automation_rate": 0.0,
+    "precision": 100.0,
+    "recall": 100.0,
+    "ir_filtering_rate": 100.0,
+    "safety_score": 100.0,
+    "execution_time_seconds": 1.28
+  },
+  "deltas_vs_baseline": {}
+}
