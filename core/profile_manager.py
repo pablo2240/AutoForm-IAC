@@ -100,6 +100,16 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
     elif "expedicion" in plano and plano["expedicion"]:
         plano["lugar_expedicion"] = plano["expedicion"]
 
+    # Generación compuesta ciudad_departamento ("Ciudad/Departamento", ej. "Medellin/Antioquia")
+    c_val = str(plano.get("ciudad", "")).strip()
+    d_val = str(plano.get("departamento", "")).strip()
+    if c_val and d_val:
+        plano["ciudad_departamento"] = f"{c_val}/{d_val}"
+    elif c_val:
+        plano["ciudad_departamento"] = c_val
+    elif d_val:
+        plano["ciudad_departamento"] = d_val
+
     return plano
 
 

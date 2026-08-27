@@ -74,13 +74,12 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     from core.profile_manager import aplanar_perfil
     plano = aplanar_perfil(datos_empresa)
 
-    if campo == "nit_sin_dv" and "nit" in plano:
-        nit_val = str(plano["nit"])
-        return nit_val.split("-")[0] if "-" in nit_val else nit_val
-
-    if campo == "nit_dv" and "nit" in plano:
-        nit_val = str(plano["nit"])
-        return nit_val.split("-")[-1] if "-" in nit_val else ""
+    if campo in ("ciudad_departamento", "ciudad/departamento", "ciudad_depto"):
+        c = str(plano.get("ciudad", "")).strip()
+        d = str(plano.get("departamento", "")).strip()
+        if c and d:
+            return f"{c}/{d}"
+        return c or d
 
     if campo == "representante_nombres":
         val = plano.get("representante_nombres")

@@ -25,26 +25,48 @@ from template_store.store import guardar_plantilla, calcular_hash_formulario
 OPCION_OMITIR = "-- Omitir / Dejar vacío --"
 
 CAMPOS_VIRTUALES = [
-    "nit_sin_dv",
-    "nit_dv",
+    "ciudad_departamento",
     "representante_nombres",
     "representante_apellidos",
 ]
 
 # Sinónimos robustos para sugerir coincidencias parciales
 _SINONIMOS_RAPIDOS = {
-    "razon_social": ["razon social", "empresa", "proveedor", "denominacion social", "sociedad", "solicitante"],
-    "nit": ["nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria", "cc ce pas nit", "cc ce nit", "cc nit", "nit cc", "cc nit rut"],
-    "nit_sin_dv": ["nit sin dv", "nit base"],
-    "nit_dv": ["digito de verificacion", "digito verificacion"],
-    "tipo_documento": ["tipo de documento", "tipo documento", "tipo id", "tipo de id", "tipo identificacion", "tipo de identificacion", "clase de documento", "tipo doc"],
-    "cedula": ["cedula", "cedula de ciudadania", "documento de identidad", "documento de identificacion", "no de documento", "identificacion del representante"],
-    "representante_legal": ["representante legal", "apoderado", "director general"],
+    "razon_social": [
+        "razon social", "empresa", "proveedor", "denominacion social", "sociedad", "solicitante",
+        "nombre comercial", "nombre o razon social", "razon social / nombre comercial",
+        "razon social o nombre comercial", "razon social nombre comercial",
+    ],
+    "nit": [
+        "nit", "rut", "identificacion tributaria", "registro fiscal", "numero de identificacion tributaria",
+        "nit tax id", "tax id", "tax id nit", "tax identification number", "nit/tax id", "tax id/nit",
+        "cc ce pas nit", "cc ce nit", "cc nit", "nit cc", "cc nit rut",
+    ],
+    "tipo_documento": [
+        "tipo de documento", "tipo documento", "tipo id", "tipo de id", "tipo identificacion",
+        "tipo de identificacion", "clase de documento", "tipo doc",
+        "tipo de identificacion (cc-pasaporte-ce)", "tipo de identificacion cc pasaporte ce",
+        "tipo de identificacion cc ce pasaporte", "tipo de documento cc ce pasaporte",
+    ],
+    "cedula": [
+        "cedula", "cedula de ciudadania", "documento de identidad", "documento de identificacion",
+        "no de documento", "numero de documento", "identificacion del representante", "identificacion",
+        "numero de identificacion", "nro de identificacion", "no de identificacion", "no identificacion",
+        "identificacion no", "numero identificacion", "nro identificacion",
+    ],
+    "representante_legal": [
+        "representante legal", "apoderado", "director general", "nombre del representante",
+        "razon social o nombres y apellidos", "razon social o nombres y apellidos del representante",
+        "nombres y apellidos", "nombre y apellidos",
+    ],
     "representante_nombres": ["nombres del representante", "primer nombre", "segundo nombre"],
     "representante_apellidos": ["apellidos del representante", "primer apellido", "segundo apellido"],
     "direccion": ["direccion", "domicilio principal", "sede principal", "direccion fiscal", "direccion de notificacion"],
     "telefono": ["telefono", "telefono fijo", "pbx institucional", "telefono corporativo"],
-    "celular": ["celular", "telefono movil", "celular del representante", "numero de celular"],
+    "celular": [
+        "celular", "telefono movil", "celular del representante", "numero de celular",
+        "telefono celular", "telefono / celular", "telefono/celular", "tel/cel", "tel celular", "movil",
+    ],
     "correo": ["correo", "email", "e-mail", "correo electronico", "correo institucional"],
     "pagina_web": ["pagina web", "sitio web", "portal web", "url institucional"],
     "banco": ["banco", "entidad bancaria", "institucion financiera", "nombre de la entidad financiera", "entidad financiera"],
@@ -53,6 +75,11 @@ _SINONIMOS_RAPIDOS = {
     "sucursal": ["sucursal", "agencia bancaria", "oficina bancaria", "sucursal bancaria"],
     "ciudad": ["ciudad", "municipio", "ciudad fiscal", "ciudad de domicilio"],
     "departamento": ["departamento", "provincia"],
+    "ciudad_departamento": [
+        "ciudad departamento", "ciudad / departamento", "ciudad/departamento",
+        "ciudad depto", "ciudad / depto", "ciudad y departamento",
+        "municipio departamento", "municipio / departamento", "municipio/departamento",
+    ],
     "pais": ["pais", "nacionalidad"],
     "lugar_expedicion": ["lugar de expedicion", "ciudad de expedicion", "expedida en", "municipio de expedicion", "lugar expedicion", "expedida"],
     "expedicion": ["lugar de expedicion", "ciudad de expedicion", "expedida en", "municipio de expedicion", "lugar expedicion"],
@@ -80,16 +107,42 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str], secci
     if "fecha" in r_norm:
         return None
 
-    # Rótulos compuestos de tipos de identificación para la empresa (ej: CC/CE/PAS/NIT, CC/NIT) -> 'nit'
-    if re.search(r"\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", r_norm):
+    # 1. Teléfono Celular o Teléfono/Celular -> Prioridad a CELULAR
+    if re.search(r"\btel[eé]fono[\s/]*celular\b|\btel[\s/]*cel\b|\bcelular\b|\bmovil\b|\bm[oó]vil\b", r_norm):
+        return "celular"
+
+    # 2. Ciudad / Departamento combinado -> ciudad_departamento ("Medellin/Antioquia")
+    if re.search(r"\bciudad[\s/]+departamento\b|\bciudad[\s/]+depto\b|\bmunicipio[\s/]+departamento\b", r_norm):
+        return "ciudad_departamento"
+
+    # 3. Razón Social o Nombres y Apellidos -> representante_legal
+    if "razon social" in r_norm and ("nombres" in r_norm or "apellidos" in r_norm):
+        return "representante_legal"
+
+    # 4. Nombre Comercial -> razon_social
+    if "nombre comercial" in r_norm:
+        return "razon_social"
+
+    # 5. Tipo de Identificación (CC-Pasaporte-CE) -> tipo_documento
+    if "tipo" in r_norm and any(k in r_norm for k in ("documento", "identificacion", "id")):
+        return "tipo_documento"
+
+    # 6. NIT / TAX ID o rótulos compuestos con NIT (CC/CE/PAS/NIT) -> 'nit'
+    if re.search(r"\bnit[\s/]*tax\s*id\b|\btax\s*id\b|\bcc[\s/]*ce[\s/]*pas[\s/]*nit\b|\bcc[\s/]*ce[\s/]*nit\b|\bcc[\s/]*nit\b|\bnit[\s/]*cc\b", r_norm):
         return "nit"
 
-    # En la sección del Representante Legal, teléfono / celular corresponde al móvil ('celular')
+    # 7. Identificación / Número de Identificación / Nro de Identificación -> 'cedula'
+    if re.search(r"\bnumero\s+de\s+identificacion\b|\bnro\s+de\s+identificacion\b|\bno\s+de\s+identificacion\b|\bno\s+identificacion\b|\bidentificacion\s+no\b|\bidentificacion\b|\bdocumento\s+de\s+identidad\b", r_norm):
+        if "nit" in r_norm or "tributaria" in r_norm:
+            return "nit"
+        return "cedula"
+
+    # 8. En la sección del Representante Legal, teléfono / celular corresponde al móvil ('celular')
     if seccion_padre and any(k in seccion_padre.lower() for k in ("representante", "apoderado", "persona natural")):
         if re.search(r"\btel[eé]fono\b|\bcelular\b|\bmovil\b|\bcel\b|\bno\.?\s*celular\b", r_norm):
             return "celular"
 
-    # 1. Búsqueda por sinónimos de coincidencia exacta o frase completa
+    # 9. Búsqueda por sinónimos de coincidencia exacta o frase completa
     for campo, sinonimos in _SINONIMOS_RAPIDOS.items():
         if campo in campos_disponibles or campo in CAMPOS_VIRTUALES:
             for s in sinonimos:
@@ -98,7 +151,7 @@ def _sugerir_campo_para_rotulo(rotulo: str, campos_disponibles: List[str], secci
                 if len(s) >= 4 and re.search(r"\b" + re.escape(s) + r"\b", r_norm):
                     return campo
 
-    # 2. Búsqueda difusa estricta con rapidfuzz (token_sort_ratio >= 88)
+    # 10. Búsqueda difusa estricta con rapidfuzz (token_sort_ratio >= 88)
     if fuzz is not None and len(r_norm) >= 4:
         mejor_campo = None
         mejor_score = 0.0
@@ -122,13 +175,12 @@ def _resolver_valor_campo(datos_empresa: Dict[str, Any], campo: str) -> str:
     from core.profile_manager import aplanar_perfil
     plano = aplanar_perfil(datos_empresa)
 
-    if campo == "nit_sin_dv" and "nit" in plano:
-        val = str(plano["nit"])
-        return val.split("-")[0] if "-" in val else val
-
-    if campo == "nit_dv" and "nit" in plano:
-        val = str(plano["nit"])
-        return val.split("-")[-1] if "-" in val else ""
+    if campo in ("ciudad_departamento", "ciudad/departamento", "ciudad_depto"):
+        c = str(plano.get("ciudad", "")).strip()
+        d = str(plano.get("departamento", "")).strip()
+        if c and d:
+            return f"{c}/{d}"
+        return c or d
 
     if campo == "representante_nombres":
         if "representante_nombres" in plano and plano["representante_nombres"]:

@@ -65,7 +65,7 @@ _TIPOS_NO_MAPEABLES = {"OPTION", "SECTION_TITLE", "DECORATIVE", "INSTRUCTION", "
 _CAMPOS_FECHA: Set[str] = {"fecha_expedicion", "fecha_nacimiento", "fecha_constitucion"}
 
 # Campos del perfil que almacenan valores numéricos o con formato
-_CAMPOS_NUMERICOS: Set[str] = {"nit", "cedula", "nit_sin_dv", "nit_dv", "numero_cuenta"}
+_CAMPOS_NUMERICOS: Set[str] = {"nit", "cedula", "numero_cuenta"}
 
 # Secciones semánticamente propias del representante legal
 # (afecta corrección telefono→celular y cedula vs. nit)
@@ -109,6 +109,17 @@ def _aplanar_datos_empresa(datos_empresa: Dict[str, Any]) -> Dict[str, Any]:
                 plano[prefijo] = obj
 
     _recorrer(datos_empresa)
+
+    # Generación compuesta ciudad_departamento si existen ambos
+    c_val = str(plano.get("ciudad", "")).strip()
+    d_val = str(plano.get("departamento", "")).strip()
+    if c_val and d_val:
+        plano["ciudad_departamento"] = f"{c_val}/{d_val}"
+    elif c_val:
+        plano["ciudad_departamento"] = c_val
+    elif d_val:
+        plano["ciudad_departamento"] = d_val
+
     return plano
 
 
@@ -225,12 +236,14 @@ def _regla_no_asignar_tipo_documento_a_compuesto(
     campo: str,
     rotulo_normalizado: str,
 ) -> Tuple[str, str]:
-    """R4 (autocorrección): CC/CE/PAS/NIT compuesto → usar 'nit', no 'tipo_documento'.
+    """R4 (autocorrección): CC/CE/PAS/NIT compuesto → usar 'nit', no 'tipo_documento' (a menos que pida explícitamente el tipo).
 
     Retorna (campo_final, motivo_correccion). Si no hay corrección, motivo es vacío.
-    Esta es una corrección semántica documentada: el rótulo compuesto pide el NÚMERO
-    del documento (nit/cedula), no el tipo ("C.C.").
     """
+    # Si el rótulo pide explícitamente el TIPO (ej. "Tipo de Identificación (CC-Pasaporte-CE)"), conservar tipo_documento
+    if "tipo" in rotulo_normalizado or "clase" in rotulo_normalizado:
+        return campo, ""
+
     patron_compuesto = re.compile(
         r"\b(?:cc[\/\s]*ce|cc[\/\s]*nit|nit[\/\s]*cc|cc[\/\s]*ce[\/\s]*pas)\b",
         re.IGNORECASE
@@ -243,18 +256,58 @@ def _regla_no_asignar_tipo_documento_a_compuesto(
 def _regla_telefono_en_seccion_rep_legal(
     campo: str,
     seccion_normalizada: str,
+    rotulo_normalizado: str = "",
 ) -> Tuple[str, str]:
-    """R5 (autocorrección): 'telefono' en sección del representante legal → 'celular'.
+    """R5 (autocorrección): Teléfono móvil prioritario o en sección representante legal → 'celular'."""
+    if re.search(r"\btel[eé]fono[\s/]*celular\b|\btel[\s/]*cel\b|\bcelular\b|\bmovil\b", rotulo_normalizado):
+        return "celular", "Rótulo 'Teléfono Celular' / 'Teléfono/Celular' → asignado a 'celular' (prioridad móvil)."
 
-    En secciones de representante legal, el teléfono esperado es el móvil del representante,
-    no el PBX de la empresa.
-    """
     if campo == "telefono":
         if any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL):
             return "celular", (
                 "Sección del representante legal: 'telefono' empresa corregido a 'celular' "
                 "(se espera el móvil del representante, no el PBX de la empresa)."
             )
+    return campo, ""
+
+
+def _regla_autocorrecciones_semanticas_adicionales(
+    campo: str,
+    rotulo_normalizado: str,
+) -> Tuple[str, str]:
+    """R5b (autocorrecciones semánticas de negocio solicitadas)."""
+    # 1. Ciudad / Departamento combinado
+    if re.search(r"\bciudad[\s/]+departamento\b|\bciudad[\s/]+depto\b|\bmunicipio[\s/]+departamento\b", rotulo_normalizado):
+        if campo != "ciudad_departamento":
+            return "ciudad_departamento", "Rótulo combinado 'Ciudad/Departamento' → asignado a campo compuesto 'ciudad_departamento'."
+
+    # 2. Razón Social o Nombres y Apellidos -> representante_legal
+    if "razon social" in rotulo_normalizado and ("nombres" in rotulo_normalizado or "apellidos" in rotulo_normalizado):
+        if campo != "representante_legal":
+            return "representante_legal", "Rótulo 'Razón Social o Nombres y Apellidos' → asignado a 'representante_legal'."
+
+    # 3. Nombre Comercial -> razon_social
+    if "nombre comercial" in rotulo_normalizado:
+        if campo != "razon_social":
+            return "razon_social", "Rótulo 'Nombre Comercial' → asignado a 'razon_social'."
+
+    # 4. NIT / TAX ID -> nit
+    if re.search(r"\bnit[\s/]*tax\s*id\b|\btax\s*id\b", rotulo_normalizado):
+        if campo != "nit":
+            return "nit", "Rótulo 'NIT / TAX ID' → asignado a 'nit'."
+
+    # 5. Tipo de Identificación -> tipo_documento
+    if "tipo" in rotulo_normalizado and any(k in rotulo_normalizado for k in ("documento", "identificacion", "id")):
+        if campo != "tipo_documento":
+            return "tipo_documento", "Rótulo 'Tipo de Identificación' → asignado a 'tipo_documento'."
+
+    # 6. Identificación / Número de Identificación / Nro de Identificación -> cedula (si no dice NIT y no pide Tipo)
+    if "tipo" not in rotulo_normalizado and "clase" not in rotulo_normalizado:
+        if re.search(r"\bnumero\s+de\s+identificacion\b|\bnro\s+de\s+identificacion\b|\bno\s+de\s+identificacion\b|\bidentificacion\s+no\b|\bidentificacion\b|\bno\s+identificacion\b", rotulo_normalizado):
+            if "nit" not in rotulo_normalizado and "tributaria" not in rotulo_normalizado:
+                if campo != "cedula":
+                    return "cedula", "Rótulo 'Identificación / No. Identificación' → asignado a 'cedula'."
+
     return campo, ""
 
 
@@ -302,20 +355,7 @@ def validar_item_mapeo(
     datos_planos: Optional[Dict[str, Any]] = None,
     documento_ir: Optional[Any] = None,
 ) -> Dict[str, Any]:
-    """Valida un único ítem del plan_mapeo contra las 5 reglas estructurales.
-
-    Args:
-        plan_item: Un diccionario del plan_mapeo con claves: campo, valor (rótulo),
-                   hoja, fila, columna, ubicacion, seccion (opcional).
-        datos_empresa: Perfil empresarial completo (jerarquía o plano).
-        datos_planos: (opcional) Versión ya aplanada para performance en lotes.
-        documento_ir: (opcional) DocumentoIR para acceder a tipo_elemento de la sección.
-
-    Returns:
-        Diccionario enriquecido con: estado, motivo, nivel_confianza, campo_final,
-        campo_propuesto, y todos los campos del plan_item original.
-    """
-    # Aplanar perfil si no se pasó ya aplanado
+    """Valida un único ítem del plan_mapeo contra las 5 reglas estructurales."""
     if datos_planos is None:
         datos_planos = _aplanar_datos_empresa(datos_empresa)
 
@@ -349,6 +389,31 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # ── Autocorrecciones estructurales y semánticas previas (R4, R5, R5b) ────
+    campo_ajustado_r4, motivo_r4 = _regla_no_asignar_tipo_documento_a_compuesto(
+        campo_original, rotulo_norm
+    )
+    if motivo_r4:
+        campo_original = campo_ajustado_r4
+        resultado["campo_final"] = campo_ajustado_r4
+        resultado["motivo"] = motivo_r4
+
+    campo_ajustado_r5, motivo_r5 = _regla_telefono_en_seccion_rep_legal(
+        campo_original, seccion_norm, rotulo_norm
+    )
+    if motivo_r5:
+        campo_original = campo_ajustado_r5
+        resultado["campo_final"] = campo_ajustado_r5
+        resultado["motivo"] = motivo_r5
+
+    campo_ajustado_r5b, motivo_r5b = _regla_autocorrecciones_semanticas_adicionales(
+        campo_original, rotulo_norm
+    )
+    if motivo_r5b:
+        campo_original = campo_ajustado_r5b
+        resultado["campo_final"] = campo_ajustado_r5b
+        resultado["motivo"] = motivo_r5b
+
     # ── R2: Campo existe en perfil ──────────────────────────────────────────
     ok_existe, msg_existe = _regla_campo_existe(campo_original, datos_planos)
     if not ok_existe:
@@ -361,39 +426,9 @@ def validar_item_mapeo(
     ok_valor, msg_valor = _regla_campo_tiene_valor(campo_original, datos_planos)
     tiene_valor = ok_valor and msg_valor == ""
     if ok_valor and msg_valor:
-        # Campo existe pero vacío → REVISION (no DESCARTADO: puede estar intencionalmente vacío)
         resultado["estado"] = EstadoMapeo.REVISION
         resultado["motivo"] = msg_valor
         resultado["nivel_confianza"] = NivelConfianza.PARCIAL
-
-    # ── Autocorrecciones estructurales (R4, R5) ─────────────────────────────
-    campo_ajustado, motivo_r4 = _regla_no_asignar_tipo_documento_a_compuesto(
-        campo_original, rotulo_norm
-    )
-    if motivo_r4:
-        campo_original = campo_ajustado
-        resultado["campo_final"] = campo_ajustado
-        if resultado["estado"] == EstadoMapeo.APROBADO:
-            resultado["motivo"] = motivo_r4  # anotar autocorrección, no error
-        # Revalidar existencia con campo corregido
-        ok_existe2, msg_existe2 = _regla_campo_existe(campo_ajustado, datos_planos)
-        if not ok_existe2:
-            resultado["estado"] = EstadoMapeo.REVISION
-            resultado["motivo"] = msg_existe2 + f" (tras corrección desde '{resultado['campo_propuesto']}')"
-            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-            return resultado
-        tiene_valor = _obtener_valor_maestro(campo_ajustado, datos_planos) not in (None, "")
-
-    campo_ajustado_r5, motivo_r5 = _regla_telefono_en_seccion_rep_legal(
-        campo_original, seccion_norm
-    )
-    if motivo_r5:
-        campo_original = campo_ajustado_r5
-        resultado["campo_final"] = campo_ajustado_r5
-        # Anotar como corrección automática en motivo si no hay error previo
-        if resultado["estado"] == EstadoMapeo.APROBADO:
-            resultado["motivo"] = motivo_r5
-        tiene_valor = _obtener_valor_maestro(campo_ajustado_r5, datos_planos) not in (None, "")
 
     # ── R3: Compatibilidad de tipo de dato ──────────────────────────────────
     ok_tipo_dato, msg_tipo_dato = _regla_compatibilidad_tipo_dato(campo_original, rotulo_norm)

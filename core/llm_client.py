@@ -102,21 +102,22 @@ Recibes un objeto JSON con:
 
 ### ETAPA 1: ASIGNACIÓN SEGÚN EL DOMINIO DE LA SECCIÓN
 - Si la sección o el rótulo hace referencia a la EMPRESA / PROPONENTE / SOLICITANTE / PERSONA JURÍDICA:
-  * Rótulos que soliciten nombre de la empresa, denominación social, solicitante -> "razon_social"
-  * Rótulos de NIT, RUT, Identificación Tributaria, o listas de tipos como "CC/CE/PAS/NIT", "CC/NIT", "NIT/CC", "Identificación", "No. Documento" -> "nit" (la empresa es persona jurídica y su número de identificación tributaria es el NIT).
+  * Rótulos que soliciten nombre de la empresa, denominación social, solicitante, "Nombre Comercial", "Razón Social / Nombre Comercial" -> "razon_social"
+  * Rótulos de NIT, RUT, "NIT / TAX ID", "TAX ID", Identificación Tributaria, o listas de tipos como "CC/CE/PAS/NIT", "CC/NIT", "NIT/CC" -> "nit" (la empresa es persona jurídica y su número de identificación tributaria es el NIT).
   * Rótulos de Domicilio, Sede Principal, Dirección -> "direccion"
   * Rótulos de Municipio, Ciudad de domicilio -> "ciudad"
+  * Rótulos combinados de "Ciudad / Departamento", "Ciudad/Depto", "Municipio / Departamento" -> "ciudad_departamento"
   * Rótulos de Teléfono corporativo, PBX -> "telefono"
   * Rótulos de Email institucional -> "correo"
 
 - Si la sección o el rótulo hace referencia al REPRESENTANTE LEGAL / PERSONA NATURAL / APODERADO:
-  * Rótulos de Nombre del Representante, Representante Legal -> "representante_legal"
+  * Rótulos de Nombre del Representante, Representante Legal, o "Razón social o Nombres y Apellidos" -> "representante_legal"
   * Rótulos específicos de Primer/Segundo Nombre -> "representante_nombres"
   * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
-  * Rótulos explícitos de solo el Tipo de Documento, Tipo ID, Tipo de Identificación, Tipo Doc -> "tipo_documento" (inscribirá C.C.)
-  * Rótulos de C.C., Cédula, Documento de Identidad, No. de Documento del Representante -> "cedula"
+  * Rótulos explícitos del Tipo de Documento, como "Tipo de Identificación (CC-Pasaporte-CE)", "Tipo Doc", "Tipo ID" -> "tipo_documento" (inscribirá C.C.)
+  * Rótulos de C.C., Cédula, "Identificación", "Número de Identificación", "Nro de Identificación", "No de Documento" -> "cedula"
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
-  * Rótulos de Teléfono, Celular, Teléfono Móvil, Móvil, No. Celular en la sección del Representante -> "celular" (inscribirá el móvil del apoderado, ej. "3104120217", ya que en la sección personal se solicita su contacto directo/móvil).
+  * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
 
 - Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA:
   * Rótulos de Banco, Entidad Financiera, Nombre de la Entidad Financiera, Institución Bancaria -> "banco"
@@ -128,7 +129,7 @@ Recibes un objeto JSON con:
 - NUNCA cruces dominios:
   * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
   * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
-  * REGLA DE RÓTULOS COMPUESTOS (CC/CE/PAS/NIT): NUNCA asignes "tipo_documento" a rótulos compuestos como "CC/CE/PAS/NIT" o "CC/NIT" que piden el número de identificación del proponente/empresa. Debes asignar "nit". "tipo_documento" solo se usa si el formulario pide explícitamente el tipo de documento por separado (ej: 'Tipo Doc:').
+  * REGLA DE RÓTULOS COMPUESTOS (CC/CE/PAS/NIT vs Tipo): Si el rótulo pide el número combinado como "CC/CE/PAS/NIT" o "NIT/TAX ID", asigna "nit". Si el rótulo pide explícitamente el tipo ("Tipo de Identificación (CC-Pasaporte-CE)"), asigna "tipo_documento".
   * NO asignes "cedula" a rótulos de NIT de la empresa.
   * NO asignes "nit" a casillas de cédula del representante.
   * NO asignes "razon_social" a casillas de representante legal persona natural.

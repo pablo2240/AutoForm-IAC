@@ -54,7 +54,7 @@ _CLAVES_LLM = {
     "esCasillaVerificacion",
 }
 
-_CAMPOS_VIRTUALES = {"nit_sin_dv", "nit_dv"}
+_CAMPOS_VIRTUALES = {"ciudad_departamento"}
 
 
 # ---------------------------------------------------------------------------
