@@ -765,8 +765,13 @@ if uploaded_file is not None:
                         paso = min(3, int(pct * 3) + 1)
                         progress_placeholder.markdown(render_stepper_progress(paso, int(pct * 100), msg), unsafe_allow_html=True)
 
-                    # Ejecutar análisis modular (Stage 1 -> Stage 2 -> Stage 3)
+                    # 1. Análisis Semántico y Validador Determinista (HSP)
                     ctx = PipelineOrchestrator.analizar_formulario(ctx, on_progress=callback_progreso)
+
+                    # 2. Inyección Directa 1-Click (Ponytail: Zero friction, 100% deterministic safety)
+                    callback_progreso("⚡ Inyectando datos en el documento y preservando formato...", 0.9)
+                    ctx = PipelineOrchestrator.rellenar_formulario(ctx)
+
                     progress_placeholder.empty()
 
                     # Limpiar estados de tablas de verificación previas
@@ -776,6 +781,7 @@ if uploaded_file is not None:
 
                     st.session_state["pipeline_ctx"] = ctx
                     st.session_state["processed_file_id"] = current_file_id
+                    _safe_rerun()
 
                 except Exception as e:
                     progress_placeholder.empty()
@@ -783,24 +789,26 @@ if uploaded_file is not None:
                     with st.expander("Ver detalles técnicos del error"):
                         st.text(traceback.format_exc())
 
-    # ── Renderizado del Pipeline Modular (Verificación y Descarga) ──
+    # ── Renderizado del Pipeline Modular (Descarga Directa + Auditoría Opcional) ──
     if st.session_state.get("pipeline_ctx") is not None and st.session_state.get("processed_file_id") == current_file_id:
         pipeline_context: PipelineContext = st.session_state["pipeline_ctx"]
 
-        if not pipeline_context.archivo_resultado:
-            st.markdown("---")
-            confirmado, plan_verificado = render_pantalla_verificacion(pipeline_context, key_prefix="app1_main_flow")
-            if confirmado:
-                with st.spinner("⚡ Inyectando datos en el documento y preservando formato original..."):
-                    pipeline_context = PipelineOrchestrator.rellenar_formulario(pipeline_context)
-                    st.session_state["pipeline_ctx"] = pipeline_context
-                    st.rerun()
-        else:
+        if pipeline_context.archivo_resultado:
             st.markdown("---")
             render_pantalla_descarga(pipeline_context, key_prefix="app1_main_flow")
+
+            # Acordeón opcional colapsado si el usuario desea inspeccionar o ajustar celdas
+            with st.expander("🔍 Auditoría Detallada y Ajuste Manual de Campos (Opcional)", expanded=False):
+                confirmado, plan_verificado = render_pantalla_verificacion(pipeline_context, key_prefix="app1_audit_flow")
+                if confirmado:
+                    with st.spinner("⚡ Re-inyectando datos actualizados en el documento..."):
+                        pipeline_context = PipelineOrchestrator.rellenar_formulario(pipeline_context)
+                        st.session_state["pipeline_ctx"] = pipeline_context
+                        _safe_rerun()
+
             if st.button("🔄 Diligenciar Otro Formulario", key="app1_btn_restart_doc"):
                 del st.session_state["pipeline_ctx"]
-                st.rerun()
+                _safe_rerun()
 
 else:
     st.markdown("""
