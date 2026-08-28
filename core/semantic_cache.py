@@ -15,6 +15,11 @@ try:
 except ImportError:
     fuzz = None  # type: ignore
 
+try:
+    from core.embedding_engine import similitud_semantica as _similitud_semantica
+except ImportError:
+    _similitud_semantica = None  # type: ignore
+
 
 CACHE_FILE = Path("config") / "plantillas_cache.json"
 
@@ -82,19 +87,26 @@ def guardar_cache_plantillas(cache_data: Dict[str, Any]) -> None:
 
 def buscar_plantilla_similar(
     huella_entrante: str,
-    umbral: float = 90.0,
+    umbral: float = 82.0,
 ) -> Optional[Tuple[str, Dict[str, Any], float]]:
-    """Busca en el caché de plantillas la huella más parecida a huella_entrante usando rapidfuzz.
+    """Busca en el caché de plantillas la huella más parecida a huella_entrante.
+
+    Usa embeddings semánticos de OpenAI si están disponibles, o rapidfuzz como fallback.
 
     Args:
         huella_entrante: Cadena canónica del formulario actual.
-        umbral: Porcentaje mínimo de similaridad (0 a 100). Por defecto 90.0%.
+        umbral: Porcentaje mínimo de similitud (0 a 100). Por defecto 82.0%.
 
     Returns:
         Tuple[id_plantilla, datos_plantilla, score] o None si no supera el umbral.
     """
-    if fuzz is None:
-        print("[AutoForm AI Warning] rapidfuzz no está disponible. Omitiendo Caché Semántico Fuzzy.")
+    # Seleccionar motor de similitud: embeddings semánticos → rapidfuzz como fallback
+    if _similitud_semantica is not None:
+        _fn_similitud = _similitud_semantica
+    elif fuzz is not None:
+        _fn_similitud = fuzz.token_sort_ratio  # type: ignore
+    else:
+        print("[AutoForm AI Warning] Sin motor de similitud disponible. Omitiendo Caché Semántico.")
         return None
 
     if not huella_entrante.strip():
@@ -113,8 +125,8 @@ def buscar_plantilla_similar(
         if not huella_guardada:
             continue
 
-        # Usar token_sort_ratio para ignorar orden ligero de palabras
-        score = float(fuzz.token_sort_ratio(huella_entrante, huella_guardada))
+        # Similitud semántica real (embeddings) o léxica (rapidfuzz) según disponibilidad
+        score = float(_fn_similitud(huella_entrante, huella_guardada))
         if score > mejor_score:
             mejor_score = score
             mejor_id = id_plantilla

@@ -27,6 +27,7 @@ Thumbs.db
 
 # Caché, audio y pruebas locales
 config/pdf_cache/
+config/embedding_cache.json
 scratch/
 audio/
 

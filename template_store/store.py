@@ -1,4 +1,4 @@
-﻿"""Gestor de persistencia de plantillas de formularios (Template Store).
+"""Gestor de persistencia de plantillas de formularios (Template Store).
 
 Almacena y recupera plantillas de formularios verificadas en formato JSON en `config/templates/`.
 Permite que el sistema reconozca formularios previamente diligenciados o similares
@@ -20,6 +20,11 @@ try:
     from rapidfuzz import fuzz
 except ImportError:
     fuzz = None  # type: ignore
+
+try:
+    from core.embedding_engine import similitud_semantica as _similitud_semantica
+except ImportError:
+    _similitud_semantica = None  # type: ignore
 
 
 DEFAULT_TEMPLATES_DIR = Path("config") / "templates"
@@ -155,15 +160,18 @@ def cargar_plantilla(
 
 def buscar_plantilla_por_similitud(
     elementos_actuales: List[Dict[str, Any]],
-    umbral: float = 90.0,
+    umbral: float = 85.0,
     directorio: Path = DEFAULT_TEMPLATES_DIR,
 ) -> Optional[Tuple[str, Dict[str, Any], float]]:
-    """Busca en el almacén de plantillas una cuya huella tenga similitud difusa >= umbral.
-    
+    """Busca en el almacén de plantillas una cuya huella tenga similitud semántica >= umbral.
+
+    Usa embeddings de OpenAI (text-embedding-3-small) para comparar huellas.
+    Si la API no está disponible, cae a rapidfuzz.token_sort_ratio automáticamente.
+
     Returns:
         Tuple: (plantilla_id, datos_plantilla, score_similitud) o None si no supera el umbral.
     """
-    if fuzz is None or not elementos_actuales:
+    if not elementos_actuales:
         return None
 
     if not directorio.exists():
@@ -173,6 +181,14 @@ def buscar_plantilla_por_similitud(
     if not huella_actual:
         return None
 
+    # Seleccionar motor de similitud: embeddings semánticos → rapidfuzz como fallback
+    if _similitud_semantica is not None:
+        _fn_similitud = _similitud_semantica
+    elif fuzz is not None:
+        _fn_similitud = fuzz.token_sort_ratio  # type: ignore
+    else:
+        return None
+
     mejor_match: Optional[Tuple[str, Dict[str, Any], float]] = None
     mejor_score = 0.0
 
@@ -180,13 +196,13 @@ def buscar_plantilla_por_similitud(
         try:
             with open(archivo, "r", encoding="utf-8") as f:
                 plantilla = json.load(f)
-            
+
             huella_guardada = plantilla.get("huella", "")
             if not huella_guardada:
                 continue
 
-            # Comparación con token_sort_ratio para tolerar reordenamientos de secciones
-            score = float(fuzz.token_sort_ratio(huella_actual, huella_guardada))
+            # Similitud semántica real (embeddings) o léxica (rapidfuzz) según disponibilidad
+            score = float(_fn_similitud(huella_actual, huella_guardada))
             if score >= umbral and score > mejor_score:
                 mejor_score = score
                 mejor_match = (plantilla.get("plantilla_id", archivo.stem), plantilla, score)
