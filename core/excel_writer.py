@@ -158,21 +158,35 @@ def _obtener_fuente_preservada(celda_origen, celda_destino) -> Optional[Font]:
     return Font(name="Calibri", size=10, bold=False)
 
 
-def _obtener_borde_completo(celda_origen, celda_destino) -> Optional[Border]:
-    """WRITER-04: Copia bordes relevantes combinando celda_destino y celda_origen."""
+def _obtener_borde_preservado(celda_origen, celda_destino, es_misma: bool = False) -> Optional[Border]:
+    """WRITER-04: Preserva los bordes de la celda de destino y evita crear líneas verticales parásitas a la izquierda.
+
+    Reglas:
+      1. Si la celda destino tiene bordes propios definidos, se preservan fielmente.
+      2. Si se escribe en la misma celda (es_misma=True), preserva el borde original.
+      3. Si se escribe en una celda adyacente (derecha / abajo):
+         - NUNCA se copia el borde 'left' ni 'right' de celda_origen (esto creaba un borde vertical parásito al inicio de la palabra).
+         - Solo se hereda el borde 'bottom' (subrayado) si celda_origen lo tenía y celda_destino no tiene borde inferior.
+    """
     b_dest = celda_destino.border if celda_destino and hasattr(celda_destino, "border") else None
     b_orig = celda_origen.border if celda_origen and hasattr(celda_origen, "border") else None
 
-    sides: Dict[str, Side] = {}
-    for lado in ("top", "bottom", "left", "right"):
-        s_dest = getattr(b_dest, lado, None) if b_dest else None
-        s_orig = getattr(b_orig, lado, None) if b_orig else None
-        if s_dest and s_dest.style and s_dest.style != "none":
-            sides[lado] = Side(style=s_dest.style, color=s_dest.color)
-        elif s_orig and s_orig.style and s_orig.style != "none":
-            sides[lado] = Side(style=s_orig.style, color=s_orig.color)
+    if b_dest:
+        tiene_bordes_dest = any(
+            getattr(b_dest, l, None) and getattr(b_dest, l).style and getattr(b_dest, l).style != "none"
+            for l in ("top", "bottom", "left", "right")
+        )
+        if tiene_bordes_dest:
+            return copy(b_dest)
 
-    return Border(**sides) if sides else None
+    if es_misma and b_orig:
+        return copy(b_orig)
+
+    # Escritura adyacente: solo heredar subrayado inferior si la celda origen lo tenía
+    if b_orig and b_orig.bottom and b_orig.bottom.style and b_orig.bottom.style != "none":
+        return Border(bottom=copy(b_orig.bottom))
+
+    return None
 
 
 def _obtener_celda_escribible(hoja: Worksheet, fila: int, columna: int) -> Any:
@@ -515,7 +529,7 @@ def rellenar_formulario_excel(
         # ── WRITER-01/02/04: Preservar estilos ───────────────────────────
         relleno         = _obtener_relleno_preservado(celda_origen, celda_destino)
         fuente          = _obtener_fuente_preservada(celda_origen, celda_destino)
-        borde_completo  = _obtener_borde_completo(celda_origen, celda_destino)
+        borde_preservado = _obtener_borde_preservado(celda_origen, celda_destino, es_misma=es_misma)
 
         if rango_combinado is not None:
             _, ini_col, _, fin_col = rango_combinado
@@ -530,12 +544,12 @@ def rellenar_formulario_excel(
                         c.fill = copy(relleno)
                     if fuente:
                         c.font = copy(fuente)
-                    if borde_completo:
+                    if borde_preservado:
                         c.border = Border(
-                            top=copy(borde_completo.top) if borde_completo.top else None,
-                            bottom=copy(borde_completo.bottom) if borde_completo.bottom else None,
-                            left=copy(borde_completo.left) if col == ini_col and borde_completo.left else None,
-                            right=copy(borde_completo.right) if col == fin_col and borde_completo.right else None,
+                            top=copy(borde_preservado.top) if borde_preservado.top else None,
+                            bottom=copy(borde_preservado.bottom) if borde_preservado.bottom else None,
+                            left=copy(borde_preservado.left) if col == ini_col and borde_preservado.left else None,
+                            right=copy(borde_preservado.right) if col == fin_col and borde_preservado.right else None,
                         )
         else:
             if type(celda_destino).__name__ != "MergedCell":
@@ -547,8 +561,8 @@ def rellenar_formulario_excel(
                     celda_destino.fill = relleno
                 if fuente:
                     celda_destino.font = fuente
-                if borde_completo:
-                    celda_destino.border = borde_completo
+                if borde_preservado:
+                    celda_destino.border = borde_preservado
 
 
         # ── READ-BACK VERIFICATION: Comprobación física real en el Excel ───
