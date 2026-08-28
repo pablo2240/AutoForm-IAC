@@ -245,6 +245,13 @@ def ejecutar_stage_3_mapper(
             ctx.log(f"[Stage 3 - Mapper] ¡Plantilla exacta encontrada en disco! ({len(ctx.plan_mapeo)} campos mapeados a 0 costo).")
             # Validar incluso plantillas guardadas (pueden tener autocorrecciones pendientes)
             ctx.plan_mapeo = _aplicar_validacion_deterministica(ctx.plan_mapeo, ctx)
+            try:
+                from core.coverage_engine import ejecutar_pase_cobertura_exhaustiva
+                ctx.plan_mapeo = ejecutar_pase_cobertura_exhaustiva(
+                    ctx.plan_mapeo, ctx.datos_empresa, documento_ir=ctx.documento_ir, elementos_raw=ctx.elementos_raw
+                )
+            except ImportError:
+                pass
             return ctx
 
         # 1B. Coincidencia Difusa (Fuzzy Matching)
@@ -260,6 +267,13 @@ def ejecutar_stage_3_mapper(
                 ctx.log(f"[Stage 3 - Mapper] ¡Plantilla similar encontrada! (Score: {score:.1f}%, ID: {pid}).")
                 # Validar incluso plantillas difusas
                 ctx.plan_mapeo = _aplicar_validacion_deterministica(ctx.plan_mapeo, ctx)
+                try:
+                    from core.coverage_engine import ejecutar_pase_cobertura_exhaustiva
+                    ctx.plan_mapeo = ejecutar_pase_cobertura_exhaustiva(
+                        ctx.plan_mapeo, ctx.datos_empresa, documento_ir=ctx.documento_ir, elementos_raw=ctx.elementos_raw
+                    )
+                except ImportError:
+                    pass
                 return ctx
 
     # ── RUTA 2: Inferencia con IA (LLM) ──
@@ -371,8 +385,20 @@ def ejecutar_stage_3_mapper(
     # ── HSP Fase 3: Post-Validación Determinística ──
     plan_final = _aplicar_validacion_deterministica(plan_final, ctx)
 
+    # ── Stage 3c: Pase de Cobertura y Exhaustividad Semántica (Coverage Engine) ──
+    try:
+        from core.coverage_engine import ejecutar_pase_cobertura_exhaustiva
+        plan_final = ejecutar_pase_cobertura_exhaustiva(
+            plan_final,
+            ctx.datos_empresa,
+            documento_ir=ctx.documento_ir,
+            elementos_raw=ctx.elementos_raw,
+        )
+    except ImportError:
+        pass
+
     ctx.plan_mapeo = plan_final
 
     duracion = time.time() - t0
-    ctx.log(f"[Stage 3 - Mapper] Mapeo completado por IA: {len(plan_final)} campos asignados en {duracion:.2f}s.")
+    ctx.log(f"[Stage 3 - Mapper] Mapeo completado por IA + Cobertura: {len(plan_final)} campos asignados en {duracion:.2f}s.")
     return ctx

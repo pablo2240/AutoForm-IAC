@@ -163,8 +163,9 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def cargar_perfil(ruta: Path) -> Dict[str, Any]:
+def cargar_perfil(ruta: Union[Path, str]) -> Dict[str, Any]:
     """Carga los datos JSON del perfil especificado (aplana o estructura según necesidad)."""
+    ruta = Path(ruta)
     if not ruta.exists():
         return _obtener_plantilla_vacia()
     
