@@ -247,13 +247,27 @@ def clasificar_elementos_formulario(
             if tipo_clasif == ClasificacionElemento.TITULO_SECCION:
                 seccion_actual = rotulo
 
+            color_fondo = str(elem.get("colorFondo") or elem.get("color_fondo") or "").strip()
+            tiene_fondo_sombreado = bool(color_fondo)
+
             # Determinar dirección de escritura recomendada con PRIORIDAD a la física real de la celda
             derecha_vacia = bool(elem.get("derechaVacia", False))
             abajo_vacia = bool(elem.get("abajoVacia", False))
             arriba_linea = bool(elem.get("tieneLineaFirmaArriba", False) or elem.get("celdaConBordeSuperior", False) or elem.get("arribaConBordeInferior", False))
 
             es_rotulo_inline = bool(re.search(r"[:：]\s*$", rotulo) or re.search(r"\b(?:nit|c\.?c\.?|dv|tel|cel|dir)\s*[:：]", rotulo, re.IGNORECASE))
-            if elem.get("tipoEspacioEscritura") == "arriba" or (arriba_linea and not derecha_vacia):
+            
+            # REGLA FUNDAMENTAL: Celdas con fondo sombreado (gris/color) NUNCA se escriben en 'misma'
+            if tiene_fondo_sombreado:
+                if elem.get("tipoEspacioEscritura") == "arriba" or (arriba_linea and not derecha_vacia):
+                    ubicacion_sugerida = "arriba"
+                elif derecha_vacia or (not abajo_vacia and tipo_clasif != ClasificacionElemento.TABLA_CABECERA):
+                    ubicacion_sugerida = "derecha"
+                elif abajo_vacia:
+                    ubicacion_sugerida = "abajo"
+                else:
+                    ubicacion_sugerida = "derecha"
+            elif elem.get("tipoEspacioEscritura") == "arriba" or (arriba_linea and not derecha_vacia):
                 ubicacion_sugerida = "arriba"
             elif derecha_vacia and not abajo_vacia:
                 ubicacion_sugerida = "derecha"

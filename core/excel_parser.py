@@ -197,15 +197,33 @@ def _calcular_ubicacion_fisica(
     abajo_vacia: bool,
     derecha_es_merge: bool,
     tipo_espacio: str,
+    color_fondo: str = "",
 ) -> str:
-    """Calcula la ubicación de escritura usando únicamente flags espaciales de Python.
+    """Calcula la ubicación de escritura usando flags espaciales y estilo visual de la celda.
 
-    Jerarquía de clasificación determinista:
-      1. Texto declarativo inline (____): escribir en la MISMA celda (reemplazar guiones).
+    Jerarquía determinista:
+      1. Si la celda tiene fondo sombreado (color_fondo):
+         NUNCA escribir en la misma celda. Redirigir a la celda de entrada con borde/espacio
+         a la DERECHA (o ABAJO si es cabecera o derecha bloqueada).
+      2. Texto declarativo inline (____) sin fondo sombreado: escribir en la MISMA celda.
+      3. Espacio libre a la derecha → DERECHA.
+      4. Derecha bloqueada pero abajo libre → ABAJO.
+      5. Fallback seguro → DERECHA.
     Returns:
         str: "misma" | "derecha" | "abajo"
     """
-    # Regla 1: Texto declarativo con guiones inline → escribir MISMA celda
+    tiene_fondo = bool(color_fondo and str(color_fondo).strip())
+
+    # Regla 0: Celdas con fondo sombreado (gris/color) NUNCA se escriben en 'misma'
+    if tiene_fondo:
+        espacio_derecha = derecha_vacia or derecha_es_merge
+        if espacio_derecha and tipo_espacio != "abajo":
+            return "derecha"
+        if abajo_vacia:
+            return "abajo"
+        return "derecha"
+
+    # Regla 1: Texto declarativo con guiones inline sin fondo → escribir MISMA celda
     if _PATRON_INLINE_GUIONES.search(val_rotulo):
         return "misma"
 
@@ -311,7 +329,7 @@ def _extraer_color_fondo(celda) -> str:
     """Extrae el color de fondo de una celda como string hex (ej. 'FFFF00') o '' si no tiene.
 
     Soporta colores de tipo 'rgb', 'indexed' y 'theme'.
-    Retorna cadena vacía si la celda no tiene relleno significativo.
+    Retorna cadena vacía si la celda no tiene relleno significativo (ej. blanco puro o transparente).
     """
     try:
         fill = celda.fill
@@ -325,16 +343,30 @@ def _extraer_color_fondo(celda) -> str:
             return ""
         color_type = getattr(fg, "type", None)
         if color_type == "rgb":
-            rgb = getattr(fg, "rgb", "") or ""
-            # Ignorar blanco puro y transparente (00000000, FFFFFFFF, 00FFFFFF)
-            if rgb in ("", "00000000", "FFFFFFFF", "00FFFFFF", "FF000000"):
+            try:
+                rgb = getattr(fg, "rgb", "") or ""
+                if str(rgb) in ("", "00000000", "FFFFFFFF", "00FFFFFF", "FF000000"):
+                    return ""
+                return str(rgb)[-6:] if len(str(rgb)) == 8 else str(rgb)
+            except Exception:
                 return ""
-            # Quitar prefijo de alpha (los 2 primeros chars) si son 8 dígitos
-            return rgb[-6:] if len(rgb) == 8 else rgb
         if color_type == "indexed":
-            return f"indexed:{getattr(fg, 'indexed', '')}"
+            try:
+                idx = getattr(fg, "indexed", "")
+                if idx in (0, 64, None, ""):
+                    return ""
+                return f"indexed:{idx}"
+            except Exception:
+                return ""
         if color_type == "theme":
-            return f"theme:{getattr(fg, 'theme', '')}"
+            try:
+                theme = getattr(fg, "theme", None)
+                tint = getattr(fg, "tint", 0.0) or 0.0
+                if (theme == 0 or theme is None) and abs(tint) < 0.05:
+                    return ""
+                return f"theme:{theme}:{tint:.2f}"
+            except Exception:
+                return ""
     except Exception:
         pass
     return ""

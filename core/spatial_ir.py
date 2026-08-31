@@ -548,19 +548,19 @@ def construir_ir(
                 if rango_merge_str == "":
                     rango_merge_str = None
 
+                # Color de fondo
+                color = str(elem.get("colorFondo", ""))
+
                 # Dirección de escritura heredada del parser
                 dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
                 if dir_esc not in ("derecha", "abajo", "misma", "arriba"):
                     dir_esc = "derecha"
+                if color and dir_esc == "misma" and not re.search(r"_{2,}|\.{3,}", texto):
+                    dir_esc = "derecha"
 
-                # Ancho de línea de captura
+                # Ancho de línea de captura y casilla
                 ancho = int(elem.get("anchoLinea", 1) or 1)
-
-                # Casilla de verificación
                 es_casilla = bool(elem.get("esCasillaVerificacion", False))
-
-                # Color de fondo
-                color = str(elem.get("colorFondo", ""))
 
                 # Textos de vecinos
                 # El vecino derecha está a (fila, col + ancho) o (fila, col + 1)

@@ -494,6 +494,19 @@ def rellenar_formulario_excel(
         ubicacion      = str(item.get("ubicacion", "")).lower()
         rango_origen   = _celda_en_merge(ws, fila_origen, columna_origen)
 
+        # ── SEGURIDAD: Celdas con fondo sombreado (gris/color) NUNCA se escriben en 'misma' ──
+        if ubicacion == "misma":
+            try:
+                from core.excel_parser import _extraer_color_fondo
+                celda_orig = ws.cell(row=fila_origen, column=columna_origen)
+                color_orig = _extraer_color_fondo(celda_orig)
+                val_orig_txt = str(celda_orig.value or "").strip()
+                # Si tiene fondo sombreado y no contiene guiones inline explícitos (____), redirigir a 'derecha'
+                if color_orig and not re.search(r"_{2,}|\.{3,}", val_orig_txt):
+                    ubicacion = "derecha"
+            except Exception:
+                pass
+
         # ── Calcular coordenadas de destino ───────────────────────────────
         if ubicacion == "misma":
             fila_destino    = fila_origen
