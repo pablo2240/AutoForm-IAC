@@ -478,9 +478,7 @@ with st.sidebar:
             rep_nombres = st.text_input("Nombres", value=datos_empresa.get("representante_nombres") or "Guillermo Humberto", key=f"pe_{slug_perfil}_r_nom")
             rep_apellidos = st.text_input("Apellidos", value=datos_empresa.get("representante_apellidos") or "Cañón Sarria", key=f"pe_{slug_perfil}_r_ape")
             
-            tipo_doc_val = str(datos_empresa.get("tipo_documento") or "C.C.").strip()
-            idx_tdoc = 0 if "C.C" in tipo_doc_val.upper() else (1 if "C.E" in tipo_doc_val.upper() else (2 if "PASAPORTE" in tipo_doc_val.upper() else 3))
-            tipo_documento = st.selectbox("Tipo de Documento / Tipo ID", options=["C.C.", "C.E.", "PASAPORTE", "OTRO"], index=idx_tdoc, key=f"pe_{slug_perfil}_tdoc")
+            tipo_documento = st.text_input("Tipo de Documento / Tipo ID", value=datos_empresa.get("tipo_documento") or "C.C.", key=f"pe_{slug_perfil}_tdoc")
             
             cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula") or "98555384", key=f"pe_{slug_perfil}_ced")
             lugar_expedicion = st.text_input("Lugar de Expedición (Ciudad)", value=datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or "Envigado",
@@ -497,9 +495,7 @@ with st.sidebar:
 
             st.markdown("##### 💳 Cuenta para Pagos")
             numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta") or "00300833888", key=f"pe_{slug_perfil}_num_cta")
-            tipo_cta_actual = str(datos_empresa.get("tipo_cuenta") or "AHORROS").upper()
-            idx_tipo = 0 if "AHORRO" in tipo_cta_actual else (1 if "CORRIENTE" in tipo_cta_actual else 2)
-            tipo_cuenta = st.selectbox("Tipo de Cuenta", options=["AHORROS", "CORRIENTE", "OTRO"], index=idx_tipo, key=f"pe_{slug_perfil}_tip_cta")
+            tipo_cuenta = st.text_input("Tipo de Cuenta", value=datos_empresa.get("tipo_cuenta") or "AHORROS", key=f"pe_{slug_perfil}_tip_cta")
 
         if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
