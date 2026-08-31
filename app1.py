@@ -1,11 +1,14 @@
 import json
 import os
 import traceback
+import warnings
 from io import BytesIO
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
+
+warnings.filterwarnings("ignore", category=UserWarning, module="openpyxl")
 
 try:
     from dotenv import load_dotenv
@@ -706,12 +709,10 @@ if uploaded_file is not None:
                 uploaded_file.seek(0)
                 df = pd.read_excel(uploaded_file, sheet_name=selected_sheet, header=None)
 
-                # Conversión Arrow-safe en preview: datetime y otros tipos complejos -> str
+                # Conversión Arrow-safe en preview: nombres de columna str y celdas limpias
                 df_display = df.copy()
-                for col in df_display.columns:
-                    df_display[col] = df_display[col].apply(
-                        lambda x: str(x) if x is not None and not isinstance(x, (str, int, float, bool)) else x
-                    )
+                df_display.columns = [f"Col {c+1}" for c in range(len(df_display.columns))]
+                df_display = df_display.fillna("").astype(str)
                 st.dataframe(df_display, width="stretch", height=380)
             except Exception as e:
                 st.error(f"Error al leer el archivo Excel: {e}")

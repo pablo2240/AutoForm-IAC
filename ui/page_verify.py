@@ -437,6 +437,9 @@ def preparar_tabla_verificacion(
         df["_tipo_elemento"] = df["_tipo_elemento"].fillna("FIELD").astype(str)
         df["_estado_raw"] = df["_estado_raw"].fillna("").astype(str)
         df["_confianza_raw"] = df["_confianza_raw"].fillna("").astype(str)
+        for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
+            if k in df.columns:
+                df[k] = df[k].apply(lambda v: json.dumps(v) if isinstance(v, (list, tuple, dict)) else ("" if v is None else str(v)))
     return df
 
 

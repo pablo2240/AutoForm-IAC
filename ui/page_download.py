@@ -71,7 +71,12 @@ def render_pantalla_descarga(ctx: PipelineContext, key_prefix: str = "download_u
                 "motivo": "Observaciones",
             }
             cols_existentes = {k: v for k, v in columnas_mostrar.items() if k in df_reporte.columns}
-            df_view = df_reporte[list(cols_existentes.keys())].rename(columns=cols_existentes)
+            df_view = df_reporte[list(cols_existentes.keys())].rename(columns=cols_existentes).copy()
+            for col in df_view.columns:
+                if col in ("Fila Destino", "Col Destino"):
+                    df_view[col] = pd.to_numeric(df_view[col], errors="coerce").fillna(0).astype(int)
+                else:
+                    df_view[col] = df_view[col].fillna("").astype(str)
             st.dataframe(df_view, width="stretch", hide_index=True)
         else:
             st.info("No hay registros de inyección detallados disponibles.")
