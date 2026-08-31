@@ -109,7 +109,7 @@ def _safe_rerun():
 
 
 # 1. Configuración de pantalla con el Sistema de Diseño IAC
-logo_favicon_path = Path("assets") / "logo_iac_cropped.png"
+logo_favicon_path = Path("assets") / "favicon_iac.png"
 st.set_page_config(
     page_title="AutoForm AI | IAC Latam",
     page_icon=str(logo_favicon_path) if logo_favicon_path.exists() else "⚡",
