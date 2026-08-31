@@ -182,6 +182,8 @@ def consultar_llm(
         mensajes.append({"role": "system", "content": sistema})
     mensajes.append({"role": "user", "content": prompt_usuario})
 
+    es_modelo_razonamiento = any(x in str(AZURE_OPENAI_DEPLOYMENT_NAME if usar_azure else OPENAI_MODEL).lower() for x in ["gpt-5", "o1", "o3", "luna", "reasoning"])
+
     if usar_azure:
         endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
         url_target = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
@@ -191,9 +193,10 @@ def consultar_llm(
         }
         body: Dict[str, Any] = {
             "messages": mensajes,
-            "temperature": 0.0,
-            "seed": 42,
         }
+        if not es_modelo_razonamiento:
+            body["temperature"] = 0.0
+            body["seed"] = 42
         if json_mode:
             body["response_format"] = {"type": "json_object"}
     else:
@@ -205,9 +208,10 @@ def consultar_llm(
         body = {
             "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o-mini",
             "messages": mensajes,
-            "temperature": 0.0,
-            "seed": 42,
         }
+        if not es_modelo_razonamiento:
+            body["temperature"] = 0.0
+            body["seed"] = 42
         if json_mode:
             body["response_format"] = {"type": "json_object"}
 
@@ -217,13 +221,13 @@ def consultar_llm(
     for intento in range(1, MAX_REINTENTOS + 1):
         try:
             res_http = requests.post(url_target, json=body, headers=headers, timeout=timeout)
-            if res_http.status_code >= 500:
-                ultimo_error = RuntimeError(f"Error del servidor LLM ({res_http.status_code}): {res_http.text}")
-                if intento < MAX_REINTENTOS:
+            if res_http.status_code >= 400:
+                detalle_error = f"Error HTTP {res_http.status_code} del servidor LLM: {res_http.text}"
+                print(f"[AutoForm AI LLM Error] {detalle_error}")
+                if res_http.status_code >= 500 and intento < MAX_REINTENTOS:
                     time.sleep(2 ** (intento - 1))
                     continue
-                raise ultimo_error
-            res_http.raise_for_status()
+                raise RuntimeError(detalle_error)
             datos = res_http.json()
             if "choices" in datos and datos["choices"]:
                 contenido = datos["choices"][0].get("message", {}).get("content")
@@ -346,6 +350,8 @@ def invocar_llm_vision(
                 "image_url": {"url": f"data:image/png;base64,{b64_img}"}
             })
 
+        es_modelo_razonamiento = any(x in str(AZURE_OPENAI_DEPLOYMENT_NAME if usar_azure else OPENAI_MODEL).lower() for x in ["gpt-5", "o1", "o3", "luna", "reasoning"])
+
         if usar_azure:
             endpoint_limpio = AZURE_OPENAI_ENDPOINT.rstrip("/")
             url_target = f"{endpoint_limpio}/openai/deployments/{AZURE_OPENAI_DEPLOYMENT_NAME}/chat/completions?api-version={AZURE_OPENAI_API_VERSION}"
@@ -356,9 +362,10 @@ def invocar_llm_vision(
             body = {
                 "messages": [{"role": "user", "content": content_parts}],
                 "response_format": {"type": "json_object"},
-                "temperature": 0.0,
-                "seed": 42,
             }
+            if not es_modelo_razonamiento:
+                body["temperature"] = 0.0
+                body["seed"] = 42
         else:
             url_target = "https://api.openai.com/v1/chat/completions"
             headers = {
@@ -369,12 +376,15 @@ def invocar_llm_vision(
                 "model": OPENAI_MODEL if OPENAI_MODEL else "gpt-4o-mini",
                 "messages": [{"role": "user", "content": content_parts}],
                 "response_format": {"type": "json_object"},
-                "temperature": 0.0,
-                "seed": 42,
             }
+            if not es_modelo_razonamiento:
+                body["temperature"] = 0.0
+                body["seed"] = 42
 
         res_http = requests.post(url_target, json=body, headers=headers, timeout=timeout)
-        res_http.raise_for_status()
+        if res_http.status_code >= 400:
+            print(f"[AutoForm AI Vision Error] Error HTTP {res_http.status_code}: {res_http.text}")
+            raise RuntimeError(f"Error HTTP {res_http.status_code} desde Azure/OpenAI Vision: {res_http.text}")
         text_out = res_http.json()["choices"][0]["message"]["content"]
 
         if text_out:

@@ -249,6 +249,7 @@ def clasificar_elementos_formulario(
             abajo_vacia = bool(elem.get("abajoVacia", False))
             arriba_linea = bool(elem.get("tieneLineaFirmaArriba", False) or elem.get("celdaConBordeSuperior", False) or elem.get("arribaConBordeInferior", False))
 
+            es_rotulo_inline = bool(re.search(r"[:：]\s*$", rotulo) or re.search(r"\b(?:nit|c\.?c\.?|dv|tel|cel|dir)\s*[:：]", rotulo, re.IGNORECASE))
             if elem.get("tipoEspacioEscritura") == "arriba" or (arriba_linea and not derecha_vacia):
                 ubicacion_sugerida = "arriba"
             elif derecha_vacia and not abajo_vacia:
@@ -256,7 +257,10 @@ def clasificar_elementos_formulario(
                 if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
                     tipo_clasif = ClasificacionElemento.CAMPO_ENTRADA
             elif abajo_vacia and not derecha_vacia:
-                ubicacion_sugerida = "abajo"
+                if es_rotulo_inline and tipo_clasif != ClasificacionElemento.TABLA_CABECERA:
+                    ubicacion_sugerida = "misma"
+                else:
+                    ubicacion_sugerida = "abajo"
             else:
                 ubicacion_sugerida = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
                 if ubicacion_sugerida not in ("derecha", "abajo", "misma", "arriba"):

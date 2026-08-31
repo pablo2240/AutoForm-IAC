@@ -529,8 +529,15 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 bordes_propios = _analizar_bordes_celda(hoja, fila, columna)
                 celda_con_borde_superior = bordes_propios["top"]
 
+                # Solo aplicar arriba si la celda es semánticamente un rótulo de firma/firmante/identificación
+                es_rotulo_firma = bool(_PATRON_OPCION_CASILLA.search(texto) or re.search(
+                    r"\b(?:firma|firmante|nombres?\s+y\s+apellidos?|nombres?|apellidos?|representante(?:\s+legal)?|revisor(?:\s+fiscal)?|contador|apoderado|huella|c\.?c\.?|c[eé]dula|identificaci[oó]n|n[oú]mero\s+de\s+identificaci[oó]n|cargo|elabor[oó]|revis[oó]|aprob[oó]|solicitante|titular)\b",
+                    texto,
+                    re.IGNORECASE
+                ))
+
                 tiene_linea_firma_arriba = bool(
-                    arriba_vacia and (celda_con_borde_superior or arriba_con_borde_inferior)
+                    arriba_vacia and (celda_con_borde_superior or arriba_con_borde_inferior) and es_rotulo_firma
                 )
 
                 # Optimización: si ningún vecino tiene espacio ni es merge ni tiene línea superior de firma, descartar.

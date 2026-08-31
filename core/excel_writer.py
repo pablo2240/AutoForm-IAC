@@ -13,6 +13,7 @@ from copy import copy
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 import re
+import zipfile
 
 from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -332,6 +333,114 @@ def _log_item(
     }
 
 
+def _preservar_vml_y_controles(bytes_original: bytes, bytes_openpyxl: bytes) -> bytes:
+    """Restaura VML drawings (vmlDrawing*.vml), ctrlProps (checkboxes/form controls), legacyDrawing y relaciones
+    que openpyxl elimina silenciosamente al guardar archivos .xlsx.
+    """
+    try:
+        with zipfile.ZipFile(BytesIO(bytes_original), "r") as z_orig:
+            orig_names = set(z_orig.namelist())
+            archivos_a_preservar = [
+                n for n in orig_names
+                if any(k in n for k in (
+                    "xl/drawings/vmlDrawing",
+                    "xl/ctrlProps/",
+                    "customXml/",
+                    "xl/printerSettings/",
+                ))
+            ]
+            if not archivos_a_preservar:
+                return bytes_openpyxl
+
+            orig_data = {n: z_orig.read(n) for n in orig_names}
+
+        with zipfile.ZipFile(BytesIO(bytes_openpyxl), "r") as z_op:
+            op_data = {n: z_op.read(n) for n in z_op.namelist()}
+
+        # 1. Transferir archivos binarios/XML preservados
+        for n in archivos_a_preservar:
+            op_data[n] = orig_data[n]
+
+        # 2. Restaurar relaciones en sheet*.xml.rels
+        for n in orig_names:
+            if n.startswith("xl/worksheets/_rels/sheet") and n.endswith(".xml.rels"):
+                if n in orig_data:
+                    orig_rels_xml = orig_data[n].decode("utf-8")
+                    op_rels_xml = op_data.get(n, b"").decode("utf-8")
+
+                    rel_matches = re.findall(r'<Relationship\s+[^>]*?(?:vmlDrawing|ctrlProp|control)[^>]*?/>', orig_rels_xml, re.IGNORECASE)
+                    if rel_matches and op_rels_xml:
+                        for rel in rel_matches:
+                            if rel not in op_rels_xml:
+                                op_rels_xml = op_rels_xml.replace("</Relationships>", f"  {rel}\n</Relationships>")
+                        op_data[n] = op_rels_xml.encode("utf-8")
+
+        # 3. Restaurar tags <legacyDrawing> y <controls> en sheet*.xml con sus namespaces
+        for n in orig_names:
+            if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"):
+                if n in orig_data and n in op_data:
+                    orig_sheet_xml = orig_data[n].decode("utf-8")
+                    op_sheet_xml = op_data[n].decode("utf-8")
+
+                    # Extraer namespaces del <worksheet> original
+                    orig_ws_tag = re.search(r'<worksheet\b[^>]*>', orig_sheet_xml)
+                    if orig_ws_tag:
+                        ns_attrs = re.findall(r'(xmlns:[a-zA-Z0-9_]+=["\'][^"\']+["\'])', orig_ws_tag.group(0))
+                        for ns in ns_attrs:
+                            prefix = ns.split("=")[0]
+                            if prefix not in op_sheet_xml[:300]:
+                                op_sheet_xml = op_sheet_xml.replace('<worksheet ', f'<worksheet {ns} ', 1)
+
+                    # Extraer <legacyDrawing .../> y <controls ...>
+                    legacy_match = re.search(r'<legacyDrawing\s+[^>]*?/>', orig_sheet_xml)
+                    controls_match = re.search(r'(?:<mc:AlternateContent\b[^>]*>.*?<controls\b[^>]*>.*?</controls>.*?</mc:AlternateContent>|<controls\b[^>]*>.*?</controls>)', orig_sheet_xml, re.DOTALL)
+
+                    inyectado = False
+                    tags_a_insertar = ""
+                    if legacy_match and "legacyDrawing" not in op_sheet_xml:
+                        tags_a_insertar += f"\n  {legacy_match.group(0)}"
+                        inyectado = True
+                    if controls_match and "<controls" not in op_sheet_xml:
+                        tags_a_insertar += f"\n  {controls_match.group(0)}"
+                        inyectado = True
+
+                    if inyectado:
+                        if "</worksheet>" in op_sheet_xml:
+                            op_sheet_xml = op_sheet_xml.replace("</worksheet>", f"{tags_a_insertar}\n</worksheet>")
+                            op_data[n] = op_sheet_xml.encode("utf-8")
+
+        # 4. Restaurar [Content_Types].xml
+        if "[Content_Types].xml" in orig_data and "[Content_Types].xml" in op_data:
+            ct_orig = orig_data["[Content_Types].xml"].decode("utf-8")
+            ct_op = op_data["[Content_Types].xml"].decode("utf-8")
+
+            overrides = re.findall(r'<Override\s+[^>]*?(?:vml|ctrlProp)[^>]*?/>', ct_orig, re.IGNORECASE)
+            defaults = re.findall(r'<Default\s+[^>]*?Extension=["\']vml["\'][^>]*?/>', ct_orig, re.IGNORECASE)
+
+            mod_ct = False
+            for d in defaults:
+                if d not in ct_op:
+                    ct_op = ct_op.replace("</Types>", f"  {d}\n</Types>")
+                    mod_ct = True
+            for o in overrides:
+                if o not in ct_op:
+                    ct_op = ct_op.replace("</Types>", f"  {o}\n</Types>")
+                    mod_ct = True
+            if mod_ct:
+                op_data["[Content_Types].xml"] = ct_op.encode("utf-8")
+
+        # 5. Reempaquetar el nuevo ZIP
+        buf_final = BytesIO()
+        with zipfile.ZipFile(buf_final, "w", compression=zipfile.ZIP_DEFLATED) as z_final:
+            for name, data in op_data.items():
+                z_final.writestr(name, data)
+
+        return buf_final.getvalue()
+    except Exception as exc:
+        print(f"[AutoForm Writer Warning] Error al preservar controles VML: {exc}")
+        return bytes_openpyxl
+
+
 # ---------------------------------------------------------------------------
 # Función principal de escritura
 # ---------------------------------------------------------------------------
@@ -606,7 +715,10 @@ def rellenar_formulario_excel(
     salida = BytesIO()
     workbook.save(salida)
     salida.seek(0)
+    bytes_guardados = salida.getvalue()
 
+    # Preservar VML drawings (vmlDrawing*.vml), ctrlProps (checkboxes/form controls), legacyDrawing y relaciones
+    bytes_finales = _preservar_vml_y_controles(bytes_excel, bytes_guardados)
 
     # Resumen final en consola
     ok_count        = sum(1 for r in reporte if r["estado"] == "OK")
@@ -623,4 +735,4 @@ def rellenar_formulario_excel(
     except UnicodeEncodeError:
         print(summary_msg.encode("ascii", errors="replace").decode("ascii"))
 
-    return salida.getvalue(), reporte
+    return bytes_finales, reporte
