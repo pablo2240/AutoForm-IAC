@@ -139,6 +139,10 @@ def _construir_campos_viables_desde_ir(
             continue
 
         for fila in seccion.filas:
+            # Construir contexto de fila uniendo únicamente los textos de los elementos de la fila actual
+            textos_fila = [e.texto.strip() for e in fila.elementos if e.texto and e.texto.strip()]
+            contexto_fila = " | ".join(textos_fila)
+
             for elem in fila.elementos:
                 # Solo enviar al LLM los elementos clasificados como FIELD o UNKNOWN
                 if elem.tipo_elemento not in tipos_viables:
@@ -148,11 +152,14 @@ def _construir_campos_viables_desde_ir(
 
                 # Buscar el elemento raw original para preservar coordenadas
                 elem_orig = elem.propiedades_raw or {}
+                vecino_abajo = str(elem.vecino_abajo_texto or elem_orig.get("vecino_abajo_texto") or elem_orig.get("vecino_abajo") or "").strip()
 
                 campos.append({
                     "id": id_counter,
                     "rotulo": elem.texto,
                     "seccion": seccion.titulo,
+                    "contexto_fila": contexto_fila,
+                    "vecino_abajo": vecino_abajo,
                     "tipoEspacioEscritura": elem.direccion_escritura,
                     "tipo_elemento": elem.tipo_elemento.value,
                     "_elem_orig": elem_orig,
@@ -296,11 +303,21 @@ def ejecutar_stage_3_mapper(
         )
     else:
         # Fallback: usar clasificación de Stage 2 (flujo existente)
+        filas_map: Dict[Tuple[str, int], List[str]] = {}
+        for elem in ctx.elementos_clasificados:
+            h = str(elem.get("hoja", ""))
+            f = int(elem.get("fila", 0) or 0)
+            txt = str(elem.get("valor") or elem.get("rotulo") or "").strip()
+            if txt:
+                filas_map.setdefault((h, f), []).append(txt)
+
         campos_viables = [
             {
                 "id": idx + 1,
                 "rotulo": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
                 "seccion": str(elem.get("seccion_padre", "INFORMACIÓN GENERAL")),
+                "contexto_fila": " | ".join(filas_map.get((str(elem.get("hoja", "")), int(elem.get("fila", 0) or 0)), [str(elem.get("valor") or elem.get("rotulo") or "").strip()])),
+                "vecino_abajo": str(elem.get("vecino_abajo_texto") or elem.get("vecino_abajo") or "").strip(),
                 "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
                 "_elem_orig": elem,
             }
@@ -315,6 +332,8 @@ def ejecutar_stage_3_mapper(
                     "id": idx + 1,
                     "rotulo": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
                     "seccion": "INFORMACIÓN GENERAL",
+                    "contexto_fila": str(elem.get("valor") or elem.get("rotulo") or "").strip(),
+                    "vecino_abajo": str(elem.get("vecino_abajo_texto") or elem.get("vecino_abajo") or "").strip(),
                     "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
                     "_elem_orig": elem,
                 }
@@ -326,7 +345,16 @@ def ejecutar_stage_3_mapper(
     # Construir payload compacto estructurado con Taxonomía Semántica
     taxonomia_d = estructurar_perfil_taxonomia(ctx.datos_empresa)
     payload = {
-        "F": [{"id": c["id"], "rotulo": c["rotulo"], "seccion": c["seccion"]} for c in campos_viables],
+        "F": [
+            {
+                "id": c["id"],
+                "rotulo": c["rotulo"],
+                "seccion": c["seccion"],
+                "contexto_fila": c.get("contexto_fila", ""),
+                "vecino_abajo": c.get("vecino_abajo", ""),
+            }
+            for c in campos_viables
+        ],
         "D": taxonomia_d,
     }
     

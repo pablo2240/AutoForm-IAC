@@ -96,7 +96,13 @@ Recibes un objeto JSON con:
    - "id": Identificador numérico único.
    - "rotulo": Texto original detectado.
    - "seccion": Título o encabezado contextual de la sección donde reside el rótulo.
+   - "contexto_fila": Texto completo de la fila física actual donde se encuentra el rótulo (elementos adyacentes en la misma fila).
+   - "vecino_abajo": Texto del elemento situado inmediatamente debajo en la siguiente fila (si existe).
 2. "D": Objeto con la Taxonomía Maestra de la empresa descrita arriba.
+
+## REGLA DE PRIORIDAD CONTEXTUAL (IMPORTANTE)
+- Utiliza `contexto_fila` y `vecino_abajo` ÚNICAMENTE cuando el `rotulo` sea ambiguo o genérico (ej. 'Número', 'No.', 'N°', 'ID', 'Nombre', 'Valor', 'Código', 'Fecha').
+- Si el `rotulo` es inequívoco y claro por sí solo (ej. 'NIT:', 'Correo electrónico:', 'Dirección:', 'Banco:', 'Teléfono:', 'Representante Legal:'), ignora el contexto adicional para evitar confundirte o distraerte con información redundante o campos vecinos de la misma fila.
 
 ## PRINCIPIOS DE INFERENCIA SEMÁNTICA POR CATEGORÍA (CATEGORY-FIRST MATCHING)
 
