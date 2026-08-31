@@ -412,8 +412,16 @@ def rellenar_formulario_excel(
             rango_dest_chk = _celda_en_merge(ws, fila_destino, columna_destino)
             if rango_dest_chk is not None and (rango_dest_chk.min_row <= fila_origen <= rango_dest_chk.max_row):
                 fila_destino = rango_dest_chk.max_row + 1
-        else:
 
+        elif ubicacion == "arriba":
+            if rango_origen is not None:
+                fila_destino    = max(1, rango_origen.min_row - 1)
+                columna_destino = rango_origen.min_col
+            else:
+                fila_destino    = max(1, fila_origen - 1)
+                columna_destino = columna_origen
+
+        else:
             reporte.append(_log_item("ERROR", item, None, 0, 0, f"Ubicación inválida: '{ubicacion}'"))
             continue
 

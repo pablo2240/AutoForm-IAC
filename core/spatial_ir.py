@@ -550,7 +550,7 @@ def construir_ir(
 
                 # Dirección de escritura heredada del parser
                 dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-                if dir_esc not in ("derecha", "abajo", "misma"):
+                if dir_esc not in ("derecha", "abajo", "misma", "arriba"):
                     dir_esc = "derecha"
 
                 # Ancho de línea de captura

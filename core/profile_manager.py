@@ -64,13 +64,17 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
                     if prefijo:
                         plano[f"{prefijo}.{k}"] = v
 
-    # Extraer datos de las 3 ramas principales
-    if "empresa" in datos or "representante_legal" in datos or "financiero" in datos:
-        if "empresa" in datos:
+    # Extraer datos de las 3 ramas principales si son diccionarios anidados
+    es_jerarquico = any(
+        isinstance(datos.get(k), dict)
+        for k in ("empresa", "representante_legal", "financiero")
+    )
+    if es_jerarquico:
+        if isinstance(datos.get("empresa"), dict):
             _extraer(datos["empresa"], "empresa")
-        if "representante_legal" in datos:
+        if isinstance(datos.get("representante_legal"), dict):
             _extraer(datos["representante_legal"], "representante_legal")
-        if "financiero" in datos:
+        if isinstance(datos.get("financiero"), dict):
             _extraer(datos["financiero"], "financiero")
         # Mantener claves adicionales que puedan estar en la raíz
         for k, v in datos.items():

@@ -382,7 +382,7 @@ def preparar_tabla_verificacion(
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             ubic = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-            if ubic not in ("derecha", "abajo", "misma"):
+            if ubic not in ("derecha", "abajo", "misma", "arriba"):
                 ubic = "derecha"
 
             fila_dict = {
@@ -626,7 +626,7 @@ def render_pantalla_verificacion(
             "Dirección",
             help="Hacia dónde se inyectará el dato respecto al rótulo",
             width="small",
-            options=["derecha", "abajo", "misma"],
+            options=["derecha", "abajo", "misma", "arriba"],
             required=True,
         ),
         # Columnas internas ocultas

@@ -247,8 +247,11 @@ def clasificar_elementos_formulario(
             # Determinar dirección de escritura recomendada con PRIORIDAD a la física real de la celda
             derecha_vacia = bool(elem.get("derechaVacia", False))
             abajo_vacia = bool(elem.get("abajoVacia", False))
+            arriba_linea = bool(elem.get("tieneLineaFirmaArriba", False) or elem.get("celdaConBordeSuperior", False) or elem.get("arribaConBordeInferior", False))
 
-            if derecha_vacia and not abajo_vacia:
+            if elem.get("tipoEspacioEscritura") == "arriba" or (arriba_linea and not derecha_vacia):
+                ubicacion_sugerida = "arriba"
+            elif derecha_vacia and not abajo_vacia:
                 ubicacion_sugerida = "derecha"
                 if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
                     tipo_clasif = ClasificacionElemento.CAMPO_ENTRADA
@@ -256,7 +259,7 @@ def clasificar_elementos_formulario(
                 ubicacion_sugerida = "abajo"
             else:
                 ubicacion_sugerida = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-                if ubicacion_sugerida not in ("derecha", "abajo", "misma"):
+                if ubicacion_sugerida not in ("derecha", "abajo", "misma", "arriba"):
                     ubicacion_sugerida = "derecha"
                 if tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
                     ubicacion_sugerida = "abajo"

@@ -85,6 +85,8 @@ def _deduplicar_destinos(mapeos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         
         if ubic == "abajo":
             coord_dest = (hoja, fila + 1, col)
+        elif ubic == "arriba":
+            coord_dest = (hoja, max(1, fila - 1), col)
         elif ubic == "misma":
             coord_dest = (hoja, fila, col)
         else:
@@ -354,7 +356,7 @@ def ejecutar_stage_3_mapper(
 
             ancho_l = int(elem_orig.get("anchoLinea", 1) or 1)
             ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
-            if ubic not in ("derecha", "abajo", "misma"):
+            if ubic not in ("derecha", "abajo", "misma", "arriba"):
                 ubic = "derecha"
 
             plan_item = {
