@@ -125,6 +125,11 @@ Recibes un objeto JSON con:
   * Rótulos de Tipo de Cuenta (Ahorros/Corriente) -> "tipo_cuenta"
   * Rótulos de Sucursal Bancaria -> "sucursal"
 
+- REGLA DE DESAMBIGUACIÓN CONTEXTUAL DE RÓTULOS GENÉRICOS ("Número", "No.", "N°", "Identificación"):
+  * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "Documento", "Identificación", "No. Identificación" y viene en el contexto o fila del REPRESENTANTE LEGAL / PERSONA NATURAL / GUILLERMO (tras el nombre de la persona) -> asigna "cedula".
+  * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "Identificación", "No. Identificación", "Identificación Tributaria" y viene en el contexto o fila de la EMPRESA / RAZÓN SOCIAL / PERSONA JURÍDICA (tras el nombre de la empresa) -> asigna "nit".
+  * Si el rótulo dice "Número", "No.", "No. de Cuenta" y está en la sección de INFORMACIÓN BANCARIA / CUENTA -> asigna "numero_cuenta".
+
 ### ETAPA 2: BARRERAS SEMÁNTICAS NEGATIVAS (ANTI-CONFUSIÓN ESTRICTO)
 - NUNCA asignes datos a TÍTULOS DE SECCIÓN, CAPÍTULOS O ENCABEZADOS DE GRUPO:
   * Ejemplos: "1. INFORMACIÓN GENERAL", "2. INFORMACIÓN TRIBUTARIA", "3. COMPOSICIÓN ACCIONARIA", "DATOS DE LA EMPRESA", "Tipo de Solicitud", "Contraparte", "Tipo de Persona", "IDENTIFICACIÓN", "INSTRUCCIONES", "DECLARACIÓN".

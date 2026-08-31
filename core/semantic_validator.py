@@ -67,9 +67,21 @@ _CAMPOS_FECHA: Set[str] = {"fecha_expedicion", "fecha_nacimiento", "fecha_consti
 # Campos del perfil que almacenan valores numéricos o con formato
 _CAMPOS_NUMERICOS: Set[str] = {"nit", "cedula", "numero_cuenta"}
 
-# Secciones semánticamente propias del representante legal
-# (afecta corrección telefono→celular y cedula vs. nit)
-_TOKENS_SECCION_REP_LEGAL = {"representante", "apoderado", "persona natural", "rep legal"}
+# Secciones semánticamente propias del representante legal / persona natural
+_TOKENS_SECCION_REP_LEGAL = {
+    "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular",
+}
+
+# Secciones semánticamente propias de la empresa / persona jurídica / proponente
+_TOKENS_SECCION_EMPRESA = {
+    "empresa", "sociedad", "persona juridica", "razon social", "proponente", "oferente",
+    "proveedor", "cliente", "tributaria", "tributario", "solicitante", "entidad", "general", "basica",
+}
+
+# Secciones semánticamente bancarias / financieras
+_TOKENS_SECCION_BANCARIA = {
+    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos",
+}
 
 # Tokens que identifican secciones de terceros u uso interno
 _TOKENS_SECCION_OMITIR = {
@@ -90,6 +102,7 @@ def _normalizar(txt: str) -> str:
         c for c in unicodedata.normalize("NFD", str(txt).lower())
         if unicodedata.category(c) != "Mn"
     )
+    sin_acentos = sin_acentos.replace("°", "").replace("º", "")
     return re.sub(r"[\s_\-\./\\]+", " ", sin_acentos).strip()
 
 
@@ -274,8 +287,9 @@ def _regla_telefono_en_seccion_rep_legal(
 def _regla_autocorrecciones_semanticas_adicionales(
     campo: str,
     rotulo_normalizado: str,
+    seccion_normalizada: str = "",
 ) -> Tuple[str, str]:
-    """R5b (autocorrecciones semánticas de negocio solicitadas)."""
+    """R5b (autocorrecciones semánticas de negocio solicitadas con desambiguación contextual)."""
     # 1. Ciudad / Departamento combinado
     if re.search(r"\bciudad[\s/]+departamento\b|\bciudad[\s/]+depto\b|\bmunicipio[\s/]+departamento\b", rotulo_normalizado):
         if campo != "ciudad_departamento":
@@ -301,12 +315,38 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if campo != "tipo_documento":
             return "tipo_documento", "Rótulo 'Tipo de Identificación' → asignado a 'tipo_documento'."
 
-    # 6. Identificación / Número de Identificación / Nro de Identificación -> cedula (si no dice NIT y no pide Tipo)
-    if "tipo" not in rotulo_normalizado and "clase" not in rotulo_normalizado:
-        if re.search(r"\bnumero\s+de\s+identificacion\b|\bnro\s+de\s+identificacion\b|\bno\s+de\s+identificacion\b|\bidentificacion\s+no\b|\bidentificacion\b|\bno\s+identificacion\b", rotulo_normalizado):
-            if "nit" not in rotulo_normalizado and "tributaria" not in rotulo_normalizado:
-                if campo != "cedula":
-                    return "cedula", "Rótulo 'Identificación / No. Identificación' → asignado a 'cedula'."
+    # 5b. Número de Cuenta / No. de Cuenta / Cuenta No. -> numero_cuenta
+    if re.search(r"\b(?:n[uú]mero|no|nro|num)?\s*(?:de\s+)?cuenta\b", rotulo_normalizado):
+        if "tipo" not in rotulo_normalizado and "clase" not in rotulo_normalizado:
+            if campo != "numero_cuenta":
+                return "numero_cuenta", "Rótulo 'No. de Cuenta / Cuenta' → asignado a 'numero_cuenta'."
+
+    # 6. Desambiguación Contextual de 'Número', 'No.', 'N°', 'Identificación' (Empresa vs Representante vs Bancario)
+    es_rotulo_numero_o_id = bool(
+        re.match(r"^\s*(?:n[uú]mero|no|n|nro|num|identificaci[oó]n|documento|id|no\s*doc)[°º\.:]?\s*$", rotulo_normalizado, re.IGNORECASE)
+        or re.search(r"\b(?:n[uú]mero|nro|no|n[°º]?)\s*(?:de\s+)?(?:identificaci[oó]n|documento|id|nit|c[eé]dula|cuenta)\b", rotulo_normalizado)
+        or re.search(r"\b(?:identificaci[oó]n|documento|cuenta)\s*(?:no|n[uú]mero|nro|n[°º])?\b", rotulo_normalizado)
+    )
+
+    if es_rotulo_numero_o_id and "tipo" not in rotulo_normalizado and "clase" not in rotulo_normalizado:
+        # Contexto Bancario / Cuenta
+        if any(t in seccion_normalizada for t in _TOKENS_SECCION_BANCARIA):
+            if campo != "numero_cuenta":
+                return "numero_cuenta", "Rótulo 'Número' en contexto Bancario → asignado a 'numero_cuenta'."
+
+        # Contexto Representante Legal / Persona Natural (o si el campo ya apuntaba a representante)
+        elif any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL) or "representante" in rotulo_normalizado or "apoderado" in rotulo_normalizado or "natural" in rotulo_normalizado or "persona natural" in seccion_normalizada:
+            if campo != "cedula":
+                return "cedula", "Rótulo 'Número/Identificación' en contexto de Representante Legal → asignado a 'cedula'."
+
+        # Contexto Empresa / Razón Social / Persona Jurídica / General
+        elif "nit" in rotulo_normalizado or "tributaria" in rotulo_normalizado or any(t in seccion_normalizada for t in _TOKENS_SECCION_EMPRESA):
+            if campo != "nit":
+                return "nit", "Rótulo 'Número/Identificación' en contexto de Empresa/Persona Jurídica → asignado a 'nit'."
+
+        # Si no hay sección específica pero dice Identificación -> cedula por defecto
+        elif campo not in ("cedula", "nit", "numero_cuenta"):
+            return "cedula", "Rótulo 'Identificación / Número' → asignado a 'cedula'."
 
     return campo, ""
 
@@ -419,7 +459,7 @@ def validar_item_mapeo(
         resultado["motivo"] = motivo_r5
 
     campo_ajustado_r5b, motivo_r5b = _regla_autocorrecciones_semanticas_adicionales(
-        campo_original, rotulo_norm
+        campo_original, rotulo_norm, seccion_norm
     )
     if motivo_r5b:
         campo_original = campo_ajustado_r5b

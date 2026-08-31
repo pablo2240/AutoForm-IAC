@@ -82,7 +82,7 @@ _TERMINOS_CAMPO_CORTO = re.compile(
     r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombre|tel[eé]fono|celular|direcci[oó]n|"
     r"correo|email|ciudad|municipio|departamento|pa[ií]s|cargo|banco|cuenta|"
     r"p[aá]gina|web|objeto|actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
-    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede)\b",
+    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento)\b",
     re.IGNORECASE
 )
 

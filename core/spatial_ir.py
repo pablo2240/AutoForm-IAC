@@ -258,7 +258,7 @@ _TERMINOS_CAMPO_CORTO = re.compile(
     r"tel[eé]fono|celular|direcci[oó]n|correo|email|ciudad|municipio|"
     r"departamento|pa[ií]s|cargo|banco|cuenta|p[aá]gina|web|objeto|"
     r"actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
-    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede)\b",
+    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento)\b",
     re.IGNORECASE,
 )
 
