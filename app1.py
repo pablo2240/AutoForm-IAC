@@ -109,9 +109,10 @@ def _safe_rerun():
 
 
 # 1. Configuración de pantalla con el Sistema de Diseño IAC
+logo_favicon_path = Path("assets") / "logo_iac_cropped.png"
 st.set_page_config(
     page_title="AutoForm AI | IAC Latam",
-    page_icon="⚡",
+    page_icon=str(logo_favicon_path) if logo_favicon_path.exists() else "⚡",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -428,7 +429,11 @@ st.markdown(f"""
 
 # 4. Sidebar Corporativa
 with st.sidebar:
-    st.markdown("### 🏢 **IAC Latam**")
+    logo_sidebar = Path("assets") / "logo_iac_cropped.png"
+    if logo_sidebar.exists():
+        st.image(str(logo_sidebar), width=170)
+    else:
+        st.markdown("### 🏢 **IAC Latam**")
     st.caption("Ingeniería Asistida en Computadora")
     st.markdown("---")
 
