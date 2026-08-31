@@ -130,6 +130,9 @@ def es_titulo_seccion(texto: str) -> bool:
     # 2. Mayúsculas sostenidas típicas de títulos
     t_norm = _normalizar_texto(t_clean)
     titulos_tipicos_norm = [
+        r"^tipo\s+(?:de\s+)?(?:solicitud|persona|proveedor|cliente|empresa|vinculacion|actualizacion|sociedad|contribuyente)$",
+        r"^contraparte$",
+        r"^persona\s+(?:natural|juridica)$",
         r"^representante\s+(?:legal|juridico)(?:\s*\(.*?\))?$",
         r"^datos\s+(?:de\s+la\s+empresa|generales|del\s+proponente|del\s+oferente|del\s+proveedor|de\s+la\s+sociedad)(?:\s*\(.*?\))?$",
         r"^datos\s+del\s+representante\s+(?:legal|juridico)?(?:\s*\(.*?\))?$",

@@ -381,6 +381,18 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # ── R0: Descarte de Títulos de Sección, Instrucciones y Opciones ────────
+    try:
+        from pipeline.stages.stage_2_classifier import es_titulo_seccion, _PATRON_OPCIONES_SELECCION
+        if es_titulo_seccion(rotulo) or _PATRON_OPCIONES_SELECCION.match(rotulo):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"El rótulo '{rotulo}' es un título o encabezado decorativo y no un campo de entrada."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+    except ImportError:
+        pass
+
     # ── R1: Tipo de elemento compatible ─────────────────────────────────────
     ok_tipo, msg_tipo = _regla_tipo_elemento_compatible(tipo_elemento)
     if not ok_tipo:

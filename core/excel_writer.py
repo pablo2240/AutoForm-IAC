@@ -467,6 +467,22 @@ def rellenar_formulario_excel(
     _celdas_pre = celdas_prellenadas or {}
 
     for item in plan_mapeo:
+        # Descartar ítems descartados por validación o sin campo válido
+        if str(item.get("estado", "")).upper() == "DESCARTADO":
+            continue
+
+        campo_chk = str(item.get("campo", "")).strip()
+        if not campo_chk or campo_chk in ("OMITIR", "[ Omitir / Sin Asignar ]", "None", "null", ""):
+            continue
+
+        rotulo_chk = str(item.get("valor", "")).strip()
+        try:
+            from pipeline.stages.stage_2_classifier import es_titulo_seccion
+            if es_titulo_seccion(rotulo_chk):
+                continue
+        except ImportError:
+            pass
+
         hoja_nombre = str(item.get("hoja", ""))
         if hoja_nombre not in workbook.sheetnames:
             reporte.append(_log_item("ERROR", item, None, 0, 0, f"Hoja '{hoja_nombre}' no existe"))

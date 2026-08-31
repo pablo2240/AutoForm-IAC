@@ -126,6 +126,9 @@ Recibes un objeto JSON con:
   * Rótulos de Sucursal Bancaria -> "sucursal"
 
 ### ETAPA 2: BARRERAS SEMÁNTICAS NEGATIVAS (ANTI-CONFUSIÓN ESTRICTO)
+- NUNCA asignes datos a TÍTULOS DE SECCIÓN, CAPÍTULOS O ENCABEZADOS DE GRUPO:
+  * Ejemplos: "1. INFORMACIÓN GENERAL", "2. INFORMACIÓN TRIBUTARIA", "3. COMPOSICIÓN ACCIONARIA", "DATOS DE LA EMPRESA", "Tipo de Solicitud", "Contraparte", "Tipo de Persona", "IDENTIFICACIÓN", "INSTRUCCIONES", "DECLARACIÓN".
+  * Los títulos de sección son meros separadores estructurales del documento, NO casillas de llenado. OMITE COMPLETAMENTE SU ID (no lo incluyas en el JSON).
 - NUNCA cruces dominios:
   * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
   * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
