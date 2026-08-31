@@ -479,35 +479,16 @@ def rellenar_formulario_excel(
             ))
             continue
 
-        # ── Aplicar merge si corresponde ──────────────────────────────────
-        rango_preexistente = _celda_en_merge(ws, fila_destino, columna_destino)
-        rango_combinado: Optional[Tuple[int, int, int, int]] = None
-
-        if (cant_cols_merge > 1 and ubicacion == "derecha"
-                and rango_preexistente is None):
-            col_final = columna_destino + cant_cols_merge - 1
-            rango_combinado = (fila_destino, columna_destino, fila_destino, col_final)
-            try:
-                ws.merge_cells(
-                    start_row=fila_destino, start_column=columna_destino,
-                    end_row=fila_destino,   end_column=col_final,
-                )
-            except Exception as exc_merge:
-                reporte.append(_log_item(
-                    "ERROR", item, valor, fila_destino, columna_destino,
-                    f"Error al combinar celdas: {exc_merge}"
-                ))
-                continue
-
-        # ── Obtener celdas y escribir ─────────────────────────────────────
+        # ── 1. Intentar escribir en la celda destino prevista ─────────────
         celda_destino = _obtener_celda_escribible(ws, fila_destino, columna_destino)
         celda_origen  = _obtener_celda_escribible(ws, fila_origen,  columna_origen)
         es_misma      = (celda_destino.coordinate == celda_origen.coordinate)
 
         escrito = _escribir_valor_en_celda(celda_destino, valor, es_misma, hoja=ws)
 
-        # ── FALLBACK AUTOMÁTICO A ABAJO SI DERECHA ESTÁ BLOQUEADA O FUERA DE LÍMITE ──
+        # ── 2. Fallback en cascada si derecha está bloqueada/ocupada ──────
         if (not escrito or columna_destino >= max_col) and ubicacion == "derecha":
+            # Fallback 2A: Intentar ABAJO
             if rango_origen is not None:
                 fb_fila = rango_origen.max_row + 1
                 fb_col  = rango_origen.min_col
@@ -522,7 +503,43 @@ def rellenar_formulario_excel(
                     columna_destino = fb_col
                     celda_destino = celda_fb
                     escrito = True
-                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada o en el límite del formulario.")
+                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada.")
+
+            # Fallback 2B: Si ABAJO también está ocupada, escribir en la MISMA celda (ej: "NIT: 900123456-7" o "CC: 98555384")
+            if not escrito:
+                celda_misma = _obtener_celda_escribible(ws, fila_origen, columna_origen)
+                if _escribir_valor_en_celda(celda_misma, valor, True, hoja=ws):
+                    fila_destino = fila_origen
+                    columna_destino = columna_origen
+                    celda_destino = celda_misma
+                    es_misma = True
+                    escrito = True
+                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) escrito en la MISMA celda R{fila_origen}C{columna_origen} al estar derecha y abajo ocupadas.")
+
+        # ── 3. Aplicar merge SEGURO solo si se escribió y las celdas contiguas están totalmente vacías ──
+        rango_combinado: Optional[Tuple[int, int, int, int]] = None
+        if escrito and cant_cols_merge > 1 and ubicacion == "derecha" and fila_destino == fila_origen and not es_misma:
+            rango_preexistente = _celda_en_merge(ws, fila_destino, columna_destino)
+            if rango_preexistente is None:
+                max_libres = 1
+                for c_chk in range(columna_destino + 1, min(columna_destino + cant_cols_merge, max_col + 1)):
+                    v_chk = ws.cell(row=fila_destino, column=c_chk).value
+                    r_chk = _celda_en_merge(ws, fila_destino, c_chk)
+                    # Detener merge si hay texto, opciones (CC, SI, NO, etc.) o rangos preexistentes
+                    if (v_chk is not None and str(v_chk).strip() != "") or (r_chk is not None and r_chk.min_col == c_chk):
+                        break
+                    max_libres += 1
+
+                if max_libres > 1:
+                    col_final = columna_destino + max_libres - 1
+                    rango_combinado = (fila_destino, columna_destino, fila_destino, col_final)
+                    try:
+                        ws.merge_cells(
+                            start_row=fila_destino, start_column=columna_destino,
+                            end_row=fila_destino,   end_column=col_final,
+                        )
+                    except Exception as exc_merge:
+                        print(f"[AutoForm Writer Warning] No se pudo combinar celdas: {exc_merge}")
 
 
 
