@@ -67,25 +67,39 @@ def buscar_rescate_vectorial(
 ) -> Optional[Tuple[str, float]]:
     """Compara semánticamente el rótulo contra las descripciones de campos candidatos.
 
-    Args:
-        rotulo: Texto del rótulo del formulario (ej. 'Entidad Bancaria').
-        campos_candidatos: Lista de claves de la empresa disponibles para asignar.
-        umbral: Similitud coseno mínima requerida (0.0 a 1.0, default 0.70).
-
-    Returns:
-        Tupla (mejor_campo, score) si supera el umbral, o None si ningún candidato supera el umbral.
+    1. Paso Ultrarrápido (<0.01ms): Token & Partial Match con RapidFuzz (0 costo de CPU y Red).
+    2. Paso Vectorial (FastEmbed): Rescate profundo con embeddings ONNX.
     """
     if not rotulo or not campos_candidatos:
         return None
 
+    candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA] or list(campos_candidatos)
+    rotulo_norm = rotulo.lower().strip()
+
+    # ── Paso 1: Matcher Léxico-Semántico Inmediato (0ms, 0 Red) ──
+    try:
+        from rapidfuzz import fuzz
+        mejor_c = None
+        mejor_sc = 0.0
+
+        for c in candidatos_validos:
+            desc = DESCRIPCIONES_TAXONOMIA.get(c, c).lower()
+            sc_token = fuzz.token_set_ratio(rotulo_norm, desc)
+            sc_partial = fuzz.partial_ratio(rotulo_norm, desc)
+            sc = max(sc_token, sc_partial)
+            if sc > mejor_sc:
+                mejor_sc = sc
+                mejor_c = c
+
+        if mejor_sc >= (umbral * 100.0) and mejor_c is not None:
+            return mejor_c, mejor_sc / 100.0
+    except ImportError:
+        pass
+
+    # ── Paso 2: FastEmbed ONNX (Solo si se requiere rescate vectorial profundo) ──
     model = _obtener_modelo()
     if model is None:
         return None
-
-    # Filtrar solo candidatos válidos
-    candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA]
-    if not candidatos_validos:
-        candidatos_validos = list(campos_candidatos)
 
     textos_candidatos = [
         f"{c}: {DESCRIPCIONES_TAXONOMIA.get(c, c)}"
@@ -93,11 +107,9 @@ def buscar_rescate_vectorial(
     ]
 
     try:
-        # Generar embeddings de una pasada
         todos_textos = [rotulo] + textos_candidatos
         vectores = np.array(list(model.embed(todos_textos)))
         
-        # Normalizar para similitud coseno
         normas = np.linalg.norm(vectores, axis=1, keepdims=True)
         normas[normas == 0] = 1e-12
         vectores = vectores / normas
