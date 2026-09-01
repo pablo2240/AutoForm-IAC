@@ -23,5 +23,6 @@ numpy>=1.24.0
 
 # Motor PDF v2: OCR ligero para PDFs escaneados (opcional; si no está, se usa IA Visual)
 rapidocr-onnxruntime>=1.3.0
+fastembed>=0.8.0
 
 

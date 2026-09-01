@@ -219,10 +219,40 @@ def _ejecutar_diff_loop_seccion(
                         rescates_count += 1
                         break
 
+    # ── Capa 3: Rescate Semántico Vectorial Local (FastEmbed) ──
+    ids_pendientes = set(ids_omitidos) - {m["id"] for m in mapeos_rescatados}
+    if ids_pendientes:
+        try:
+            from core.fastembed_matcher import buscar_rescate_vectorial
+            candidatos_disponibles = [
+                k for k in datos_empresa.keys()
+                if k not in campos_asignados and datos_empresa.get(k)
+            ]
+            for id_pend in sorted(ids_pendientes):
+                c_info = ids_viables[id_pend]
+                rot_txt = c_info["rotulo"]
+                res_vector = buscar_rescate_vectorial(rot_txt, candidatos_disponibles, umbral=0.68)
+                if res_vector is not None:
+                    campo_res, score = res_vector
+                    mapeos_rescatados.append({
+                        "id": id_pend,
+                        "campo": campo_res,
+                        "ubicacion": c_info.get("tipoEspacioEscritura", "derecha"),
+                    })
+                    campos_asignados.add(campo_res)
+                    if campo_res in candidatos_disponibles:
+                        candidatos_disponibles.remove(campo_res)
+                    rescates_count += 1
+                    ctx.log(
+                        f"[Stage 3 - FastEmbed] 🧠 Rescate vectorial: '{rot_txt}' → '{campo_res}' (Score: {score*100:.1f}%)"
+                    )
+        except Exception:
+            pass
+
     if rescates_count > 0:
         ctx.log(
             f"[Stage 3 - Diff Loop] ⚡ Sección '{titulo_seccion}': {len(ids_omitidos)} omitidos detectados → "
-            f"{rescates_count} rescatados exitosamente por auditoría."
+            f"{rescates_count} rescatados exitosamente por auditoría y vectores."
         )
 
     return mapeos_rescatados
