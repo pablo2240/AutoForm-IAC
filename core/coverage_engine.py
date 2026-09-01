@@ -257,8 +257,6 @@ def ejecutar_pase_cobertura_exhaustiva(
             ubic = str(item.get("ubicacion", "derecha")).lower()
             if ubic == "abajo":
                 coords_destino_ocupadas.add((h, f + 1, c))
-            elif ubic == "arriba":
-                coords_destino_ocupadas.add((h, max(1, f - 1), c))
             elif ubic == "misma":
                 coords_destino_ocupadas.add((h, f, c))
             else:

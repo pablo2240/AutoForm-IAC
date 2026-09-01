@@ -546,34 +546,8 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 if abajo_placeholder:
                     abajo_vacia = True
 
-                # ── Análisis de celda superior (arriba) para líneas de firma y encabezados inferiores ──
-                arriba_fila = fila - 1
-                arriba_columna = columna
-                arriba_vacia = False
-                arriba_con_borde_inferior = False
-                celda_con_borde_superior = False
-
-                if arriba_fila >= 1:
-                    arriba_vacia = _celda_vacia(hoja, arriba_fila, arriba_columna) or _es_placeholder_celda(hoja, arriba_fila, arriba_columna)
-                    bordes_arriba = _analizar_bordes_celda(hoja, arriba_fila, arriba_columna)
-                    arriba_con_borde_inferior = bordes_arriba["bottom"]
-
-                bordes_propios = _analizar_bordes_celda(hoja, fila, columna)
-                celda_con_borde_superior = bordes_propios["top"]
-
-                # Solo aplicar arriba si la celda es semánticamente un rótulo de firma/firmante/identificación
-                es_rotulo_firma = bool(_PATRON_OPCION_CASILLA.search(texto) or re.search(
-                    r"\b(?:firma|firmante|nombres?\s+y\s+apellidos?|nombres?|apellidos?|representante(?:\s+legal)?|revisor(?:\s+fiscal)?|contador|apoderado|huella|c\.?c\.?|c[eé]dula|identificaci[oó]n|n[oú]mero\s+de\s+identificaci[oó]n|cargo|elabor[oó]|revis[oó]|aprob[oó]|solicitante|titular)\b",
-                    texto,
-                    re.IGNORECASE
-                ))
-
-                tiene_linea_firma_arriba = bool(
-                    arriba_vacia and (celda_con_borde_superior or arriba_con_borde_inferior) and es_rotulo_firma
-                )
-
-                # Optimización: si ningún vecino tiene espacio ni es merge ni tiene línea superior de firma, descartar.
-                if not derecha_vacia and not abajo_vacia and not derecha_es_merge and not abajo_es_merge and not tiene_linea_firma_arriba:
+                # Optimización: si ningún vecino tiene espacio ni es merge, descartar.
+                if not derecha_vacia and not abajo_vacia and not derecha_es_merge and not abajo_es_merge:
                     continue
 
                 # ── PARSER-01: Análisis de bordes visuales ──────────────────
@@ -588,11 +562,8 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 tipo_derecha = _calcular_tipo_espacio(derecha_vacia, derecha_es_merge, bordes_derecha)
                 tipo_abajo   = _calcular_tipo_espacio(abajo_vacia,   abajo_es_merge,   bordes_abajo)
 
-                # El tipoEspacioEscritura representa el espacio preferido:
-                # Si tiene línea de firma arriba y derecha no es un cuadro/subrayado explícito, preferir arriba
-                if tiene_linea_firma_arriba and tipo_derecha not in ("merge", "subrayado", "cuadro"):
-                    tipo_espacio_escritura = "arriba"
-                elif tipo_derecha in ("merge", "subrayado", "cuadro", "vacio"):
+                # El tipoEspacioEscritura representa el espacio preferido (derecha o abajo)
+                if tipo_derecha in ("merge", "subrayado", "cuadro", "vacio"):
                     tipo_espacio_escritura = tipo_derecha
                 else:
                     tipo_espacio_escritura = tipo_abajo
@@ -628,10 +599,6 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "valor": texto,
                         "derechaVacia":   derecha_vacia,
                         "abajoVacia":     abajo_vacia,
-                        "arribaVacia":    arriba_vacia,
-                        "tieneLineaFirmaArriba": tiene_linea_firma_arriba,
-                        "celdaConBordeSuperior": celda_con_borde_superior,
-                        "arribaConBordeInferior": arriba_con_borde_inferior,
                         "derechaEsMerge": derecha_es_merge,
                         "abajoEsMerge":   abajo_es_merge,
                         "derechaConBordeInferior": derecha_con_borde_inferior,

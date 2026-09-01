@@ -572,12 +572,13 @@ def rellenar_formulario_excel(
                 fila_destino = rango_dest_chk.max_row + 1
 
         elif ubicacion == "arriba":
-            if rango_origen is not None:
-                fila_destino    = max(1, rango_origen.min_row - 1)
-                columna_destino = rango_origen.min_col
+            # REGLA: Prohibido escribir arriba; re-enrutar de forma segura a la derecha
+            if derecha_es_merge and rango_derecha is not None:
+                fila_destino    = fila_origen
+                columna_destino = rango_derecha.min_col
             else:
-                fila_destino    = max(1, fila_origen - 1)
-                columna_destino = columna_origen
+                fila_destino    = fila_origen
+                columna_destino = columna_origen + 1
 
         else:
             reporte.append(_log_item("ERROR", item, None, 0, 0, f"Ubicación inválida: '{ubicacion}'"))

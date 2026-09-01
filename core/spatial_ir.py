@@ -553,7 +553,7 @@ def construir_ir(
 
                 # Dirección de escritura heredada del parser
                 dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-                if dir_esc not in ("derecha", "abajo", "misma", "arriba"):
+                if dir_esc not in ("derecha", "abajo", "misma"):
                     dir_esc = "derecha"
                 if color and dir_esc == "misma" and not re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "derecha"

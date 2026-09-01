@@ -18,8 +18,8 @@ class MapeoSemanticoItem(BaseModel):
 
     id: int = Field(ge=1, description="ID del rótulo")
     campo: str = Field(description="Clave exacta de DatosEmpresa que satisface la solicitud del rótulo")
-    ubicacion: Literal["derecha", "abajo", "misma", "arriba"] = Field(
-        default="derecha", description="Ubicación elegida por el modelo para escribir el valor ('derecha', 'abajo', 'misma', 'arriba')"
+    ubicacion: Literal["derecha", "abajo", "misma"] = Field(
+        default="derecha", description="Ubicación elegida por el modelo para escribir el valor ('derecha', 'abajo', 'misma')"
     )
 
     @field_validator("ubicacion", mode="before")
@@ -28,7 +28,7 @@ class MapeoSemanticoItem(BaseModel):
         if not isinstance(v, str):
             return "derecha"
         v_clean = v.strip().lower()
-        if v_clean in ("derecha", "abajo", "misma", "arriba"):
+        if v_clean in ("derecha", "abajo", "misma"):
             return v_clean
         return "derecha"
 
@@ -47,7 +47,7 @@ class MapeoItem(BaseModel):
     fila: int = Field(ge=1, description="Fila de origen de la celda (1-indexed)")
     columna: int = Field(ge=1, description="Columna de origen de la celda (1-indexed)")
     valor: str = Field(default="", description="Texto del rótulo original del formulario")
-    ubicacion: Literal["derecha", "abajo", "misma", "arriba"] = Field(
+    ubicacion: Literal["derecha", "abajo", "misma"] = Field(
         default="derecha", description="Ubicación donde escribir el dato de la empresa"
     )
     campo: str = Field(description="Clave exacta coincidente de DatosEmpresa")
@@ -64,7 +64,7 @@ class MapeoItem(BaseModel):
         if not isinstance(v, str):
             return "derecha"
         v_clean = v.strip().lower()
-        if v_clean in ("derecha", "abajo", "misma", "arriba"):
+        if v_clean in ("derecha", "abajo", "misma"):
             return v_clean
         return "derecha"
 
