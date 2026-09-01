@@ -9,7 +9,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
+import os
+import warnings
+
 _MODELO_FASTEMBED = None
+_VECTORES_TAXONOMIA_CACHE: Optional[Dict[str, np.ndarray]] = None
 
 # Descripciones semánticas enriquecidas para cada clave canónica
 DESCRIPCIONES_TAXONOMIA: Dict[str, str] = {
@@ -45,8 +49,11 @@ def _obtener_modelo():
         return _MODELO_FASTEMBED
 
     try:
-        from fastembed import TextEmbedding
-        _MODELO_FASTEMBED = TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
+        os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            from fastembed import TextEmbedding
+            _MODELO_FASTEMBED = TextEmbedding("sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2")
         return _MODELO_FASTEMBED
     except Exception as exc:
         print(f"[AutoForm AI FastEmbed] No se pudo cargar el modelo FastEmbed: {exc}")

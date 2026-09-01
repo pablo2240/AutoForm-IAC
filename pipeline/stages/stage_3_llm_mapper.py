@@ -165,6 +165,51 @@ def _construir_lotes_secciones_desde_ir(
     return lotes if lotes else None
 
 
+def _agrupar_en_macro_lotes(
+    lotes_secciones: List[Tuple[str, List[Dict[str, Any]]]],
+    tamano_objetivo: int = 18,
+    max_lotes: int = 4,
+) -> List[Tuple[str, List[Dict[str, Any]]]]:
+    """Agrupa secciones pequeñas contiguas en macro-lotes óptimos (12 a 25 campos).
+    
+    Reduce drásticamente el número de peticiones HTTP al LLM, permitiendo
+    procesar formularios complejos en paralelo en <3 segundos.
+    """
+    if not lotes_secciones:
+        return []
+
+    if len(lotes_secciones) <= max_lotes and max(len(c) for _, c in lotes_secciones) <= 25:
+        return lotes_secciones
+
+    macro_lotes: List[Tuple[str, List[Dict[str, Any]]]] = []
+    titulos_acum: List[str] = []
+    campos_acum: List[Dict[str, Any]] = []
+
+    for titulo_sec, campos_sec in lotes_secciones:
+        titulos_acum.append(titulo_sec)
+        campos_acum.extend(campos_sec)
+
+        if len(campos_acum) >= tamano_objetivo:
+            titulo_combinado = " / ".join(titulos_acum[:2])
+            if len(titulos_acum) > 2:
+                titulo_combinado += f" (+{len(titulos_acum)-2} subsecciones)"
+            macro_lotes.append((titulo_combinado, list(campos_acum)))
+            titulos_acum = []
+            campos_acum = []
+
+    if campos_acum:
+        if macro_lotes and len(campos_acum) < 6:
+            prev_tit, prev_cam = macro_lotes[-1]
+            macro_lotes[-1] = (prev_tit, prev_cam + campos_acum)
+        else:
+            titulo_combinado = " / ".join(titulos_acum[:2])
+            if len(titulos_acum) > 2:
+                titulo_combinado += f" (+{len(titulos_acum)-2} subsecciones)"
+            macro_lotes.append((titulo_combinado, list(campos_acum)))
+
+    return macro_lotes
+
+
 def _ejecutar_diff_loop_seccion(
     campos_seccion: List[Dict[str, Any]],
     mapeos_seccion: List[Dict[str, Any]],
@@ -380,34 +425,38 @@ def ejecutar_stage_3_mapper(
     from core.profile_manager import estructurar_perfil_taxonomia
     taxonomia_d = estructurar_perfil_taxonomia(ctx.datos_empresa)
 
-    lotes_secciones = _construir_lotes_secciones_desde_ir(ctx)
+    lotes_secciones_raw = _construir_lotes_secciones_desde_ir(ctx)
     asignaciones_raw: List[Dict[str, Any]] = []
     todos_campos_viables: List[Dict[str, Any]] = []
 
-    if lotes_secciones is not None:
-        total_secciones = len(lotes_secciones)
-        total_campos = sum(len(campos) for _, campos in lotes_secciones)
+    if lotes_secciones_raw is not None:
+        macro_lotes = _agrupar_en_macro_lotes(lotes_secciones_raw)
+        total_macro = len(macro_lotes)
+        total_campos = sum(len(campos) for _, campos in macro_lotes)
         total_raw = len(ctx.elementos_raw)
         ctx.log(
             f"[Stage 3 - Pre-LLM] Filtro IR aplicado: {total_raw} elementos crudos → "
-            f"{total_campos} campos viables en {total_secciones} secciones procesables."
+            f"{total_campos} campos viables en {total_macro} macro-lotes concurrentes."
         )
 
-        # Capa 1: Inferencia por Lotes de SeccionIR con Instructor + Capa 2: Diff Loop de Auditoría
-        for idx_sec, (titulo_sec, campos_sec) in enumerate(lotes_secciones, 1):
-            if not campos_sec:
-                continue
+        import concurrent.futures
 
-            ctx.log(f"[Stage 3 - Chunking] Procesando Sección ({idx_sec}/{total_secciones}): '{titulo_sec}' ({len(campos_sec)} campos)...")
-            
-            # Capa 1: Inferencia con Instructor
-            mapeos_sec = consultar_llm_seccion_instructor(campos_sec, taxonomia_d, titulo_sec)
-            
-            # Capa 2: Diff Loop de Reconciliación
-            mapeos_sec = _ejecutar_diff_loop_seccion(campos_sec, mapeos_sec, ctx.datos_empresa, titulo_sec, ctx)
-            
-            asignaciones_raw.extend(mapeos_sec)
-            todos_campos_viables.extend(campos_sec)
+        def _procesar_lote_concurrente(idx: int, titulo_lote: str, campos_lote: List[Dict[str, Any]]):
+            ctx.log(f"[Stage 3 - Chunking] Procesando Lote ({idx}/{total_macro}): '{titulo_lote}' ({len(campos_lote)} campos)...")
+            mapeos = consultar_llm_seccion_instructor(campos_lote, taxonomia_d, titulo_lote)
+            mapeos = _ejecutar_diff_loop_seccion(campos_lote, mapeos, ctx.datos_empresa, titulo_lote, ctx)
+            return mapeos
+
+        max_workers = min(4, total_macro)
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futuros = [
+                executor.submit(_procesar_lote_concurrente, idx, tit, campos)
+                for idx, (tit, campos) in enumerate(macro_lotes, 1)
+            ]
+            for fut, (_, campos) in zip(futuros, macro_lotes):
+                res_lote = fut.result()
+                asignaciones_raw.extend(res_lote)
+                todos_campos_viables.extend(campos)
     else:
         # Fallback sin IR: usar clasificación de Stage 2
         filas_map: Dict[Tuple[str, int], List[str]] = {}

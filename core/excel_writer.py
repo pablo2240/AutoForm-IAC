@@ -108,6 +108,15 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if campo == "identificacion" and "identificacion" not in plano:
         return plano.get("cedula")
 
+    if campo in ("correo_electronico", "email", "e-mail") and campo not in plano:
+        return plano.get("correo")
+
+    if campo in ("telefono_fijo", "telefono_principal", "pbx") and campo not in plano:
+        return plano.get("telefono")
+
+    if campo in ("telefono_celular", "celular_contacto", "movil") and campo not in plano:
+        return plano.get("celular")
+
     # Acceso por ruta anidada terminal
     if "." in campo:
         subcampo = campo.split(".")[-1]
@@ -370,12 +379,17 @@ def _preservar_vml_y_controles(bytes_original: bytes, bytes_openpyxl: bytes) -> 
 
                     rel_matches = re.findall(r'<Relationship\s+[^>]*?(?:vmlDrawing|ctrlProp|control)[^>]*?/>', orig_rels_xml, re.IGNORECASE)
                     if rel_matches and op_rels_xml:
+                        existing_ids = set(re.findall(r'Id=["\']([^"\']+)["\']', op_rels_xml))
                         for rel in rel_matches:
-                            if rel not in op_rels_xml:
-                                op_rels_xml = op_rels_xml.replace("</Relationships>", f"  {rel}\n</Relationships>")
+                            rel_id_match = re.search(r'Id=["\']([^"\']+)["\']', rel)
+                            if rel_id_match:
+                                r_id = rel_id_match.group(1)
+                                if r_id not in existing_ids:
+                                    op_rels_xml = op_rels_xml.replace("</Relationships>", f"  {rel}\n</Relationships>")
+                                    existing_ids.add(r_id)
                         op_data[n] = op_rels_xml.encode("utf-8")
 
-        # 3. Restaurar tags <legacyDrawing> y <controls> en sheet*.xml con sus namespaces
+        # 3. Restaurar tags <legacyDrawing> y <controls> en sheet*.xml respetando el orden canónico ECMA-376
         for n in orig_names:
             if n.startswith("xl/worksheets/sheet") and n.endswith(".xml"):
                 if n in orig_data and n in op_data:
@@ -388,26 +402,32 @@ def _preservar_vml_y_controles(bytes_original: bytes, bytes_openpyxl: bytes) -> 
                         ns_attrs = re.findall(r'(xmlns:[a-zA-Z0-9_]+=["\'][^"\']+["\'])', orig_ws_tag.group(0))
                         for ns in ns_attrs:
                             prefix = ns.split("=")[0]
-                            if prefix not in op_sheet_xml[:300]:
+                            if prefix not in op_sheet_xml[:400]:
                                 op_sheet_xml = op_sheet_xml.replace('<worksheet ', f'<worksheet {ns} ', 1)
 
                     # Extraer <legacyDrawing .../> y <controls ...>
                     legacy_match = re.search(r'<legacyDrawing\s+[^>]*?/>', orig_sheet_xml)
                     controls_match = re.search(r'(?:<mc:AlternateContent\b[^>]*>.*?<controls\b[^>]*>.*?</controls>.*?</mc:AlternateContent>|<controls\b[^>]*>.*?</controls>)', orig_sheet_xml, re.DOTALL)
 
-                    inyectado = False
-                    tags_a_insertar = ""
-                    if legacy_match and "legacyDrawing" not in op_sheet_xml:
-                        tags_a_insertar += f"\n  {legacy_match.group(0)}"
-                        inyectado = True
-                    if controls_match and "<controls" not in op_sheet_xml:
-                        tags_a_insertar += f"\n  {controls_match.group(0)}"
-                        inyectado = True
+                    legacy_tag = legacy_match.group(0) if (legacy_match and "legacyDrawing" not in op_sheet_xml) else ""
+                    controls_tag = controls_match.group(0) if (controls_match and "<controls" not in op_sheet_xml) else ""
 
-                    if inyectado:
-                        if "</worksheet>" in op_sheet_xml:
-                            op_sheet_xml = op_sheet_xml.replace("</worksheet>", f"{tags_a_insertar}\n</worksheet>")
-                            op_data[n] = op_sheet_xml.encode("utf-8")
+                    tags_a_insertar = ""
+                    if legacy_tag:
+                        tags_a_insertar += f"\n  {legacy_tag}"
+                    if controls_tag:
+                        tags_a_insertar += f"\n  {controls_tag}"
+
+                    if tags_a_insertar:
+                        # ECMA-376: legacyDrawing y controls DEBEN ir antes de tableParts y extLst
+                        if "<tableParts" in op_sheet_xml:
+                            op_sheet_xml = op_sheet_xml.replace("<tableParts", f"{tags_a_insertar}\n  <tableParts", 1)
+                        elif "<extLst" in op_sheet_xml:
+                            op_sheet_xml = op_sheet_xml.replace("<extLst", f"{tags_a_insertar}\n  <extLst", 1)
+                        elif "</worksheet>" in op_sheet_xml:
+                            op_sheet_xml = op_sheet_xml.replace("</worksheet>", f"{tags_a_insertar}\n</worksheet>", 1)
+
+                        op_data[n] = op_sheet_xml.encode("utf-8")
 
         # 4. Restaurar [Content_Types].xml
         if "[Content_Types].xml" in orig_data and "[Content_Types].xml" in op_data:
