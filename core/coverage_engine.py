@@ -152,19 +152,19 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 4: Datos de la Empresa (General) ──
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:raz[oó]n\s+social|nombre\s*/?\s*razon\s+social|nombre\s+comercial|nombre\s+de\s+la\s+empresa|denominaci[oó]n\s+social)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:raz[oó]n\s+social|nombre\s*/?\s*razon\s+social|nombre\s+o\s+raz[oó]n\s+social|nombre\s+comercial|nombre\s+de\s+la\s+empresa|denominaci[oó]n\s+social)\s*$", re.IGNORECASE),
         "razon_social",
         "derecha",
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:nit|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nit(?:\s+o\s+cc)?|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|nit\s+o\s+identificaci[oó]n\s+tributaria)\s*$", re.IGNORECASE),
         "nit",
         "derecha",
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:direcci[oó]n(?:\s+principal)?|domicilio(?:\s+principal)?|sede\s+principal)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:direcci[oó]n(?:\s+principal|\s+domicilio\s+principal)?|domicilio(?:\s+principal)?|sede\s+principal)\s*$", re.IGNORECASE),
         "direccion",
         "derecha",
     ),

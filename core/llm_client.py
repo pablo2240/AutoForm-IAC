@@ -265,6 +265,109 @@ def invocar_llm(prompt: str, sistema: str = "", timeout: int = 60) -> str:
     return consultar_llm(prompt, sistema=sistema_completo, json_mode=True, timeout=timeout)
 
 
+def obtener_cliente_instructor():
+    """Retorna un cliente Instructor configurado sobre OpenAI o Azure OpenAI."""
+    if instructor is None or openai is None:
+        return None
+    
+    usar_azure = bool(AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY)
+    if usar_azure:
+        try:
+            raw_client = openai.AzureOpenAI(
+                api_key=AZURE_OPENAI_API_KEY,
+                api_version=AZURE_OPENAI_API_VERSION,
+                azure_endpoint=AZURE_OPENAI_ENDPOINT,
+            )
+            return instructor.from_openai(raw_client)
+        except Exception as exc:
+            print(f"[AutoForm AI LLM] Error al inicializar Azure OpenAI Instructor: {exc}")
+            return None
+    
+    if OPENAI_API_KEY:
+        try:
+            raw_client = openai.OpenAI(api_key=OPENAI_API_KEY)
+            return instructor.from_openai(raw_client)
+        except Exception as exc:
+            print(f"[AutoForm AI LLM] Error al inicializar OpenAI Instructor: {exc}")
+            return None
+            
+    return None
+
+
+def consultar_llm_seccion_instructor(
+    campos_seccion: List[Dict[str, Any]],
+    taxonomia_d: Dict[str, Any],
+    titulo_seccion: str = "GENERAL",
+    timeout: int = 45,
+) -> List[Dict[str, Any]]:
+    """Capa 1: Inferencia estructurada por sección usando Instructor + Pydantic V2.
+    
+    Valida la salida contra PlanMapeoSemantico y reintenta automáticamente en caso de
+    inconsistencias o campos faltantes.
+    """
+    if not campos_seccion:
+        return []
+
+    client = obtener_cliente_instructor()
+    
+    payload = {
+        "F": [
+            {
+                "id": c["id"],
+                "rotulo": c["rotulo"],
+                "seccion": c.get("seccion", titulo_seccion),
+                "contexto_fila": c.get("contexto_fila", ""),
+                "vecino_abajo": c.get("vecino_abajo", ""),
+            }
+            for c in campos_seccion
+        ],
+        "D": taxonomia_d,
+        "seccion_actual": titulo_seccion,
+    }
+    
+    prompt_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
+    
+    if client is not None:
+        modelo = AZURE_OPENAI_DEPLOYMENT_NAME if (AZURE_OPENAI_ENDPOINT and AZURE_OPENAI_API_KEY) else (OPENAI_MODEL or "gpt-4o-mini")
+        try:
+            plan_validado = client.chat.completions.create(
+                model=modelo,
+                response_model=PlanMapeoSemantico,
+                max_retries=2,
+                messages=[
+                    {"role": "system", "content": STRICT_SYSTEM_PROMPT},
+                    {"role": "user", "content": prompt_str},
+                ],
+            )
+            # Convertir Pydantic a lista de diccionarios
+            return [
+                {"id": item.id, "campo": item.campo, "ubicacion": item.ubicacion}
+                for item in plan_validado.mappings
+            ]
+        except Exception as exc:
+            print(f"[AutoForm AI Instructor] Aviso: reintentando vía JSON mode estándar ({exc})")
+    
+    # Fallback transparente a invocar_llm si instructor no está disponible o falla
+    resp_raw = invocar_llm(prompt_str, timeout=timeout)
+    
+    try:
+        import re
+        texto_limpio = resp_raw.strip()
+        if "```" in texto_limpio:
+            match = re.search(r"```(?:json)?\s*([\s\S]*?)\s*```", texto_limpio)
+            if match:
+                texto_limpio = match.group(1).strip()
+        data = json.loads(texto_limpio)
+        if isinstance(data, dict) and "mappings" in data:
+            return data["mappings"]
+        if isinstance(data, list):
+            return data
+    except Exception as exc:
+        print(f"[AutoForm AI LLM] Error al parsear JSON en fallback: {exc}")
+        
+    return []
+
+
 def consultar_llm_semantico(
     intenciones: List[Any],
     datos_empresa: Dict[str, Any],

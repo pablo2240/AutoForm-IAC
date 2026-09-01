@@ -22,7 +22,7 @@ import re
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.llm_client import invocar_llm
+from core.llm_client import consultar_llm_seccion_instructor, invocar_llm
 from pipeline.context import PipelineContext
 from template_store.store import (
     calcular_hash_formulario,
@@ -102,20 +102,16 @@ def _deduplicar_destinos(mapeos: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# HSP Fase 3: Filtro Pre-LLM basado en IR
+# HSP Fase 3 & Capa 1: Chunking por SeccionIR y Diff Loop (Auditoría)
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _construir_campos_viables_desde_ir(
+def _construir_lotes_secciones_desde_ir(
     ctx: PipelineContext,
-) -> Optional[List[Dict[str, Any]]]:
-    """Si la IR está disponible, filtra elementos por tipo y sección.
+) -> Optional[List[Tuple[str, List[Dict[str, Any]]]]]:
+    """Si la IR está disponible, filtra elementos por tipo y los agrupa por sección.
 
-    Retorna solo los elementos clasificados como FIELD o UNKNOWN dentro
-    de secciones procesables. OPTION, SECTION_TITLE, DECORATIVE,
-    INSTRUCTION y LEGAL_TEXT son descartados pre-LLM.
-
-    Returns:
-        Lista de campos viables enriquecidos con sección, o None si la IR no está disponible.
+    Retorna una lista de tuplas (titulo_seccion, campos_viables_seccion) donde
+    cada campo contiene un ID numérico global continuo.
     """
     if ctx.documento_ir is None:
         return None
@@ -125,7 +121,7 @@ def _construir_campos_viables_desde_ir(
     except ImportError:
         return None
 
-    campos: List[Dict[str, Any]] = []
+    lotes: List[Tuple[str, List[Dict[str, Any]]]] = []
     id_counter = 0
     tipos_viables = {TipoElemento.FIELD, TipoElemento.UNKNOWN}
 
@@ -138,23 +134,20 @@ def _construir_campos_viables_desde_ir(
         ):
             continue
 
+        campos_seccion: List[Dict[str, Any]] = []
         for fila in seccion.filas:
-            # Construir contexto de fila uniendo únicamente los textos de los elementos de la fila actual
             textos_fila = [e.texto.strip() for e in fila.elementos if e.texto and e.texto.strip()]
             contexto_fila = " | ".join(textos_fila)
 
             for elem in fila.elementos:
-                # Solo enviar al LLM los elementos clasificados como FIELD o UNKNOWN
                 if elem.tipo_elemento not in tipos_viables:
                     continue
 
                 id_counter += 1
-
-                # Buscar el elemento raw original para preservar coordenadas
                 elem_orig = elem.propiedades_raw or {}
                 vecino_abajo = str(elem.vecino_abajo_texto or elem_orig.get("vecino_abajo_texto") or elem_orig.get("vecino_abajo") or "").strip()
 
-                campos.append({
+                campos_seccion.append({
                     "id": id_counter,
                     "rotulo": elem.texto,
                     "seccion": seccion.titulo,
@@ -166,7 +159,73 @@ def _construir_campos_viables_desde_ir(
                     "_seccion_titulo": seccion.titulo,
                 })
 
-    return campos if campos else None
+        if campos_seccion:
+            lotes.append((seccion.titulo, campos_seccion))
+
+    return lotes if lotes else None
+
+
+def _ejecutar_diff_loop_seccion(
+    campos_seccion: List[Dict[str, Any]],
+    mapeos_seccion: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+    titulo_seccion: str,
+    ctx: PipelineContext,
+) -> List[Dict[str, Any]]:
+    """Capa 2: Diff Loop de Auditoría y Reconciliación en Python ($0 costo API).
+
+    Calcula: campos_omitidos = campos_viables_seccion - campos_mapeados_exitosamente.
+    Si hay campos omitidos y la empresa tiene datos disponibles en este dominio,
+    ejecuta rescate determinista inmediato.
+    """
+    ids_viables = {c["id"]: c for c in campos_seccion}
+    ids_mapeados = {m["id"] for m in mapeos_seccion if m.get("campo")}
+    ids_omitidos = set(ids_viables.keys()) - ids_mapeados
+
+    if not ids_omitidos:
+        return mapeos_seccion
+
+    try:
+        from core.coverage_engine import (
+            PAT_SECCION_REP_LEGAL,
+            PAT_SECCION_FINANCIERO,
+            PAT_SECCION_EMPRESA,
+            PATRONES_SWEEP,
+        )
+    except ImportError:
+        return mapeos_seccion
+
+    titulo_norm = titulo_seccion.lower()
+    campos_asignados = {m["campo"] for m in mapeos_seccion}
+    mapeos_rescatados = list(mapeos_seccion)
+    rescates_count = 0
+
+    for id_omitido in sorted(ids_omitidos):
+        c_info = ids_viables[id_omitido]
+        rotulo_txt = c_info["rotulo"]
+        rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_txt).strip()
+
+        for pat_sec, pat_rot, campo_dest, dir_fall in PATRONES_SWEEP:
+            # Si el patrón de sección o el contexto aplican
+            if (pat_sec.search(titulo_norm) or not (PAT_SECCION_REP_LEGAL.search(titulo_norm) or PAT_SECCION_FINANCIERO.search(titulo_norm))):
+                if pat_rot.search(rotulo_txt) or pat_rot.search(rotulo_limpio):
+                    if campo_dest not in campos_asignados and datos_empresa.get(campo_dest):
+                        mapeos_rescatados.append({
+                            "id": id_omitido,
+                            "campo": campo_dest,
+                            "ubicacion": c_info.get("tipoEspacioEscritura", dir_fall),
+                        })
+                        campos_asignados.add(campo_dest)
+                        rescates_count += 1
+                        break
+
+    if rescates_count > 0:
+        ctx.log(
+            f"[Stage 3 - Diff Loop] ⚡ Sección '{titulo_seccion}': {len(ids_omitidos)} omitidos detectados → "
+            f"{rescates_count} rescatados exitosamente por auditoría."
+        )
+
+    return mapeos_rescatados
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -285,24 +344,42 @@ def ejecutar_stage_3_mapper(
                     pass
                 return ctx
 
-    # ── RUTA 2: Inferencia con IA (LLM) ──
-    ctx.log("[Stage 3 - Mapper] Consultando modelo de lenguaje (OpenAI)...")
+    # ── RUTA 2: Inferencia con IA (OpenAI + Instructor) ──
+    ctx.log("[Stage 3 - Mapper] Consultando modelo de lenguaje con Chunking por SeccionIR...")
     
-    # HSP Fase 3: Intentar filtro inteligente desde la IR
-    campos_viables_ir = _construir_campos_viables_desde_ir(ctx)
-    
-    if campos_viables_ir is not None:
-        # Ruta HSP: campos pre-filtrados por tipo de elemento desde la IR
-        campos_viables = campos_viables_ir
+    from core.profile_manager import estructurar_perfil_taxonomia
+    taxonomia_d = estructurar_perfil_taxonomia(ctx.datos_empresa)
+
+    lotes_secciones = _construir_lotes_secciones_desde_ir(ctx)
+    asignaciones_raw: List[Dict[str, Any]] = []
+    todos_campos_viables: List[Dict[str, Any]] = []
+
+    if lotes_secciones is not None:
+        total_secciones = len(lotes_secciones)
+        total_campos = sum(len(campos) for _, campos in lotes_secciones)
         total_raw = len(ctx.elementos_raw)
-        total_filtrado = len(campos_viables)
         ctx.log(
-            f"[Stage 3 - Pre-LLM] Filtro IR aplicado: {total_raw} elementos → "
-            f"{total_filtrado} campos viables ({total_raw - total_filtrado} descartados pre-LLM: "
-            f"OPTION, DECORATIVE, LEGAL_TEXT, SECTION_TITLE)."
+            f"[Stage 3 - Pre-LLM] Filtro IR aplicado: {total_raw} elementos crudos → "
+            f"{total_campos} campos viables en {total_secciones} secciones procesables."
         )
+
+        # Capa 1: Inferencia por Lotes de SeccionIR con Instructor + Capa 2: Diff Loop de Auditoría
+        for idx_sec, (titulo_sec, campos_sec) in enumerate(lotes_secciones, 1):
+            if not campos_sec:
+                continue
+
+            ctx.log(f"[Stage 3 - Chunking] Procesando Sección ({idx_sec}/{total_secciones}): '{titulo_sec}' ({len(campos_sec)} campos)...")
+            
+            # Capa 1: Inferencia con Instructor
+            mapeos_sec = consultar_llm_seccion_instructor(campos_sec, taxonomia_d, titulo_sec)
+            
+            # Capa 2: Diff Loop de Reconciliación
+            mapeos_sec = _ejecutar_diff_loop_seccion(campos_sec, mapeos_sec, ctx.datos_empresa, titulo_sec, ctx)
+            
+            asignaciones_raw.extend(mapeos_sec)
+            todos_campos_viables.extend(campos_sec)
     else:
-        # Fallback: usar clasificación de Stage 2 (flujo existente)
+        # Fallback sin IR: usar clasificación de Stage 2
         filas_map: Dict[Tuple[str, int], List[str]] = {}
         for elem in ctx.elementos_clasificados:
             h = str(elem.get("hoja", ""))
@@ -326,7 +403,6 @@ def ejecutar_stage_3_mapper(
         ]
 
         if not campos_viables:
-            # Fallback último: elementos crudos
             campos_viables = [
                 {
                     "id": idx + 1,
@@ -337,33 +413,21 @@ def ejecutar_stage_3_mapper(
                     "tipoEspacioEscritura": str(elem.get("tipoEspacioEscritura", "derecha")),
                     "_elem_orig": elem,
                 }
-                for idx, elem in enumerate(elementos)
+                for idx, elem in enumerate(ctx.elementos_raw or [])
             ]
 
-    from core.profile_manager import estructurar_perfil_taxonomia
+        # Chunking de seguridad de 15 en 15 campos
+        CHUNK_SIZE = 15
+        for i in range(0, len(campos_viables), CHUNK_SIZE):
+            chunk = campos_viables[i:i + CHUNK_SIZE]
+            mapeos_chunk = consultar_llm_seccion_instructor(chunk, taxonomia_d, "GENERAL")
+            mapeos_chunk = _ejecutar_diff_loop_seccion(chunk, mapeos_chunk, ctx.datos_empresa, "GENERAL", ctx)
+            asignaciones_raw.extend(mapeos_chunk)
 
-    # Construir payload compacto estructurado con Taxonomía Semántica
-    taxonomia_d = estructurar_perfil_taxonomia(ctx.datos_empresa)
-    payload = {
-        "F": [
-            {
-                "id": c["id"],
-                "rotulo": c["rotulo"],
-                "seccion": c["seccion"],
-                "contexto_fila": c.get("contexto_fila", ""),
-                "vecino_abajo": c.get("vecino_abajo", ""),
-            }
-            for c in campos_viables
-        ],
-        "D": taxonomia_d,
-    }
-    
-    prompt_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    respuesta_llm = invocar_llm(prompt_str)
-    asignaciones_raw = _extraer_json_respuesta(respuesta_llm)
+        todos_campos_viables = campos_viables
 
     # Reconstruir coordenadas físicas
-    indice_campos = {c["id"]: c for c in campos_viables}
+    indice_campos = {c["id"]: c for c in todos_campos_viables}
     plan_reconstruido: List[Dict[str, Any]] = []
 
     for item in asignaciones_raw:
