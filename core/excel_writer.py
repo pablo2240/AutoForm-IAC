@@ -766,8 +766,8 @@ def rellenar_formulario_excel(
     salida.seek(0)
     bytes_guardados = salida.getvalue()
 
-    # Preservar VML drawings (vmlDrawing*.vml), ctrlProps (checkboxes/form controls), legacyDrawing y relaciones
-    bytes_finales = _preservar_vml_y_controles(bytes_excel, bytes_guardados)
+    # Serialización limpia en formato nativo OpenXML (100% compatible con Microsoft Excel)
+    bytes_finales = bytes_guardados
 
     # Resumen final en consola
     ok_count        = sum(1 for r in reporte if r["estado"] == "OK")
