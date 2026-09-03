@@ -83,6 +83,22 @@ _TOKENS_SECCION_BANCARIA = {
     "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos",
 }
 
+_TOKENS_FINANCIEROS_AMPLIOS = {
+    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos", "pago", "transferencia", "contab", "giro", "tesoreria"
+}
+
+# Secciones y tokens de contacto comercial / operativo
+_TOKENS_CONTACTO_COMERCIAL = {
+    "contacto", "asesor", "consultor", "ejecutivo", "comercial", "operativo"
+}
+
+_ROTULOS_GENERICOS_BLOQUEADOS = {
+    "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras", "pep", "si", "no"
+}
+
+_CAMPOS_BANCARIOS = {"banco", "numero_cuenta", "tipo_cuenta", "sucursal"}
+_CAMPOS_REP_LEGAL = {"representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion"}
+
 # Tokens que identifican secciones de terceros u uso interno
 _TOKENS_SECCION_OMITIR = {
     "tercero", "proveedor externo", "para uso de", "uso exclusivo",
@@ -440,6 +456,45 @@ def validar_item_mapeo(
         resultado["motivo"] = msg_tipo
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
+
+    # ── Safe Passivity (ADR-0004): Contacto comercial y opciones ──────────
+    es_contacto = (
+        any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial"))
+        or (any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL) and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL))
+    )
+    if es_contacto:
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = "Safe Passivity (ADR-0004): Campo de contacto comercial reservado para diligenciamiento manual por el asesor."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
+    rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_norm).strip()
+    if rotulo_limpio in _ROTULOS_GENERICOS_BLOQUEADOS or (campo_original in ("numero_cuenta", "tipo_cuenta", "correo", "celular") and rotulo_limpio in ("cliente", "vinculacion", "otros", "otro", "pep")):
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = f"Safe Passivity (ADR-0004): Rótulo genérico u opción '{rotulo}' no admite asignación automática de '{campo_original}'."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
+    # ── Domain Isolation (ADR-0004): Aislamiento estricto por categoría ──
+    if campo_original in _CAMPOS_BANCARIOS:
+        es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS)
+        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal"))
+        if not (es_sec_fin or es_rot_fin):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation (ADR-0004): Campo bancario '{campo_original}' prohibido en sección no financiera ('{seccion}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
+    if campo_original in _CAMPOS_REP_LEGAL:
+        if any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección de Contacto ('{seccion}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
 
     # ── Autocorrecciones estructurales y semánticas previas (R4, R5, R5b) ────
     campo_ajustado_r4, motivo_r4 = _regla_no_asignar_tipo_documento_a_compuesto(

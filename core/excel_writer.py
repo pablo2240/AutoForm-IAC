@@ -279,30 +279,9 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         except AttributeError:
             return False
 
-    # 2. Si termina en dos puntos (ej: "NOMBRE / RAZON SOCIAL:" o "DIRECCIÓN:")
-    if txt_actual.endswith(":"):
-        try:
-            celda.value = f"{txt_actual} {valor}"
-            return True
-        except AttributeError:
-            return False
-
-    # 3. Si contiene dos puntos en el texto (ej: "Ciudad : ")
-    if ":" in txt_actual:
-        partes = txt_actual.split(":", 1)
-        rotulo_limpio = partes[0].strip()
-        try:
-            celda.value = f"{rotulo_limpio}: {valor}"
-            return True
-        except AttributeError:
-            return False
-
-    # 4. Si es un rótulo sin dos puntos (ej: "NOMBRE / RAZON SOCIAL"):
-    try:
-        celda.value = f"{txt_actual}: {valor}"
-        return True
-    except AttributeError:
-        return False
+    # REGLA ESTRICTA ADR-0004: NUNCA concatenar texto "rotulo: valor" sobre rótulos limpios.
+    # Si la celda contiene un rótulo o texto real, se rechaza la escritura en la misma celda.
+    return False
 
 
 
@@ -556,6 +535,11 @@ def rellenar_formulario_excel(
                 else:
                     columna_destino = columna_origen + 1
 
+                # Si el parser detectó que la línea de captura inicia tras celdas espaciadoras
+                inicio_linea = int(item.get("inicioLineaCol", 0) or 0)
+                if inicio_linea >= columna_destino:
+                    columna_destino = inicio_linea
+
 
 
         elif ubicacion == "abajo":
@@ -672,16 +656,9 @@ def rellenar_formulario_excel(
                     escrito = True
                     print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) re-enrutado a ABAJO R{fb_fila}C{fb_col} al estar DERECHA ocupada.")
 
-            # Fallback 2B: Si ABAJO también está ocupada, escribir en la MISMA celda (ej: "NIT: 900123456-7" o "CC: 98555384")
+            # Fallback 2B ELIMINADO (ADR-0004): Prohibido escribir en celda_misma
             if not escrito:
-                celda_misma = _obtener_celda_escribible(ws, fila_origen, columna_origen)
-                if _escribir_valor_en_celda(celda_misma, valor, True, hoja=ws):
-                    fila_destino = fila_origen
-                    columna_destino = columna_origen
-                    celda_destino = celda_misma
-                    es_misma = True
-                    escrito = True
-                    print(f"[AutoForm Writer Fallback] Campo '{campo}' ({valor}) escrito en la MISMA celda R{fila_origen}C{columna_origen} al estar derecha y abajo ocupadas.")
+                print(f"[AutoForm Writer Warning] Campo '{campo}' ({valor}) no pudo escribirse a derecha ni abajo sin corromper rótulo.")
 
         # ── 3. Aplicar merge SEGURO solo si se escribió y las celdas contiguas están totalmente vacías ──
         rango_combinado: Optional[Tuple[int, int, int, int]] = None

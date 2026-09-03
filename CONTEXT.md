@@ -29,8 +29,11 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | :--- | :--- | :--- |
 | **`Rótulo` (Label)** | The text label in the form asking for information (e.g. *"Razón Social:"*, *"NIT o CC:"*). | "Prompt", "Pregunta", "Header" |
 | **`Campo de Entrada` (Input Field)** | The physical target cell or coordinate where the value must be written. | "Hueco", "Casilla vacía" |
-| **`Ubicación Física`** | Direction from the label to the input field: strictly `derecha`, `abajo`, or `misma`. | "arriba" (strictly forbidden) |
-| **`DatosEmpresa`** | Enterprise profile dictionary (`config/datos_empresa.json`) containing canonical enterprise keys (`razon_social`, `nit`, `representante_legal`, `cedula`, etc.). | "JSON global", "Variables" |
+| **`Ubicación Física`** | Direction from the label to the input field: strictly `derecha`, `abajo`, or `misma` (where `misma` is only allowed if the label contains inline fill dots `___`). Writing `arriba` is strictly forbidden. | "arriba" |
+| **`Underline Ray-Casting`** | Mandatory detection of bottom-bordered cells (`bottom_border`) or merged ranges contiguously to the right, ensuring values are placed on the underline line `______`. | "Escritura inline forzada" |
+| **`Domain Isolation`** | Categorical barrier strictly segregating banking/accounting and legal representative fields by section domain. Cross-domain mapping is prohibited regardless of lexical similarity. | "Fuzzy match libre" |
+| **`Safe Passivity`** | Safety policy marking checkboxes, option buttons (`OPTION`), unmapped generic tokens (`Vinculación`, `Otros`, `PEP`, `SI`, `NO`), and commercial contact fields (`Nombre del Contacto`, `Cargo`, etc.) as `DESCARTADO` (empty) so each salesperson can fill their own info manually without being polluted by company or representative data. | "Forzado de sobrantes" |
+| **`DatosEmpresa`** | Enterprise profile dictionary (`config/datos_empresa.json`) containing official institutional entities: `empresa`, `representante_legal`, `financiero`. | "JSON global", "Variables" |
 | **`PlanMapeo`** | List of validated mapping directives linking a `Rótulo` coordinate to a canonical `DatosEmpresa` key and destination cell. | "Mapeador", "Lista de campos" |
 | **`MacroLote`** | Balanced batch of 15–25 fields grouped by spatial section for parallel LLM inference via `ThreadPoolExecutor`. | "Micro-batch", "Chunk crudo" |
 | **`Diff Loop`** | Pure-Python audit pass comparing viable fields against mapped fields to trigger immediate recovery before rendering. | "Filtro posterior" |
@@ -43,3 +46,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0001: Native OpenXML Serialization`](docs/adr/0001-openxml-native-serialization.md)
 * [`ADR-0002: Deterministic Hybrid Spatial Pipeline (HSP)`](docs/adr/0002-deterministic-hybrid-pipeline-hsp.md)
 * [`ADR-0003: Zero-Omission Triad (Chunking + Diff Loop + FastEmbed)`](docs/adr/0003-triad-zero-omission.md)
+* [`ADR-0004: Domain Isolation, Underline Ray-Casting & Safe Passivity`](docs/adr/0004-domain-isolation-and-underline-raycasting.md)

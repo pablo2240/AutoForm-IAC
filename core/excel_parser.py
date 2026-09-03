@@ -198,42 +198,38 @@ def _calcular_ubicacion_fisica(
     derecha_es_merge: bool,
     tipo_espacio: str,
     color_fondo: str = "",
+    derecha_con_borde_inf: bool = False,
+    ancho_linea: int = 1,
 ) -> str:
     """Calcula la ubicación de escritura usando flags espaciales y estilo visual de la celda.
 
-    Jerarquía determinista:
-      1. Si la celda tiene fondo sombreado (color_fondo):
-         NUNCA escribir en la misma celda. Redirigir a la celda de entrada con borde/espacio
-         a la DERECHA (o ABAJO si es cabecera o derecha bloqueada).
-      2. Texto declarativo inline (____) sin fondo sombreado: escribir en la MISMA celda.
-      3. Espacio libre a la derecha → DERECHA.
-      4. Derecha bloqueada pero abajo libre → ABAJO.
-      5. Fallback seguro → DERECHA.
+    Jerarquía determinista (ADR-0004):
+      1. Regla estricta: 'misma' SOLO se permite si el rótulo mismo contiene la línea
+         de puntos o guiones inline dentro de su propio texto (ej. "Yo, ________").
+      2. Si la derecha tiene espacio, es merge, tiene borde inferior (subrayado) o
+         ancho_linea > 1 → DERECHA obligatoria.
+      3. Si la derecha está bloqueada pero abajo libre → ABAJO.
+      4. Fallback seguro → DERECHA.
     Returns:
         str: "misma" | "derecha" | "abajo"
     """
-    tiene_fondo = bool(color_fondo and str(color_fondo).strip())
-
-    # Regla 0: Celdas con fondo sombreado (gris/color) NUNCA se escriben en 'misma'
-    if tiene_fondo:
-        espacio_derecha = derecha_vacia or derecha_es_merge
-        if espacio_derecha and tipo_espacio != "abajo":
-            return "derecha"
-        if abajo_vacia:
-            return "abajo"
-        return "derecha"
-
-    # Regla 1: Texto declarativo con guiones inline sin fondo → escribir MISMA celda
+    # Regla 1: Texto declarativo con guiones inline dentro del propio rótulo
     if _PATRON_INLINE_GUIONES.search(val_rotulo):
         return "misma"
 
-    # Regla 2: Hay espacio libre a la derecha → escribir a la DERECHA
-    espacio_derecha_libre = derecha_vacia or derecha_es_merge
-    if espacio_derecha_libre and tipo_espacio != "abajo":
+    # Regla 2: Espacio libre, subrayado o merge a la derecha → DERECHA
+    espacio_derecha = (
+        derecha_vacia
+        or derecha_es_merge
+        or derecha_con_borde_inf
+        or ancho_linea > 1
+        or tipo_espacio in ("subrayado", "merge", "cuadro", "vacio")
+    )
+    if espacio_derecha and tipo_espacio != "abajo":
         return "derecha"
 
-    # Regla 3: Derecha bloqueada pero abajo libre → cabecera de tabla → ABAJO
-    if not espacio_derecha_libre and abajo_vacia:
+    # Regla 3: Derecha bloqueada pero abajo libre → ABAJO
+    if abajo_vacia:
         return "abajo"
 
     # Regla 4: Fallback seguro → DERECHA
@@ -518,7 +514,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
 
                 # 3. Estado de vecinos: vacío / combinado (consultas O(1))
                 max_hoja_col = hoja.max_column or 1
-                derecha_vacia   = _celda_vacia(hoja, derecha_fila, derecha_columna) if derecha_columna <= max_hoja_col else False
+                derecha_vacia   = _celda_vacia(hoja, derecha_fila, derecha_columna)
                 abajo_vacia     = _celda_vacia(hoja, abajo_fila, abajo_columna)
 
                 rango_derecha   = mapa_merges.get((derecha_fila, derecha_columna))

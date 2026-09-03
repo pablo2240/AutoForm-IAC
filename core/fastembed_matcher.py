@@ -60,23 +60,46 @@ def _obtener_modelo():
         return None
 
 
+import re
+
+_BLACKLIST_ROTULOS_GENERICOS = {
+    "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras",
+    "pep", "si", "no", "s", "n", "na", "n/a", "opcion", "opciones", "seleccione",
+    "declaracion", "firma", "huella", "fecha", "dia", "mes", "ano", "año",
+}
+
+_PATRON_CONTACTO_COMERCIAL_RESCATE = re.compile(
+    r"\b(?:contacto|asesor|consultor|ejecutivo\s+comercial)\b",
+    re.IGNORECASE
+)
+
+
 def buscar_rescate_vectorial(
     rotulo: str,
     campos_candidatos: List[str],
-    umbral: float = 0.70,
+    umbral: float = 0.78,
 ) -> Optional[Tuple[str, float]]:
     """Compara semánticamente el rótulo contra las descripciones de campos candidatos.
 
-    1. Paso Ultrarrápido (<0.01ms): Token & Partial Match con RapidFuzz (0 costo de CPU y Red).
-    2. Paso Vectorial (FastEmbed): Rescate profundo con embeddings ONNX.
+    1. Filtro Safe Passivity: Descartar rótulos genéricos o de contacto comercial.
+    2. Paso Ultrarrápido (<0.01ms): Token Match con RapidFuzz (0 costo de CPU y Red).
+    3. Paso Vectorial (FastEmbed): Rescate profundo con embeddings ONNX.
     """
     if not rotulo or not campos_candidatos:
         return None
 
-    candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA] or list(campos_candidatos)
     rotulo_norm = rotulo.lower().strip()
+    rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_norm).strip()
 
-    # ── Paso 1: Matcher Léxico-Semántico Inmediato (0ms, 0 Red) ──
+    # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto
+    if rotulo_limpio in _BLACKLIST_ROTULOS_GENERICOS or len(rotulo_limpio) < 3:
+        return None
+    if _PATRON_CONTACTO_COMERCIAL_RESCATE.search(rotulo_norm):
+        return None
+
+    candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA] or list(campos_candidatos)
+
+    # ── Paso 1: Matcher Léxico-Semántico Inmediato con Token Set Ratio ──
     try:
         from rapidfuzz import fuzz
         mejor_c = None
@@ -84,9 +107,8 @@ def buscar_rescate_vectorial(
 
         for c in candidatos_validos:
             desc = DESCRIPCIONES_TAXONOMIA.get(c, c).lower()
-            sc_token = fuzz.token_set_ratio(rotulo_norm, desc)
-            sc_partial = fuzz.partial_ratio(rotulo_norm, desc)
-            sc = max(sc_token, sc_partial)
+            # Usar token_set_ratio estricto (no partial_ratio) para evitar falsos positivos
+            sc = fuzz.token_set_ratio(rotulo_norm, desc)
             if sc > mejor_sc:
                 mejor_sc = sc
                 mejor_c = c

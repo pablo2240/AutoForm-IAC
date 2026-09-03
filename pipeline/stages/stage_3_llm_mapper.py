@@ -243,13 +243,29 @@ def _ejecutar_diff_loop_seccion(
     mapeos_rescatados = list(mapeos_seccion)
     rescates_count = 0
 
+    # Domain Isolation (ADR-0004): Banderas de categoría de sección
+    es_sec_financiera = bool(re.search(r"banco|cuenta|financier|pago|transferencia|contab|giro|tesoreria", titulo_norm))
+    es_sec_rep_legal = bool(re.search(r"representante|rep\s*legal|firmante|declaracion|legal|gerente|apoderado", titulo_norm))
+    es_sec_contacto = bool(re.search(r"contacto|asesor|comercial|ejecutivo|operativo", titulo_norm)) and not es_sec_rep_legal
+
     for id_omitido in sorted(ids_omitidos):
         c_info = ids_viables[id_omitido]
         rotulo_txt = c_info["rotulo"]
-        rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_txt).strip()
+        rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_txt).strip().lower()
+
+        # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto comercial
+        if rotulo_limpio in ("cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "pep", "si", "no"):
+            continue
+        if re.search(r"\b(?:contacto|asesor|consultor|ejecutivo)\b", rotulo_txt, re.IGNORECASE) or es_sec_contacto:
+            continue
 
         for pat_sec, pat_rot, campo_dest, dir_fall in PATRONES_SWEEP:
-            # Si el patrón de sección o el contexto aplican
+            # Domain Isolation: verificar coherencia de dominio antes de asignar
+            if campo_dest in ("banco", "numero_cuenta", "tipo_cuenta", "sucursal") and not es_sec_financiera:
+                continue
+            if campo_dest in ("representante_legal", "cedula", "lugar_expedicion") and not es_sec_rep_legal and not pat_sec.search(titulo_norm):
+                continue
+
             if (pat_sec.search(titulo_norm) or not (PAT_SECCION_REP_LEGAL.search(titulo_norm) or PAT_SECCION_FINANCIERO.search(titulo_norm))):
                 if pat_rot.search(rotulo_txt) or pat_rot.search(rotulo_limpio):
                     if campo_dest not in campos_asignados and datos_empresa.get(campo_dest):
@@ -262,7 +278,7 @@ def _ejecutar_diff_loop_seccion(
                         rescates_count += 1
                         break
 
-    # ── Capa 3: Rescate Semántico Vectorial Local (FastEmbed) ──
+    # ── Capa 3: Rescate Semántico Vectorial Local (FastEmbed / RapidFuzz) ──
     ids_pendientes = set(ids_omitidos) - {m["id"] for m in mapeos_rescatados}
     if ids_pendientes:
         try:
@@ -271,10 +287,24 @@ def _ejecutar_diff_loop_seccion(
                 k for k in datos_empresa.keys()
                 if k not in campos_asignados and datos_empresa.get(k)
             ]
+            # Domain Isolation: Enjaulado estricto por categoría de sección
+            if not es_sec_financiera:
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in ("banco", "numero_cuenta", "tipo_cuenta", "sucursal")]
+            if not es_sec_rep_legal:
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in ("representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion")]
+            if es_sec_contacto:
+                candidatos_disponibles = []  # No rescatar datos institucionales para contacto comercial
+
             for id_pend in sorted(ids_pendientes):
                 c_info = ids_viables[id_pend]
                 rot_txt = c_info["rotulo"]
-                res_vector = buscar_rescate_vectorial(rot_txt, candidatos_disponibles, umbral=0.68)
+                rot_limpio = re.sub(r"[:：_\.\s]+$", "", rot_txt).strip().lower()
+                if rot_limpio in ("cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "pep", "si", "no"):
+                    continue
+                if re.search(r"\b(?:contacto|asesor|consultor|ejecutivo)\b", rot_txt, re.IGNORECASE):
+                    continue
+
+                res_vector = buscar_rescate_vectorial(rot_txt, candidatos_disponibles, umbral=0.78)
                 if res_vector is not None:
                     campo_res, score = res_vector
                     mapeos_rescatados.append({
