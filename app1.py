@@ -111,7 +111,7 @@ def _safe_rerun():
 # 1. Configuración de pantalla con el Sistema de Diseño IAC
 logo_favicon_path = Path("assets") / "favicon_iac.png"
 st.set_page_config(
-    page_title="AutoForm AI | IAC Latam",
+    page_title="AutoForm EXCEL | IAC Latam",
     page_icon=str(logo_favicon_path) if logo_favicon_path.exists() else "⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -418,7 +418,7 @@ motor_label = f"AZURE OPENAI ({nombre_despliegue.upper()}) ACTIVE" if (os.getenv
 st.markdown(f"""
     <div class="iac-header">
         <div>
-            <h1 class="iac-title">⚡ AutoForm <span>AI</span></h1>
+            <h1 class="iac-title">⚡ AutoForm <span>EXCEL</span></h1>
             <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
         </div>
         <div class="iac-badge">
