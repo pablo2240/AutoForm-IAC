@@ -29,6 +29,7 @@ except ImportError:
 
 DEFAULT_TEMPLATES_DIR = Path("config") / "templates"
 LEGACY_CACHE_FILE = Path("config") / "plantillas_cache.json"
+CURRENT_ADR_VERSION = "0004"
 
 
 def _normalizar_texto(texto: str) -> str:
@@ -123,6 +124,7 @@ def guardar_plantilla(
     
     datos_plantilla = {
         "plantilla_id": plantilla_id,
+        "adr_version": CURRENT_ADR_VERSION,
         "nombre_formulario": nombre_formulario,
         "tipo_documento": tipo_documento,
         "version": "1.0",
@@ -145,14 +147,19 @@ def cargar_plantilla(
     plantilla_id: str,
     directorio: Path = DEFAULT_TEMPLATES_DIR,
 ) -> Optional[Dict[str, Any]]:
-    """Carga una plantilla específica desde el disco si existe."""
+    """Carga una plantilla específica desde el disco si existe y cumple con la versión de ADR."""
     archivo_json = directorio / f"{plantilla_id}.json"
     if not archivo_json.exists():
         return None
 
     try:
         with open(archivo_json, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # Invalidación por versión de ADR (ADR-0004): descarta plantillas con mapeos obsoletos
+            if str(data.get("adr_version", "")) < CURRENT_ADR_VERSION:
+                print(f"[TemplateStore] ⚠️ Plantilla '{plantilla_id}' obsoleta (ADR < {CURRENT_ADR_VERSION}). Se re-procesará con IA.")
+                return None
+            return data
     except Exception as e:
         print(f"[TemplateStore] Error al leer plantilla '{plantilla_id}': {e}")
         return None
@@ -196,6 +203,10 @@ def buscar_plantilla_por_similitud(
         try:
             with open(archivo, "r", encoding="utf-8") as f:
                 plantilla = json.load(f)
+
+            # Invalidación por versión de ADR (ADR-0004)
+            if str(plantilla.get("adr_version", "")) < CURRENT_ADR_VERSION:
+                continue
 
             huella_guardada = plantilla.get("huella", "")
             if not huella_guardada:

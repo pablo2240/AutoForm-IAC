@@ -6,11 +6,17 @@ contra el perfil taxonómico de la empresa en CPU (<5ms, costo $0 de API).
 
 from __future__ import annotations
 
+import os
+import re
+import warnings
 from typing import Any, Dict, List, Optional, Tuple
 import numpy as np
 
-import os
-import warnings
+from core.domain_constants import (
+    ROTULOS_GENERICOS_BLOQUEADOS,
+    PATRON_CONTACTO_COMERCIAL,
+    limpiar_rotulo,
+)
 
 _MODELO_FASTEMBED = None
 _VECTORES_TAXONOMIA_CACHE: Optional[Dict[str, np.ndarray]] = None
@@ -60,20 +66,6 @@ def _obtener_modelo():
         return None
 
 
-import re
-
-_BLACKLIST_ROTULOS_GENERICOS = {
-    "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras",
-    "pep", "si", "no", "s", "n", "na", "n/a", "opcion", "opciones", "seleccione",
-    "declaracion", "firma", "huella", "fecha", "dia", "mes", "ano", "año",
-}
-
-_PATRON_CONTACTO_COMERCIAL_RESCATE = re.compile(
-    r"\b(?:contacto|asesor|consultor|ejecutivo\s+comercial)\b",
-    re.IGNORECASE
-)
-
-
 def buscar_rescate_vectorial(
     rotulo: str,
     campos_candidatos: List[str],
@@ -89,12 +81,12 @@ def buscar_rescate_vectorial(
         return None
 
     rotulo_norm = rotulo.lower().strip()
-    rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_norm).strip()
+    rotulo_limpio = limpiar_rotulo(rotulo_norm)
 
     # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto
-    if rotulo_limpio in _BLACKLIST_ROTULOS_GENERICOS or len(rotulo_limpio) < 3:
+    if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS or len(rotulo_limpio) < 3:
         return None
-    if _PATRON_CONTACTO_COMERCIAL_RESCATE.search(rotulo_norm):
+    if PATRON_CONTACTO_COMERCIAL.search(rotulo_norm):
         return None
 
     candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA] or list(campos_candidatos)

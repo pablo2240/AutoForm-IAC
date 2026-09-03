@@ -30,6 +30,18 @@ from template_store.store import (
     buscar_plantilla_por_similitud,
     adaptar_plan_a_formulario,
 )
+from core.domain_constants import (
+    DomainCategory,
+    ROTULOS_GENERICOS_BLOQUEADOS,
+    PATRON_CONTACTO_COMERCIAL,
+    CAMPOS_BANCARIOS,
+    CAMPOS_REP_LEGAL,
+    CAMPOS_EMPRESA,
+    TOKENS_FINANCIEROS_SECCION,
+    TOKENS_REP_LEGAL_SECCION,
+    TOKENS_CONTACTO_SECCION,
+    limpiar_rotulo,
+)
 
 
 def _extraer_json_respuesta(texto: str) -> List[Dict[str, Any]]:
@@ -244,26 +256,26 @@ def _ejecutar_diff_loop_seccion(
     rescates_count = 0
 
     # Domain Isolation (ADR-0004): Banderas de categoría de sección
-    es_sec_financiera = bool(re.search(r"banco|cuenta|financier|pago|transferencia|contab|giro|tesoreria", titulo_norm))
-    es_sec_rep_legal = bool(re.search(r"representante|rep\s*legal|firmante|declaracion|legal|gerente|apoderado", titulo_norm))
-    es_sec_contacto = bool(re.search(r"contacto|asesor|comercial|ejecutivo|operativo", titulo_norm)) and not es_sec_rep_legal
+    es_sec_financiera = any(t in titulo_norm for t in TOKENS_FINANCIEROS_SECCION)
+    es_sec_rep_legal = any(t in titulo_norm for t in TOKENS_REP_LEGAL_SECCION)
+    es_sec_contacto = any(t in titulo_norm for t in TOKENS_CONTACTO_SECCION) and not es_sec_rep_legal
 
     for id_omitido in sorted(ids_omitidos):
         c_info = ids_viables[id_omitido]
         rotulo_txt = c_info["rotulo"]
-        rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_txt).strip().lower()
+        rotulo_limpio = limpiar_rotulo(rotulo_txt)
 
         # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto comercial
-        if rotulo_limpio in ("cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "pep", "si", "no"):
+        if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
             continue
-        if re.search(r"\b(?:contacto|asesor|consultor|ejecutivo)\b", rotulo_txt, re.IGNORECASE) or es_sec_contacto:
+        if PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto:
             continue
 
         for pat_sec, pat_rot, campo_dest, dir_fall in PATRONES_SWEEP:
             # Domain Isolation: verificar coherencia de dominio antes de asignar
-            if campo_dest in ("banco", "numero_cuenta", "tipo_cuenta", "sucursal") and not es_sec_financiera:
+            if campo_dest in CAMPOS_BANCARIOS and not es_sec_financiera:
                 continue
-            if campo_dest in ("representante_legal", "cedula", "lugar_expedicion") and not es_sec_rep_legal and not pat_sec.search(titulo_norm):
+            if campo_dest in CAMPOS_REP_LEGAL and not es_sec_rep_legal and not pat_sec.search(titulo_norm):
                 continue
 
             if (pat_sec.search(titulo_norm) or not (PAT_SECCION_REP_LEGAL.search(titulo_norm) or PAT_SECCION_FINANCIERO.search(titulo_norm))):
@@ -289,19 +301,19 @@ def _ejecutar_diff_loop_seccion(
             ]
             # Domain Isolation: Enjaulado estricto por categoría de sección
             if not es_sec_financiera:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in ("banco", "numero_cuenta", "tipo_cuenta", "sucursal")]
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_BANCARIOS]
             if not es_sec_rep_legal:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in ("representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion")]
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_REP_LEGAL]
             if es_sec_contacto:
                 candidatos_disponibles = []  # No rescatar datos institucionales para contacto comercial
 
             for id_pend in sorted(ids_pendientes):
                 c_info = ids_viables[id_pend]
                 rot_txt = c_info["rotulo"]
-                rot_limpio = re.sub(r"[:：_\.\s]+$", "", rot_txt).strip().lower()
-                if rot_limpio in ("cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "pep", "si", "no"):
+                rot_limpio = limpiar_rotulo(rot_txt)
+                if rot_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
                     continue
-                if re.search(r"\b(?:contacto|asesor|consultor|ejecutivo)\b", rot_txt, re.IGNORECASE):
+                if PATRON_CONTACTO_COMERCIAL.search(rot_txt):
                     continue
 
                 res_vector = buscar_rescate_vectorial(rot_txt, candidatos_disponibles, umbral=0.78)
@@ -386,7 +398,12 @@ def _aplicar_validacion_deterministica(
                 f"→ {ac['original']} → {ac['corregido']}"
             )
 
-    return plan_validado
+    # Filtrar activamente elementos descartados para que no lleguen al Writer
+    plan_activo = [
+        item for item in plan_validado
+        if str(item.get("estado", "")).upper() != "DESCARTADO"
+    ]
+    return plan_activo
 
 
 # ──────────────────────────────────────────────────────────────────────────────

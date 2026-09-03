@@ -3,7 +3,7 @@
     "identidad": {
       "razon_social": "Ingeniería Asistida Por Computador S.A.S",
       "nit": "8110047212",
-      "tipo_sociedad": "SAS"
+      "tipo_sociedad": "IAC SAS"
     },
     "ubicacion": {
       "direccion": "Carrera 63 B # 32 E -25 OFC 206",
@@ -21,7 +21,7 @@
       "representante_legal": "Guillermo Humberto Cañón Sarria",
       "representante_nombres": "Guillermo Humberto",
       "representante_apellidos": "Cañón Sarria",
-      "tipo_documento": "C.C",
+      "tipo_documento": "C.C.",
       "cedula": "98555384",
       "lugar_expedicion": "Envigado"
     },
@@ -38,7 +38,7 @@
     },
     "cuenta": {
       "numero_cuenta": "00300833888",
-      "tipo_cuenta": "Ahorros"
+      "tipo_cuenta": "AHORROS"
     }
   }
 }

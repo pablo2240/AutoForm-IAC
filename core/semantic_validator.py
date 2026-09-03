@@ -78,26 +78,26 @@ _TOKENS_SECCION_EMPRESA = {
     "proveedor", "cliente", "tributaria", "tributario", "solicitante", "entidad", "general", "basica",
 }
 
+from core.domain_constants import (
+    DomainCategory,
+    ROTULOS_GENERICOS_BLOQUEADOS,
+    PATRON_CONTACTO_COMERCIAL,
+    CAMPOS_BANCARIOS,
+    CAMPOS_REP_LEGAL,
+    CAMPOS_EMPRESA,
+    TOKENS_FINANCIEROS_SECCION,
+    TOKENS_REP_LEGAL_SECCION,
+    TOKENS_CONTACTO_SECCION,
+    limpiar_rotulo,
+)
+
 # Secciones semánticamente bancarias / financieras
-_TOKENS_SECCION_BANCARIA = {
-    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos",
-}
-
-_TOKENS_FINANCIEROS_AMPLIOS = {
-    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos", "pago", "transferencia", "contab", "giro", "tesoreria"
-}
-
-# Secciones y tokens de contacto comercial / operativo
-_TOKENS_CONTACTO_COMERCIAL = {
-    "contacto", "asesor", "consultor", "ejecutivo", "comercial", "operativo"
-}
-
-_ROTULOS_GENERICOS_BLOQUEADOS = {
-    "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras", "pep", "si", "no"
-}
-
-_CAMPOS_BANCARIOS = {"banco", "numero_cuenta", "tipo_cuenta", "sucursal"}
-_CAMPOS_REP_LEGAL = {"representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion"}
+_TOKENS_SECCION_BANCARIA = TOKENS_FINANCIEROS_SECCION
+_TOKENS_FINANCIEROS_AMPLIOS = TOKENS_FINANCIEROS_SECCION
+_TOKENS_CONTACTO_COMERCIAL = TOKENS_CONTACTO_SECCION
+_ROTULOS_GENERICOS_BLOQUEADOS = ROTULOS_GENERICOS_BLOQUEADOS
+_CAMPOS_BANCARIOS = CAMPOS_BANCARIOS
+_CAMPOS_REP_LEGAL = CAMPOS_REP_LEGAL
 
 # Tokens que identifican secciones de terceros u uso interno
 _TOKENS_SECCION_OMITIR = {
@@ -469,7 +469,7 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
-    rotulo_limpio = re.sub(r"[:：_\.\s]+$", "", rotulo_norm).strip()
+    rotulo_limpio = limpiar_rotulo(rotulo_norm)
     if rotulo_limpio in _ROTULOS_GENERICOS_BLOQUEADOS or (campo_original in ("numero_cuenta", "tipo_cuenta", "correo", "celular") and rotulo_limpio in ("cliente", "vinculacion", "otros", "otro", "pep")):
         resultado["estado"] = EstadoMapeo.DESCARTADO
         resultado["campo_final"] = ""
@@ -478,21 +478,25 @@ def validar_item_mapeo(
         return resultado
 
     # ── Domain Isolation (ADR-0004): Aislamiento estricto por categoría ──
+    # CERRAR PUERTA TRASERA: La condición debe ser SECCIÓN AND RÓTULO (no OR).
+    # Que el rótulo diga "cuenta" no autoriza inyección bancaria fuera de sección financiera.
     if campo_original in _CAMPOS_BANCARIOS:
         es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS)
         es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal"))
-        if not (es_sec_fin or es_rot_fin):
+        if not (es_sec_fin and es_rot_fin):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
-            resultado["motivo"] = f"Domain Isolation (ADR-0004): Campo bancario '{campo_original}' prohibido en sección no financiera ('{seccion}')."
+            resultado["motivo"] = f"Domain Isolation (ADR-0004): Campo bancario '{campo_original}' prohibido fuera de sección financiera/bancaria ('{seccion}')."
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 
     if campo_original in _CAMPOS_REP_LEGAL:
-        if any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL):
+        es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente"))
+        es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
+        if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c.c", "exped")))):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
-            resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección de Contacto ('{seccion}')."
+            resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección ('{seccion}')."
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 

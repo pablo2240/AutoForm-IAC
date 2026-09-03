@@ -21,7 +21,7 @@ import importlib
 # Recargar módulos de core, pipeline y ui para asegurar que los cambios se reflejen en Streamlit sin reiniciar
 for modulo in [
     "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
-    "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
+    "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher", "core.domain_constants",
     "pipeline.context", "pipeline.orchestrator", "pipeline.handlers.document_detector",
     "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",

@@ -86,8 +86,13 @@ class PipelineContext:
                 print(f"[AutoForm Pipeline] {registro.encode('ascii', errors='replace').decode('ascii')}")
 
     def obtener_plan_activo(self) -> List[Dict[str, Any]]:
-        """Retorna el plan verificado si existe; de lo contrario el plan de mapeo inicial."""
-        return self.plan_verificado if self.plan_verificado else self.plan_mapeo
+        """Retorna el plan verificado si existe; de lo contrario el plan de mapeo inicial,
+        filtrando estrictamente ítems con estado DESCARTADO."""
+        plan = self.plan_verificado if self.plan_verificado else self.plan_mapeo
+        return [
+            item for item in (plan or [])
+            if str(item.get("estado", "")).upper() != "DESCARTADO"
+        ]
 
     def obtener_campos_mapeados(self) -> List[str]:
         """Retorna la lista de claves de empresa asignadas en el plan activo."""

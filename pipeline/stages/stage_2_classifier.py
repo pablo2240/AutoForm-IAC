@@ -64,10 +64,7 @@ _PATRON_OPCIONES_SELECCION = re.compile(
     re.IGNORECASE
 )
 
-_PATRON_CONTACTO_COMERCIAL = re.compile(
-    r"\b(?:contacto|asesor(?:\s+comercial)?|consultor(?:\s+plm|\s+comercial)?|ejecutivo\s+comercial)\b",
-    re.IGNORECASE
-)
+from core.domain_constants import PATRON_CONTACTO_COMERCIAL, ROTULOS_GENERICOS_BLOQUEADOS, limpiar_rotulo
 
 _PATRON_TEXTO_LEGAL = re.compile(
     r"(?:autorizo\s+a|declaro\s+bajo|certifico\s+que|en\s+cumplimiento\s+de|manifiesto\s+que|bajo\s+la\s+gravedad|habeas\s+data|tratamiento\s+de\s+datos|pol[ií]tica\s+de\s+privacidad|sagrilaft|lavado\s+de\s+activos|financiamiento\s+del\s+terrorismo|origen\s+de\s+fondos|origen\s+de\s+bienes|cl[aá]usula|autorizaci[oó]n\s+para)",
@@ -257,7 +254,7 @@ def clasificar_elementos_formulario(
             sec_norm = seccion_actual.lower()
             rot_norm = rotulo.lower()
             es_contacto_comercial = bool(
-                _PATRON_CONTACTO_COMERCIAL.search(rotulo)
+                PATRON_CONTACTO_COMERCIAL.search(rotulo)
                 or (
                     any(k in sec_norm for k in ("contacto", "asesor", "comercial", "ejecutivo", "operativo"))
                     and any(k in rot_norm for k in ("nombre", "cargo", "celular", "email", "correo", "tel", "fijo", "firma"))
