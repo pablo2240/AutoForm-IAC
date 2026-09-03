@@ -43,7 +43,15 @@ Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático
 
 ## Flujo de trabajo
 
-- Investigar antes de proponer código: leer los módulos reales de `core/`; usar las skills de `.agents/skills/` (p. ej. `brainstorming`) ante ambigüedad.
+- Investigar antes de proponer código: leer los módulos reales de `core/`; usar las skills de `.agents/skills/` (p. ej. `brainstorming`, `grill-with-docs`) ante ambigüedad.
 - Cambios grandes/rediseño: generar primero un plan, esperar aprobación del usuario antes de editar.
 - Cambios pequeños: aplicar directo.
 - Al terminar un turno con cambios: reportar archivos modificados, propósito y si se corrió `py_compile`/tests (y resultado).
+
+## Agent Skills (Matt Pocock & Custom)
+
+El proyecto cuenta con la suite de skills de ingeniería y productividad de Matt Pocock (`.agents/skills/`):
+- **Alineación & Diseño**: `/grill-with-docs`, `/grill-me`, `/brainstorming`, `/domain-modeling` (lee `CONTEXT.md` y `docs/adr/`).
+- **Desarrollo & Calidad**: `/tdd` (Red-Green-Refactor), `/diagnosing-bugs`, `/implement`, `/code-review`.
+- **Arquitectura & Tareas**: `/improve-codebase-architecture`, `/to-spec`, `/to-tickets`, `/wayfinder`, `/triage`.
+- **Configuración & Dominio**: Consulta `CONTEXT.md` para el vocabulario ubicuo y `docs/agents/` para las convenciones de issue tracking.
