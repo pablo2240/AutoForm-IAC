@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
 
-TipoDocumento = Literal["excel", "pdf", "desconocido"]
+TipoDocumento = Literal["excel", "desconocido"]
 
 
 @dataclass
@@ -21,7 +21,7 @@ class PipelineContext:
     Attributes:
         archivo_bytes: Contenido binario del archivo original subido por el usuario.
         nombre_archivo: Nombre del archivo original (ej. 'SAGRILAFT_2026.xlsx').
-        tipo_documento: 'excel', 'pdf' o 'desconocido'.
+        tipo_documento: 'excel' o 'desconocido'.
         datos_empresa: Diccionario con los datos maestros del perfil empresarial.
         elementos_raw: Lista de rótulos y coordenadas físicas extraídas en Stage 1 (Parser).
         elementos_clasificados: Elementos con etiqueta semántica ('CAMPO_ENTRADA', 'TITULO_SECCION', etc.).

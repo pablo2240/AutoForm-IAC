@@ -457,7 +457,7 @@ def construir_ir(
     Args:
         elementos_raw: Lista de diccionarios del Parser (core/excel_parser.py).
         nombre_archivo: Nombre del archivo original.
-        tipo_documento: "excel" o "pdf".
+        tipo_documento: "excel".
 
     Returns:
         DocumentoIR con la jerarquía completa: Secciones → Filas → Elementos.

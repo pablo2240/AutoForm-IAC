@@ -23,19 +23,6 @@ except ImportError:
 
 CACHE_FILE = Path("config") / "plantillas_cache.json"
 
-# Claves físicas PDF que deben re-asignarse desde el formulario entrante al
-# adaptar un plan guardado (el plan guardado no las persiste).
-_CLAVES_PDF = (
-    "_pdf_page",
-    "_pdf_bbox",
-    "_pdf_target_rect",
-    "_pdf_es_caja",
-    "_pdf_es_casilla",
-    "_pdf_es_acroform",
-    "_pdf_widget_name",
-    "_pdf_es_vision",
-)
-
 
 def _asegurar_directorio_config() -> None:
     CACHE_FILE.parent.mkdir(parents=True, exist_ok=True)
@@ -182,10 +169,6 @@ def adaptar_mapeo_plantilla(
             nuevo_item["fila"] = coincidencia.get("fila", item.get("fila"))
             nuevo_item["columna"] = coincidencia.get("columna", item.get("columna"))
             nuevo_item["hoja"] = coincidencia.get("hoja", item.get("hoja"))
-            # FIX: propagar coordenadas físicas PDF (_pdf_*) del documento entrante
-            for clave in _CLAVES_PDF:
-                if clave in coincidencia:
-                    nuevo_item[clave] = coincidencia[clave]
 
         plan_adaptado.append(nuevo_item)
 

@@ -18,14 +18,10 @@ def render_pantalla_descarga(ctx: PipelineContext, key_prefix: str = "download_u
         st.error("No se encontró el archivo generado para descargar.")
         return
 
-    # Determinar extensión y MIME type
+    # Determinar extensión y MIME type (Excel OpenXML)
     nombre_base = Path(ctx.nombre_archivo).stem if ctx.nombre_archivo else "Formulario_Rellenado"
-    if ctx.tipo_documento == "excel":
-        nombre_descarga = f"{nombre_base}_AutoForm.xlsx"
-        mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    else:
-        nombre_descarga = f"{nombre_base}_AutoForm.pdf"
-        mime_type = "application/pdf"
+    nombre_descarga = f"{nombre_base}_AutoForm.xlsx"
+    mime_type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
     # ── Botón Principal de Descarga ──
     col_dl, _ = st.columns([2, 1])

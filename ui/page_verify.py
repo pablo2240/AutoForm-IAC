@@ -407,10 +407,6 @@ def preparar_tabla_verificacion(
                 "_estado_raw": "EXTRA",
                 "_confianza_raw": "SIN_COINCIDENCIA",
             }
-            # Preservar metadatos físicos de PDF si existen
-            for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
-                if k in elem:
-                    fila_dict[k] = elem[k]
             filas.append(fila_dict)
             coordenadas_mapeadas.add((hoja_e, fila_e, col_e))
             n_extra += 1
@@ -437,9 +433,6 @@ def preparar_tabla_verificacion(
         df["_tipo_elemento"] = df["_tipo_elemento"].fillna("FIELD").astype(str)
         df["_estado_raw"] = df["_estado_raw"].fillna("").astype(str)
         df["_confianza_raw"] = df["_confianza_raw"].fillna("").astype(str)
-        for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
-            if k in df.columns:
-                df[k] = df[k].apply(lambda v: json.dumps(v) if isinstance(v, (list, tuple, dict)) else ("" if v is None else str(v)))
     return df
 
 
@@ -482,20 +475,6 @@ def aplicar_cambios_verificacion(
             "anchoLinea": ancho_l,
             "seccion": seccion,
         }
-
-        # Preservar metadatos físicos de PDF si existían
-        orig_idx = row.get("_orig_idx")
-        if orig_idx is not None and not pd.isna(orig_idx) and int(orig_idx) >= 0:
-            idx_int = int(orig_idx)
-            if 0 <= idx_int < len(plan_original):
-                orig_item = plan_original[idx_int]
-                for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
-                    if k in orig_item:
-                        item_final[k] = orig_item[k]
-        else:
-            for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
-                if k in row and not pd.isna(row.get(k)):
-                    item_final[k] = row[k]
 
         plan_resultado.append(item_final)
 
@@ -641,13 +620,6 @@ def render_pantalla_verificacion(
         "_tipo_elemento": None,
         "_estado_raw": None,
         "_confianza_raw": None,
-        "_pdf_page": None,
-        "_pdf_bbox": None,
-        "_pdf_target_rect": None,
-        "_pdf_es_caja": None,
-        "_pdf_es_casilla": None,
-        "_pdf_es_acroform": None,
-        "_pdf_widget_name": None,
     }
 
     # Render del editor de datos de Streamlit

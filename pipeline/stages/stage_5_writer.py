@@ -1,18 +1,18 @@
-﻿"""Stage 5: Writer Unificado de Formularios (Pipeline AutoForm AI).
+"""Stage 5: Writer de Formularios Excel (Pipeline AutoForm AI).
 
 Inyecta físicamente los valores del perfil empresarial en las coordenadas verificadas
-del documento original (Excel o PDF), preservando fuentes, combinaciones y estilos.
+del documento Excel original, preservando fuentes, combinaciones y estilos.
 """
 
 from __future__ import annotations
 
 import time
 from pipeline.context import PipelineContext
-from pipeline.handlers import ExcelHandler, PdfHandler
+from pipeline.handlers import ExcelHandler
 
 
 def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
-    """Ejecuta la etapa de inyección física y generación del archivo de salida."""
+    """Ejecuta la etapa de inyección física y generación del archivo Excel de salida."""
     t0 = time.time()
     plan_final = ctx.obtener_plan_activo()
 
@@ -27,14 +27,8 @@ def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
             plan_mapeo=plan_final,
             datos_empresa=ctx.datos_empresa,
         )
-    elif ctx.tipo_documento == "pdf":
-        archivo_resultado, reporte = PdfHandler.inyectar(
-            archivo_bytes=ctx.archivo_bytes,
-            plan_mapeo=plan_final,
-            datos_empresa=ctx.datos_empresa,
-        )
     else:
-        raise ValueError(f"Tipo de documento '{ctx.tipo_documento}' no soportado para escritura.")
+        raise ValueError(f"Tipo de documento '{ctx.tipo_documento}' no soportado para escritura. AutoForm AI solo escribe en Excel.")
 
     ctx.archivo_resultado = archivo_resultado
     ctx.reporte_inyeccion = reporte

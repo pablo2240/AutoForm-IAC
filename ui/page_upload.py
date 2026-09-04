@@ -12,19 +12,19 @@ def render_pantalla_carga(
     perfil_empresa_actual: Dict[str, Any],
     key_prefix: str = "upload_ui",
 ) -> Tuple[Optional[bytes], str, Dict[str, Any]]:
-    """Renderiza la zona de carga de archivos (Excel / PDF) y gestión de datos de empresa.
+    """Renderiza la zona de carga de archivos Excel y gestión de datos de empresa.
     
     Returns:
         Tuple: (archivo_bytes: Optional[bytes], nombre_archivo: str, datos_empresa: Dict[str, Any])
     """
     st.markdown("### 📤 Cargar Formulario a Diligenciar")
-    st.markdown("Sube tu formato en blanco en formato **Excel (.xlsx)** o **PDF (.pdf)**:")
+    st.markdown("Sube tu formato en blanco en formato **Excel (.xlsx, .xlsm, .xls)**:")
 
     uploaded_file = st.file_uploader(
         "Arrastra o selecciona el formulario:",
-        type=["xlsx", "pdf", "xlsm"],
+        type=["xlsx", "xlsm", "xls"],
         key=f"{key_prefix}_uploader",
-        help="Formatos soportados: Excel (.xlsx, .xlsm) y PDF (.pdf)",
+        help="Formatos soportados: Excel (.xlsx, .xlsm, .xls)",
     )
 
     archivo_bytes: Optional[bytes] = None

@@ -1,18 +1,17 @@
 # AGENTS.md - Guía para Agentes IA (AutoForm AI)
 
-Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático de formularios corporativos (Excel/PDF) mapeando un perfil de empresa (`config/datos_empresa.json`) vía LLM, conservando estilos y formato original.
+Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático de formularios corporativos en Excel (.xlsx, .xlsm, .xls) mapeando un perfil de empresa (`config/datos_empresa.json`) vía LLM, conservando estilos y formato original.
 
 ## Punto de entrada y flujo
 
 - La app Streamlit es **`app1.py`** (NO `app.py`). El `README.md` está desactualizado (dice `app.py` y "Gemini vía OpenRouter"); confía en el código real.
-- Flujo: usuario sube `.xlsx`/`.pdf` → `excel_parser.py`/`pdf_processor.py` escanean campos vacíos → `mapper.py` invoca el LLM para el mapeo semántico → `excel_writer.py`/`pdf_processor.py` escriben conservando formato → descarga.
-- `app1.py` recarga al inicio algunos módulos de `core/` vía `importlib.reload` (líneas ~19-21) para el hot-reload de Streamlit. La lista es fija: **no incluye** `semantic_cache`, `field_detection_engine`, `profile_manager` ni `schema_models`; editar esos mientras `streamlit` corre no se reflejará sin reiniciar.
+- Flujo: usuario sube `.xlsx` → `excel_parser.py` escanea campos vacíos → `mapper.py` invoca el LLM para el mapeo semántico → `excel_writer.py` escribe conservando formato → descarga.
+- `app1.py` recarga al inicio algunos módulos de `core/` vía `importlib.reload` (líneas ~19-21) para el hot-reload de Streamlit.
 
 ## Arquitectura (`core/`)
 
 - `excel_parser.py`: escaneo de celdas/vecinos, ray-casting, casillas de verificación, `_calcular_ubicacion_fisica`.
 - `excel_writer.py`: escritura segura en Excel preservando estilos y celdas combinadas.
-- `pdf_processor.py`: motor PDF híbrido — usa `pymupdf` (fitz) y `pdfplumber`, inyección nativa en AcroForms, bounding boxes de visión (0-1000), caché en disco en `config/pdf_cache/` por hash MD5.
 - `field_detection_engine.py`: motor de detección de campos y coordenadas físicas (dataclass `FormFieldIntent`, clasificador de patrones). **No lo importa ningún otro módulo** todavía; módulo independiente.
 - `mapper.py`: orquestador del plan de mapeo; usa `semantic_cache` (similitud difusa con rapidfuzz) para reutilizar plantillas ya mapeadas.
 - `llm_client.py`: cliente LLM y `STRICT_SYSTEM_PROMPT`. Salidas validadas con Pydantic V2 en `schema_models.py` (`instructor`).
@@ -27,14 +26,12 @@ Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático
 
 ## Dependencias y entorno
 
-- `requirements.txt` está incompleto para el flujo PDF: **no incluye `pymupdf` ni `pdfplumber`**, que sí importa `pdf_processor.py`. Instálalos si se trabaja en esa ruta.
 - Sí hay venv (`venv/`, en `.gitignore`). Usa `.\venv\Scripts\python.exe` / `.\venv\Scripts\streamlit.exe` (Windows).
-- El venv necesita `pymupdf` y `pdfplumber` instalados a mano (`pip install pymupdf pdfplumber`); `requirements.txt` no los incluye.
 
 ## Comandos
 
 - Ejecutar app: `streamlit run app1.py`
-- Pruebas: no hay framework de tests; los scripts de prueba viven en `scratch/` (gitignored) como Python puro, p. ej. `python scratch/test_pdf_engine.py`. Esos scripts insertan la raíz en `sys.path` para importar `core/`.
+- Pruebas: no hay framework de tests; los scripts de prueba viven en `scratch/` (gitignored) como Python puro, p. ej. `python scratch/test_sc_com_run.py`. Esos scripts insertan la raíz en `sys.path` para importar `core/`.
 - Verificación de sintaxis: `python -m py_compile app1.py` y cada archivo de `core/` editado.
 
 ## Convenciones de código

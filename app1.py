@@ -19,10 +19,10 @@ import sys
 import importlib
 
 for modulo in [
-    "core.database", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
+    "core.database", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper",
     "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
     "core.domain_constants", "pipeline.context", "pipeline.orchestrator",
-    "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
+    "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler",
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
     "pipeline.stages.stage_3_llm_mapper", "pipeline.stages.stage_5_writer",
     "ui.page_verify", "ui.page_download", "ui.page_upload", "template_store.store",
@@ -30,8 +30,7 @@ for modulo in [
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
-from core import excel_parser, excel_writer, mapper, profile_manager, pdf_processor, llm_client
-from core import pdf_vision
+from core import excel_parser, excel_writer, mapper, profile_manager, llm_client
 from core.mapper import get_debug_info as _get_debug_info
 
 from pipeline.context import PipelineContext
@@ -863,8 +862,8 @@ def _deduplicar_por_campo(resultados):
 st.markdown("### 📥 Cargar Formulario de Terceros")
 
 uploaded_file = st.file_uploader(
-    "Arrastra y suelta tu archivo Excel (.xlsx, .xls) o PDF aquí",
-    type=["xlsx", "xls", "pdf"],
+    "Arrastra y suelta tu archivo Excel (.xlsx, .xlsm, .xls) aquí",
+    type=["xlsx", "xls", "xlsm"],
     help="Sube la plantilla de licitación o formulario del proveedor para iniciar el diligenciamiento automático.",
 )
 
@@ -883,7 +882,7 @@ if uploaded_file is not None:
     with col_preview:
         st.markdown("### 👀 Previsualización de Hojas")
 
-        if file_type in ["xlsx", "xls"]:
+        if file_type in ["xlsx", "xls", "xlsm"]:
             try:
                 uploaded_file.seek(0)
                 excel_file = pd.ExcelFile(uploaded_file)
@@ -901,20 +900,6 @@ if uploaded_file is not None:
             except Exception as e:
                 st.error(f"Error al leer el archivo Excel: {e}")
 
-        elif file_type == "pdf":
-            try:
-                uploaded_file.seek(0)
-                bytes_pdf = uploaded_file.read()
-                imagenes_png = pdf_processor.renderizar_paginas_png(bytes_pdf, max_paginas=2)
-                
-                if imagenes_png:
-                    for i, img_bytes in enumerate(imagenes_png):
-                        st.image(img_bytes, caption=f"Página {i+1}", width="stretch")
-                else:
-                    st.info("No se pudieron renderizar las páginas del PDF.")
-            except Exception as e:
-                st.error(f"Error al leer el archivo PDF: {e}")
-
     with col_actions:
         st.markdown("### ⚡ Ejecutar IA")
         st.write("Extrae rótulos visuales, analiza campos vacíos e inyecta los datos de la empresa respetando estilos.")
@@ -927,7 +912,7 @@ if uploaded_file is not None:
         current_file_id = f"md5:{file_md5}"
 
         if st.button("🚀 Procesar Formulario", type="primary", width="stretch"):
-            if file_type in ["xlsx", "xls", "pdf"]:
+            if file_type in ["xlsx", "xls", "xlsm"]:
                 tiene_azure = bool(os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY"))
                 tiene_openai = bool(os.getenv("OPENAI_API_KEY"))
 

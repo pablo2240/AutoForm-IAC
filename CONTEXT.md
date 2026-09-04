@@ -8,8 +8,8 @@ This document defines the core domain model and vocabulary for **AutoForm AI**. 
 
 AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineOrchestrator`:
 
-* **`Stage 1: Parser`** (`pipeline/stages/stage_1_parser.py`, `core/excel_parser.py`, `core/pdf_processor.py`):
-  Scans uploaded files (`.xlsx`, `.xls`, `.pdf`), extracts raw visual labels, detects adjacent empty cells, cell borders, shading, merges, and AcroForm fields.
+* **`Stage 1: Parser`** (`pipeline/stages/stage_1_parser.py`, `core/excel_parser.py`):
+  Scans uploaded Excel files (`.xlsx`, `.xlsm`, `.xls`), extracts raw visual labels, detects adjacent empty cells, cell borders, shading, and merged cells.
 * **`Stage 2: Classifier`** (`pipeline/stages/stage_2_classifier.py`):
   Categorizes raw visual elements into `FIELD` (viable input fields), `SECTION_TITLE`, `DECORATIVE`, `INSTRUCTION`, `LEGAL_TEXT`, or `OPTION` (checkboxes/radios). Filters out ~46% of tokens before calling the LLM.
 * **`Stage 2b: Spatial IR`** (`core/spatial_ir.py`):
@@ -18,7 +18,7 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
   Divides the form into 4 parallel macro-batches (`MacroLote`), invokes OpenAI via `instructor` with strict Pydantic V2 schema validation (`PlanMapeoSemantico`), followed by the **Zero-Omission Triad** (Instructor Chunking + Python Diff Loop + Local Semantic Matcher).
 * **`Stage 3b: Semantic Validator / HSP`** (`core/semantic_validator.py`):
   Deterministic audit pass that validates LLM assignments against Colombian legal rules (e.g. `representante_legal` vs `empresa`), applies auto-corrections, and computes confidence scores.
-* **`Stage 5: Writer`** (`pipeline/stages/stage_5_writer.py`, `core/excel_writer.py`, `core/pdf_processor.py`):
+* **`Stage 5: Writer`** (`pipeline/stages/stage_5_writer.py`, `core/excel_writer.py`):
   Injects values into the document with format preservation, font inheritance, borders, alignment, and native OpenXML serialization (strictly no raw ZIP/VML binary tampering).
 
 ---
