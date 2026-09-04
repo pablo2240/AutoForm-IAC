@@ -16,7 +16,8 @@ Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático
 - `field_detection_engine.py`: motor de detección de campos y coordenadas físicas (dataclass `FormFieldIntent`, clasificador de patrones). **No lo importa ningún otro módulo** todavía; módulo independiente.
 - `mapper.py`: orquestador del plan de mapeo; usa `semantic_cache` (similitud difusa con rapidfuzz) para reutilizar plantillas ya mapeadas.
 - `llm_client.py`: cliente LLM y `STRICT_SYSTEM_PROMPT`. Salidas validadas con Pydantic V2 en `schema_models.py` (`instructor`).
-- `profile_manager.py`: carga/guardado de perfiles empresariales (JSON).
+- `database.py`: motor SQLite canónico (`config/empresa.db`) con transacciones ACID para perfiles empresariales.
+- `profile_manager.py`: orquestador de perfiles empresariales (lectura/escritura canónica en SQLite con espejo resiliente en JSON).
 
 ## Variables de entorno (¡clave!)
 

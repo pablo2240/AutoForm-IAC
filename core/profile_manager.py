@@ -18,13 +18,75 @@ PROFILE_DEFAULT_PATH = CONFIG_DIR / "datos_empresa.json"
 ACTIVE_PROFILE_FILE = CONFIG_DIR / "perfil_activo.txt"
 
 
+from core import database
+
+
 def asegurar_directorio_config() -> None:
     """Garantiza que la carpeta config/ exista."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def sincronizar_db_con_archivos() -> None:
+    """Garantiza la consistencia inicial entre SQLite (fuente canónica) y los archivos JSON en config/."""
+    asegurar_directorio_config()
+    database.inicializar_db()
+
+    perfiles_db = database.listar_perfiles_db()
+    ids_db = {p["id"] for p in perfiles_db}
+
+    # 1. Si la base de datos no tiene el perfil principal, sembrar desde config/datos_empresa.json
+    if "principal" not in ids_db:
+        if PROFILE_DEFAULT_PATH.exists():
+            try:
+                with PROFILE_DEFAULT_PATH.open("r", encoding="utf-8-sig") as f:
+                    datos_raw = json.load(f)
+                taxonomia = estructurar_perfil_taxonomia(datos_raw)
+                database.guardar_perfil_db("principal", "🏢 Principal (IAC Latam)", taxonomia, es_activo=True)
+            except Exception as exc:
+                print(f"[AutoForm AI] Error sembrando datos iniciales en SQLite: {exc}")
+        else:
+            plantilla = _obtener_plantilla_vacia()
+            taxonomia = estructurar_perfil_taxonomia(plantilla)
+            database.guardar_perfil_db("principal", "🏢 Principal (IAC Latam)", taxonomia, es_activo=True)
+            try:
+                with PROFILE_DEFAULT_PATH.open("w", encoding="utf-8") as f:
+                    json.dump(taxonomia, f, indent=2, ensure_ascii=False)
+            except Exception:
+                pass
+
+    # 2. Sembrar perfiles secundarios JSON que no existan en SQLite
+    for archivo in CONFIG_DIR.glob("datos_empresa_*.json"):
+        slug = archivo.stem.replace("datos_empresa_", "").lower().strip()
+        if slug and slug not in ids_db:
+            try:
+                nombre_base = slug.replace("_", " ").title()
+                etiqueta = f"🏢 {nombre_base}"
+                with archivo.open("r", encoding="utf-8-sig") as f:
+                    datos_raw = json.load(f)
+                taxonomia = estructurar_perfil_taxonomia(datos_raw)
+                database.guardar_perfil_db(slug, etiqueta, taxonomia, es_activo=False)
+            except Exception as exc:
+                print(f"[AutoForm AI] Error migrando archivo {archivo} a SQLite: {exc}")
+
+    # 3. Si SQLite tiene perfiles cuyos archivos JSON espejo no existen en disco, generarlos
+    for p in database.listar_perfiles_db():
+        pid = p["id"]
+        ruta_esperada = PROFILE_DEFAULT_PATH if pid == "principal" else CONFIG_DIR / f"datos_empresa_{pid}.json"
+        if not ruta_esperada.exists():
+            try:
+                taxonomia = estructurar_perfil_taxonomia(p["datos"])
+                with ruta_esperada.open("w", encoding="utf-8") as f:
+                    json.dump(taxonomia, f, indent=2, ensure_ascii=False)
+            except Exception as exc:
+                print(f"[AutoForm AI Warning] No se pudo crear archivo espejo {ruta_esperada}: {exc}")
+
+
 def obtener_perfil_activo_guardado() -> str:
-    """Lee el nombre del último perfil seleccionado desde config/perfil_activo.txt."""
+    """Lee el nombre del último perfil activo desde SQLite o config/perfil_activo.txt."""
+    sincronizar_db_con_archivos()
+    perfil_db = database.obtener_perfil_activo_db()
+    if perfil_db:
+        return perfil_db[1]  # nombre
     if ACTIVE_PROFILE_FILE.exists():
         try:
             nombre = ACTIVE_PROFILE_FILE.read_text(encoding="utf-8").strip()
@@ -36,12 +98,13 @@ def obtener_perfil_activo_guardado() -> str:
 
 
 def guardar_perfil_activo_seleccionado(nombre_etiqueta: str) -> None:
-    """Persiste en disco el nombre del perfil actualmente activo para que sobreviva reinicios."""
+    """Persiste en SQLite y en perfil_activo.txt el perfil actualmente activo."""
     asegurar_directorio_config()
+    database.establecer_perfil_activo_db(nombre_etiqueta)
     try:
         ACTIVE_PROFILE_FILE.write_text(nombre_etiqueta.strip(), encoding="utf-8")
     except Exception as exc:
-        print(f"[AutoForm AI] Error guardando perfil activo: {exc}")
+        print(f"[AutoForm AI Warning] Error guardando perfil activo en txt: {exc}")
 
 
 def _slugify(texto: str) -> str:
@@ -52,21 +115,16 @@ def _slugify(texto: str) -> str:
 
 
 def listar_perfiles() -> Dict[str, Path]:
-    """Escanea la carpeta config/ y devuelve un diccionario de perfiles {NombrePerfil: Path}."""
-    asegurar_directorio_config()
+    """Devuelve diccionario {NombrePerfil: Path} garantizando consistencia con SQLite y JSON."""
+    sincronizar_db_con_archivos()
     perfiles: Dict[str, Path] = {}
 
-    # 1. Perfil Principal
-    if PROFILE_DEFAULT_PATH.exists():
-        perfiles["🏢 Principal (IAC Latam)"] = PROFILE_DEFAULT_PATH
+    for p in database.listar_perfiles_db():
+        pid = p["id"]
+        nombre = p["nombre"]
+        ruta = PROFILE_DEFAULT_PATH if pid == "principal" else CONFIG_DIR / f"datos_empresa_{pid}.json"
+        perfiles[nombre] = ruta
 
-    # 2. Perfiles Secundarios (config/datos_empresa_*.json)
-    for archivo in CONFIG_DIR.glob("datos_empresa_*.json"):
-        nombre_base = archivo.stem.replace("datos_empresa_", "").replace("_", " ").title()
-        etiqueta = f"🏢 {nombre_base}"
-        perfiles[etiqueta] = archivo
-
-    # Fallback si no existe ninguno
     if not perfiles:
         perfiles["🏢 Principal (IAC Latam)"] = PROFILE_DEFAULT_PATH
 
@@ -190,33 +248,119 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
-def cargar_perfil(ruta: Union[Path, str]) -> Dict[str, Any]:
-    """Carga los datos JSON del perfil especificado (aplana o estructura según necesidad)."""
-    ruta = Path(ruta)
-    if not ruta.exists():
-        return _obtener_plantilla_vacia()
-    
-    try:
-        with ruta.open("r", encoding="utf-8-sig") as f:
-            datos_raw = json.load(f)
-        return aplanar_perfil(datos_raw)
-    except Exception as exc:
-        print(f"[AutoForm AI] Error cargando perfil {ruta}: {exc}")
-        return _obtener_plantilla_vacia()
+def _extraer_slug_y_ruta(ruta_o_id: Union[Path, str], nombre_sugerido: str = "") -> Tuple[str, Path, str]:
+    """Determina el slug, la ruta de archivo espejo y el nombre legible del perfil."""
+    slug = "principal"
+    ruta_archivo = PROFILE_DEFAULT_PATH
+    nombre = nombre_sugerido.strip() if nombre_sugerido else ""
+
+    if isinstance(ruta_o_id, Path) or ("/" in str(ruta_o_id) or "\\" in str(ruta_o_id)):
+        ruta_archivo = Path(ruta_o_id)
+        stem = ruta_archivo.stem.lower()
+        if stem == "datos_empresa":
+            slug = "principal"
+            if not nombre:
+                nombre = "🏢 Principal (IAC Latam)"
+        elif stem.startswith("datos_empresa_"):
+            slug = stem.replace("datos_empresa_", "")
+            if not nombre:
+                nombre = f"🏢 {slug.replace('_', ' ').title()}"
+        else:
+            slug = _slugify(stem)
+            if not nombre:
+                nombre = f"🏢 {slug.replace('_', ' ').title()}"
+    else:
+        str_val = str(ruta_o_id).strip()
+        slug = _slugify(str_val.replace("🏢", "").strip())
+        if not slug or slug in ("principal", "iac_latam"):
+            slug = "principal"
+            ruta_archivo = PROFILE_DEFAULT_PATH
+            if not nombre:
+                nombre = "🏢 Principal (IAC Latam)"
+        else:
+            ruta_archivo = CONFIG_DIR / f"datos_empresa_{slug}.json"
+            if not nombre:
+                nombre = f"🏢 {slug.replace('_', ' ').title()}"
+
+    if not nombre:
+        nombre = "🏢 Principal (IAC Latam)" if slug == "principal" else f"🏢 {slug.replace('_', ' ').title()}"
+
+    return slug, ruta_archivo, nombre
 
 
-def guardar_perfil(ruta: Union[Path, str], datos: Dict[str, Any]) -> bool:
-    """Guarda los datos empresariales estructurados en taxonomía semántica en el archivo JSON."""
+def cargar_perfil(ruta_o_id: Union[Path, str]) -> Dict[str, Any]:
+    """Carga los datos del perfil desde SQLite (fuente canónica) con fallback a JSON."""
+    sincronizar_db_con_archivos()
+    slug, ruta_archivo, nombre = _extraer_slug_y_ruta(ruta_o_id)
+
+    # 1. Leer de SQLite (fuente canónica primaria)
+    datos_db = database.obtener_perfil_db(slug)
+    if datos_db is not None:
+        return aplanar_perfil(datos_db)
+
+    # 2. Fallback a archivo JSON espejo si SQLite no lo tiene
+    if ruta_archivo.exists():
+        try:
+            with ruta_archivo.open("r", encoding="utf-8-sig") as f:
+                datos_raw = json.load(f)
+            datos_planos = aplanar_perfil(datos_raw)
+            taxonomia = estructurar_perfil_taxonomia(datos_planos)
+            database.guardar_perfil_db(slug, nombre, taxonomia)
+            return datos_planos
+        except Exception as exc:
+            print(f"[AutoForm AI] Error cargando perfil espejo {ruta_archivo}: {exc}")
+
+    return _obtener_plantilla_vacia()
+
+
+def guardar_perfil(ruta_o_id: Union[Path, str], datos: Dict[str, Any], nombre_visible: str = "") -> bool:
+    """Guarda canónicamente en SQLite y proyecta el espejo en el archivo JSON.
+
+    Protocolo estricto:
+    1. Escribir en SQLite (fuente canónica). Si falla -> return False.
+    2. Si SQLite OK -> escribir en archivo JSON espejo.
+    3. Si JSON falla (bloqueo en Windows, permisos) -> log WARNING, pero NO revertir SQLite; return True.
+    """
     asegurar_directorio_config()
-    ruta = Path(ruta)
-    try:
-        taxonomia = estructurar_perfil_taxonomia(datos)
-        with ruta.open("w", encoding="utf-8") as f:
-            json.dump(taxonomia, f, indent=2, ensure_ascii=False)
-        return True
-    except Exception as exc:
-        print(f"[AutoForm AI] Error guardando perfil {ruta}: {exc}")
+    database.inicializar_db()
+    slug, ruta_archivo, nombre = _extraer_slug_y_ruta(ruta_o_id, nombre_sugerido=nombre_visible)
+
+    taxonomia = estructurar_perfil_taxonomia(datos)
+
+    # 1. CANÓNICO: Escribir en SQLite (transaccional ACID)
+    ok_sqlite = database.guardar_perfil_db(slug, nombre, taxonomia)
+    if not ok_sqlite:
+        print(f"[AutoForm AI] Error fatal: Falló la escritura canónica en SQLite para '{slug}'.")
         return False
+
+    # 2 & 3. ESPEJO: Escribir en JSON con tolerancia a fallos de Windows
+    try:
+        with ruta_archivo.open("w", encoding="utf-8") as f:
+            json.dump(taxonomia, f, indent=2, ensure_ascii=False)
+    except Exception as exc:
+        print(f"[AutoForm AI Warning] Error al actualizar archivo espejo JSON '{ruta_archivo}': {exc}. SQLite permanece como fuente canónica.")
+
+    return True
+
+
+def auto_guardar_campo(
+    ruta_o_id: Union[Path, str],
+    campo: str,
+    valor: Any,
+    nombre_visible: str = "",
+) -> bool:
+    """Actualiza atómicamente un campo individual en SQLite y en el archivo espejo JSON."""
+    datos_actuales = cargar_perfil(ruta_o_id)
+    val_str = str(valor or "").strip()
+    datos_actuales[campo] = val_str
+
+    # Sincronizar campos simétricos
+    if campo == "lugar_expedicion":
+        datos_actuales["expedicion"] = val_str
+    elif campo == "expedicion":
+        datos_actuales["lugar_expedicion"] = val_str
+
+    return guardar_perfil(ruta_o_id, datos_actuales, nombre_visible=nombre_visible)
 
 
 def crear_nuevo_perfil(nombre_perfil: str, datos: Dict[str, Any]) -> Tuple[bool, Path, str]:
@@ -233,7 +377,7 @@ def crear_nuevo_perfil(nombre_perfil: str, datos: Dict[str, Any]) -> Tuple[bool,
     ruta_nueva = CONFIG_DIR / nombre_archivo
     etiqueta = f"🏢 {nombre_perfil.strip()}"
 
-    exito = guardar_perfil(ruta_nueva, datos)
+    exito = guardar_perfil(ruta_nueva, datos, nombre_visible=etiqueta)
     if exito:
         guardar_perfil_activo_seleccionado(etiqueta)
     return exito, ruta_nueva, etiqueta
@@ -254,7 +398,6 @@ def importar_perfil_json(contenido_str: str, nombre_sugerido: str = "") -> Tuple
         nombre = nombre_sugerido.strip()
         if not nombre:
             nombre = str(datos_planos.get("razon_social") or "Importado").strip()
-            # Limpiar prefijos comunes como S.A.S si es muy largo
             if len(nombre) > 40:
                 nombre = nombre[:40].strip()
 
@@ -266,7 +409,7 @@ def importar_perfil_json(contenido_str: str, nombre_sugerido: str = "") -> Tuple
             ruta_destino = CONFIG_DIR / f"datos_empresa_{slug}.json"
             etiqueta = f"🏢 {nombre.title()}"
 
-        exito = guardar_perfil(ruta_destino, datos_planos)
+        exito = guardar_perfil(ruta_destino, datos_planos, nombre_visible=etiqueta)
         if exito:
             guardar_perfil_activo_seleccionado(etiqueta)
         return exito, ruta_destino, etiqueta

@@ -18,9 +18,8 @@ except ImportError:
 import sys
 import importlib
 
-# Recargar módulos de core, pipeline y ui para asegurar que los cambios se reflejen en Streamlit sin reiniciar
 for modulo in [
-    "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
+    "core.database", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
     "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
     "core.domain_constants", "pipeline.context", "pipeline.orchestrator",
     "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
@@ -96,14 +95,14 @@ except Exception:
 
 
 def _safe_rerun():
-    if hasattr(st, "experimental_rerun"):
-        try:
-            st.experimental_rerun()
-        except Exception:
-            pass
-    elif hasattr(st, "rerun"):
+    if hasattr(st, "rerun"):
         try:
             st.rerun()
+        except Exception:
+            pass
+    elif hasattr(st, "experimental_rerun"):
+        try:
+            st.experimental_rerun()
         except Exception:
             pass
 
@@ -472,55 +471,188 @@ with st.sidebar:
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
 
+    def _al_cambiar_campo(key_w: str, campo_nombre: str):
+        val = st.session_state.get(key_w)
+        if val is not None:
+            profile_manager.auto_guardar_campo(
+                ruta_perfil_activo,
+                campo_nombre,
+                val,
+                nombre_visible=perfil_seleccionado_etiqueta,
+            )
+
     with st.expander("✏️ Editar Datos de Empresa", expanded=False):
+        st.caption("🔒 **Persistencia Canónica Activa (SQLite + JSON)** — Cada campo se guarda automáticamente en tiempo real al editar.")
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
         
         with tab_emp:
             st.markdown("##### 📌 Identificación Corporativa")
-            razon_social = st.text_input("Razón Social", value=str(datos_empresa.get("razon_social") or ""), key=f"pe_{slug_perfil}_rs")
-            nit = st.text_input("NIT / Identificación Tributaria", value=str(datos_empresa.get("nit") or ""), key=f"pe_{slug_perfil}_nit")
-            tipo_sociedad = st.text_input("Tipo de Sociedad", value=str(datos_empresa.get("tipo_sociedad") or ""), key=f"pe_{slug_perfil}_tsoc")
+            razon_social = st.text_input(
+                "Razón Social",
+                value=str(datos_empresa.get("razon_social") or ""),
+                key=f"pe_{slug_perfil}_rs",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_rs", "razon_social"),
+            )
+            nit = st.text_input(
+                "NIT / Identificación Tributaria",
+                value=str(datos_empresa.get("nit") or ""),
+                key=f"pe_{slug_perfil}_nit",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_nit", "nit"),
+            )
+            tipo_sociedad = st.text_input(
+                "Tipo de Sociedad",
+                value=str(datos_empresa.get("tipo_sociedad") or ""),
+                key=f"pe_{slug_perfil}_tsoc",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tsoc", "tipo_sociedad"),
+            )
 
             st.markdown("##### 📍 Ubicación Principal")
-            direccion = st.text_input("Dirección Principal", value=str(datos_empresa.get("direccion") or ""), key=f"pe_{slug_perfil}_dir")
-            ciudad = st.text_input("Ciudad / Municipio", value=str(datos_empresa.get("ciudad") or ""), key=f"pe_{slug_perfil}_ciu")
-            departamento = st.text_input("Departamento", value=str(datos_empresa.get("departamento") or ""), key=f"pe_{slug_perfil}_dep")
-            pais = st.text_input("País", value=str(datos_empresa.get("pais") or "Colombia"), key=f"pe_{slug_perfil}_pais")
+            direccion = st.text_input(
+                "Dirección Principal",
+                value=str(datos_empresa.get("direccion") or ""),
+                key=f"pe_{slug_perfil}_dir",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_dir", "direccion"),
+            )
+            ciudad = st.text_input(
+                "Ciudad / Municipio",
+                value=str(datos_empresa.get("ciudad") or ""),
+                key=f"pe_{slug_perfil}_ciu",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_ciu", "ciudad"),
+            )
+            departamento = st.text_input(
+                "Departamento",
+                value=str(datos_empresa.get("departamento") or ""),
+                key=f"pe_{slug_perfil}_dep",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_dep", "departamento"),
+            )
+            pais = st.text_input(
+                "País",
+                value=str(datos_empresa.get("pais") or "Colombia"),
+                key=f"pe_{slug_perfil}_pais",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_pais", "pais"),
+            )
 
             st.markdown("##### 📞 Contacto Institucional")
-            telefono = st.text_input("Teléfono PBX", value=str(datos_empresa.get("telefono") or ""), key=f"pe_{slug_perfil}_tel")
-            pagina_web = st.text_input("Página Web", value=str(datos_empresa.get("pagina_web") or ""), key=f"pe_{slug_perfil}_web")
+            telefono = st.text_input(
+                "Teléfono PBX",
+                value=str(datos_empresa.get("telefono") or ""),
+                key=f"pe_{slug_perfil}_tel",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tel", "telefono"),
+            )
+            pagina_web = st.text_input(
+                "Página Web",
+                value=str(datos_empresa.get("pagina_web") or ""),
+                key=f"pe_{slug_perfil}_web",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_web", "pagina_web"),
+            )
 
         with tab_rep:
             st.markdown("##### 🪪 Identidad del Representante")
-            representante_legal = st.text_input("Nombre Completo", value=str(datos_empresa.get("representante_legal") or ""), key=f"pe_{slug_perfil}_rep_nom")
-            rep_nombres = st.text_input("Nombres", value=str(datos_empresa.get("representante_nombres") or ""), key=f"pe_{slug_perfil}_r_nom")
-            rep_apellidos = st.text_input("Apellidos", value=str(datos_empresa.get("representante_apellidos") or ""), key=f"pe_{slug_perfil}_r_ape")
+            representante_legal = st.text_input(
+                "Nombre Completo",
+                value=str(datos_empresa.get("representante_legal") or ""),
+                key=f"pe_{slug_perfil}_rep_nom",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_rep_nom", "representante_legal"),
+            )
+            rep_nombres = st.text_input(
+                "Nombres",
+                value=str(datos_empresa.get("representante_nombres") or ""),
+                key=f"pe_{slug_perfil}_r_nom",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_r_nom", "representante_nombres"),
+            )
+            rep_apellidos = st.text_input(
+                "Apellidos",
+                value=str(datos_empresa.get("representante_apellidos") or ""),
+                key=f"pe_{slug_perfil}_r_ape",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_r_ape", "representante_apellidos"),
+            )
             
-            tipo_documento = st.text_input("Tipo de Documento / Tipo ID", value=str(datos_empresa.get("tipo_documento") or "C.C."), key=f"pe_{slug_perfil}_tdoc")
+            tipo_documento = st.text_input(
+                "Tipo de Documento / Tipo ID",
+                value=str(datos_empresa.get("tipo_documento") or "C.C."),
+                key=f"pe_{slug_perfil}_tdoc",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tdoc", "tipo_documento"),
+            )
             
-            cedula = st.text_input("Número de Documento (Cédula)", value=str(datos_empresa.get("cedula") or ""), key=f"pe_{slug_perfil}_ced")
+            cedula = st.text_input(
+                "Número de Documento (Cédula)",
+                value=str(datos_empresa.get("cedula") or ""),
+                key=f"pe_{slug_perfil}_ced",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_ced", "cedula"),
+            )
             lugar_expedicion = st.text_input(
                 "Lugar de Expedición (Ciudad)",
                 value=str(datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or ""),
                 help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Medellín, Envigado",
-                key=f"pe_{slug_perfil}_exp"
+                key=f"pe_{slug_perfil}_exp",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_exp", "lugar_expedicion"),
             )
 
             st.markdown("##### 📱 Contacto Directo")
-            celular = st.text_input("Celular / Móvil", value=str(datos_empresa.get("celular") or ""), key=f"pe_{slug_perfil}_cel")
-            correo = st.text_input("Correo Electrónico", value=str(datos_empresa.get("correo") or ""), key=f"pe_{slug_perfil}_cor")
+            celular = st.text_input(
+                "Celular / Móvil",
+                value=str(datos_empresa.get("celular") or ""),
+                key=f"pe_{slug_perfil}_cel",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_cel", "celular"),
+            )
+            correo = st.text_input(
+                "Correo Electrónico",
+                value=str(datos_empresa.get("correo") or ""),
+                key=f"pe_{slug_perfil}_cor",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_cor", "correo"),
+            )
 
         with tab_fin:
             st.markdown("##### 🏦 Entidad Bancaria")
-            banco = st.text_input("Banco", value=str(datos_empresa.get("banco") or ""), key=f"pe_{slug_perfil}_banco")
-            sucursal = st.text_input("Sucursal Bancaria", value=str(datos_empresa.get("sucursal") or ""), key=f"pe_{slug_perfil}_suc")
+            banco = st.text_input(
+                "Banco",
+                value=str(datos_empresa.get("banco") or ""),
+                key=f"pe_{slug_perfil}_banco",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_banco", "banco"),
+            )
+            sucursal = st.text_input(
+                "Sucursal Bancaria",
+                value=str(datos_empresa.get("sucursal") or ""),
+                key=f"pe_{slug_perfil}_suc",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_suc", "sucursal"),
+            )
 
             st.markdown("##### 💳 Cuenta para Pagos")
-            numero_cuenta = st.text_input("Número de Cuenta", value=str(datos_empresa.get("numero_cuenta") or ""), key=f"pe_{slug_perfil}_num_cta")
-            tipo_cuenta = st.text_input("Tipo de Cuenta", value=str(datos_empresa.get("tipo_cuenta") or "AHORROS"), key=f"pe_{slug_perfil}_tip_cta")
+            numero_cuenta = st.text_input(
+                "Número de Cuenta",
+                value=str(datos_empresa.get("numero_cuenta") or ""),
+                key=f"pe_{slug_perfil}_num_cta",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_num_cta", "numero_cuenta"),
+            )
+            tipo_cuenta = st.text_input(
+                "Tipo de Cuenta",
+                value=str(datos_empresa.get("tipo_cuenta") or "AHORROS"),
+                key=f"pe_{slug_perfil}_tip_cta",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tip_cta", "tipo_cuenta"),
+            )
 
-        if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
+        if st.button("💾 Guardar y Confirmar Cambios", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
                 "razon_social": razon_social,
                 "nit": nit,
@@ -545,9 +677,9 @@ with st.sidebar:
                 "numero_cuenta": numero_cuenta,
                 "tipo_cuenta": tipo_cuenta,
             }
-            if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados):
+            if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados, nombre_visible=perfil_seleccionado_etiqueta):
                 profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
-                st.success("✅ ¡Datos del perfil guardados y persistidos correctamente!")
+                st.success("✅ ¡Datos guardados permanentemente en SQLite canónico y archivo JSON!")
                 datos_empresa = datos_actualizados
                 _safe_rerun()
 
