@@ -9,16 +9,39 @@ import json
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Union, Optional
 
 
-CONFIG_DIR = Path("config")
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+CONFIG_DIR = PROJECT_ROOT / "config"
 PROFILE_DEFAULT_PATH = CONFIG_DIR / "datos_empresa.json"
+ACTIVE_PROFILE_FILE = CONFIG_DIR / "perfil_activo.txt"
 
 
 def asegurar_directorio_config() -> None:
     """Garantiza que la carpeta config/ exista."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+
+
+def obtener_perfil_activo_guardado() -> str:
+    """Lee el nombre del último perfil seleccionado desde config/perfil_activo.txt."""
+    if ACTIVE_PROFILE_FILE.exists():
+        try:
+            nombre = ACTIVE_PROFILE_FILE.read_text(encoding="utf-8").strip()
+            if nombre:
+                return nombre
+        except Exception:
+            pass
+    return "🏢 Principal (IAC Latam)"
+
+
+def guardar_perfil_activo_seleccionado(nombre_etiqueta: str) -> None:
+    """Persiste en disco el nombre del perfil actualmente activo para que sobreviva reinicios."""
+    asegurar_directorio_config()
+    try:
+        ACTIVE_PROFILE_FILE.write_text(nombre_etiqueta.strip(), encoding="utf-8")
+    except Exception as exc:
+        print(f"[AutoForm AI] Error guardando perfil activo: {exc}")
 
 
 def _slugify(texto: str) -> str:
@@ -182,9 +205,10 @@ def cargar_perfil(ruta: Union[Path, str]) -> Dict[str, Any]:
         return _obtener_plantilla_vacia()
 
 
-def guardar_perfil(ruta: Path, datos: Dict[str, Any]) -> bool:
+def guardar_perfil(ruta: Union[Path, str], datos: Dict[str, Any]) -> bool:
     """Guarda los datos empresariales estructurados en taxonomía semántica en el archivo JSON."""
     asegurar_directorio_config()
+    ruta = Path(ruta)
     try:
         taxonomia = estructurar_perfil_taxonomia(datos)
         with ruta.open("w", encoding="utf-8") as f:
@@ -210,7 +234,57 @@ def crear_nuevo_perfil(nombre_perfil: str, datos: Dict[str, Any]) -> Tuple[bool,
     etiqueta = f"🏢 {nombre_perfil.strip()}"
 
     exito = guardar_perfil(ruta_nueva, datos)
+    if exito:
+        guardar_perfil_activo_seleccionado(etiqueta)
     return exito, ruta_nueva, etiqueta
+
+
+def importar_perfil_json(contenido_str: str, nombre_sugerido: str = "") -> Tuple[bool, Path, str]:
+    """Importa un archivo JSON (plano o jerárquico) como perfil empresarial persistente.
+
+    Returns:
+        Tuple[exito, ruta_creada, etiqueta_perfil]
+    """
+    try:
+        datos_cargados = json.loads(contenido_str)
+        if not isinstance(datos_cargados, dict):
+            return False, PROFILE_DEFAULT_PATH, ""
+        
+        datos_planos = aplanar_perfil(datos_cargados)
+        nombre = nombre_sugerido.strip()
+        if not nombre:
+            nombre = str(datos_planos.get("razon_social") or "Importado").strip()
+            # Limpiar prefijos comunes como S.A.S si es muy largo
+            if len(nombre) > 40:
+                nombre = nombre[:40].strip()
+
+        slug = _slugify(nombre)
+        if not slug or slug == "principal":
+            ruta_destino = PROFILE_DEFAULT_PATH
+            etiqueta = "🏢 Principal (IAC Latam)"
+        else:
+            ruta_destino = CONFIG_DIR / f"datos_empresa_{slug}.json"
+            etiqueta = f"🏢 {nombre.title()}"
+
+        exito = guardar_perfil(ruta_destino, datos_planos)
+        if exito:
+            guardar_perfil_activo_seleccionado(etiqueta)
+        return exito, ruta_destino, etiqueta
+    except Exception as exc:
+        print(f"[AutoForm AI] Error importando perfil JSON: {exc}")
+        return False, PROFILE_DEFAULT_PATH, ""
+
+
+def obtener_perfil_para_descarga(ruta: Union[Path, str]) -> str:
+    """Devuelve el contenido JSON formateado listo para descarga de respaldo."""
+    ruta = Path(ruta)
+    if ruta.exists():
+        try:
+            return ruta.read_text(encoding="utf-8")
+        except Exception:
+            pass
+    datos = cargar_perfil(ruta)
+    return json.dumps(estructurar_perfil_taxonomia(datos), indent=2, ensure_ascii=False)
 
 
 def _obtener_plantilla_vacia() -> Dict[str, Any]:

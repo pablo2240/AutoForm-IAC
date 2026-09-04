@@ -1,4 +1,4 @@
-﻿"""Componente UI para carga de archivos y gestión de perfil empresarial (AutoForm AI)."""
+"""Componente UI para carga de archivos y gestión de perfil empresarial (AutoForm AI)."""
 
 from __future__ import annotations
 
@@ -52,10 +52,11 @@ def render_pantalla_carga(
                 datos_editados[campo] = nuevo_val
 
         if st.button("💾 Guardar Cambios en Perfil de Empresa", key=f"{key_prefix}_save_profile"):
-            ruta_cfg = Path("config") / "datos_empresa.json"
-            with open(ruta_cfg, "w", encoding="utf-8") as f:
-                json.dump(datos_editados, f, ensure_ascii=False, indent=2)
-            st.success("✅ Perfil de empresa actualizado exitosamente.")
-            perfil_empresa_actual = datos_editados
+            from core import profile_manager
+            if profile_manager.guardar_perfil(profile_manager.PROFILE_DEFAULT_PATH, datos_editados):
+                st.success("✅ Perfil de empresa actualizado exitosamente.")
+                perfil_empresa_actual = datos_editados
+            else:
+                st.error("❌ Error al guardar el perfil.")
 
     return archivo_bytes, nombre_archivo, perfil_empresa_actual

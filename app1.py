@@ -21,9 +21,9 @@ import importlib
 # Recargar módulos de core, pipeline y ui para asegurar que los cambios se reflejen en Streamlit sin reiniciar
 for modulo in [
     "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper", "core.pdf_processor",
-    "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher", "core.domain_constants",
-    "pipeline.context", "pipeline.orchestrator", "pipeline.handlers.document_detector",
-    "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
+    "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
+    "core.domain_constants", "pipeline.context", "pipeline.orchestrator",
+    "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler", "pipeline.handlers.pdf_handler",
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
     "pipeline.stages.stage_3_llm_mapper", "pipeline.stages.stage_5_writer",
     "ui.page_verify", "ui.page_download", "ui.page_upload", "template_store.store",
@@ -442,16 +442,30 @@ with st.sidebar:
     dict_perfiles = profile_manager.listar_perfiles()
     nombres_perfiles = list(dict_perfiles.keys())
 
+    perfil_guardado = profile_manager.obtener_perfil_activo_guardado()
     if "perfil_activo_nombre" not in st.session_state or st.session_state["perfil_activo_nombre"] not in dict_perfiles:
-        st.session_state["perfil_activo_nombre"] = nombres_perfiles[0] if nombres_perfiles else "🏢 Principal (IAC Latam)"
+        st.session_state["perfil_activo_nombre"] = (
+            perfil_guardado if perfil_guardado in dict_perfiles
+            else (nombres_perfiles[0] if nombres_perfiles else "🏢 Principal (IAC Latam)")
+        )
+
+    idx_activo = (
+        nombres_perfiles.index(st.session_state["perfil_activo_nombre"])
+        if st.session_state["perfil_activo_nombre"] in nombres_perfiles
+        else 0
+    )
 
     perfil_seleccionado_etiqueta = st.selectbox(
         "Seleccionar Perfil:",
         options=nombres_perfiles,
-        index=nombres_perfiles.index(st.session_state["perfil_activo_nombre"]) if st.session_state["perfil_activo_nombre"] in nombres_perfiles else 0,
+        index=idx_activo,
+        key="sb_selector_perfil_activo",
         help="Los datos de este perfil se usarán para diligenciar los formularios automáticamente."
     )
-    st.session_state["perfil_activo_nombre"] = perfil_seleccionado_etiqueta
+    if perfil_seleccionado_etiqueta != st.session_state.get("perfil_activo_nombre"):
+        st.session_state["perfil_activo_nombre"] = perfil_seleccionado_etiqueta
+        profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
+
     ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
     datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
 
@@ -463,44 +477,48 @@ with st.sidebar:
         
         with tab_emp:
             st.markdown("##### 📌 Identificación Corporativa")
-            razon_social = st.text_input("Razón Social", value=datos_empresa.get("razon_social") or "Ingeniería Asistida Por Computador S.A.S", key=f"pe_{slug_perfil}_rs")
-            nit = st.text_input("NIT / Identificación Tributaria", value=datos_empresa.get("nit") or "811004721-2", key=f"pe_{slug_perfil}_nit")
-            tipo_sociedad = st.text_input("Tipo de Sociedad", value=datos_empresa.get("tipo_sociedad") or "S.A.S", key=f"pe_{slug_perfil}_tsoc")
+            razon_social = st.text_input("Razón Social", value=str(datos_empresa.get("razon_social") or ""), key=f"pe_{slug_perfil}_rs")
+            nit = st.text_input("NIT / Identificación Tributaria", value=str(datos_empresa.get("nit") or ""), key=f"pe_{slug_perfil}_nit")
+            tipo_sociedad = st.text_input("Tipo de Sociedad", value=str(datos_empresa.get("tipo_sociedad") or ""), key=f"pe_{slug_perfil}_tsoc")
 
             st.markdown("##### 📍 Ubicación Principal")
-            direccion = st.text_input("Dirección Principal", value=datos_empresa.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key=f"pe_{slug_perfil}_dir")
-            ciudad = st.text_input("Ciudad / Municipio", value=datos_empresa.get("ciudad") or "Medellin", key=f"pe_{slug_perfil}_ciu")
-            departamento = st.text_input("Departamento", value=datos_empresa.get("departamento") or "Antioquia", key=f"pe_{slug_perfil}_dep")
-            pais = st.text_input("País", value=datos_empresa.get("pais") or "Colombia", key=f"pe_{slug_perfil}_pais")
+            direccion = st.text_input("Dirección Principal", value=str(datos_empresa.get("direccion") or ""), key=f"pe_{slug_perfil}_dir")
+            ciudad = st.text_input("Ciudad / Municipio", value=str(datos_empresa.get("ciudad") or ""), key=f"pe_{slug_perfil}_ciu")
+            departamento = st.text_input("Departamento", value=str(datos_empresa.get("departamento") or ""), key=f"pe_{slug_perfil}_dep")
+            pais = st.text_input("País", value=str(datos_empresa.get("pais") or "Colombia"), key=f"pe_{slug_perfil}_pais")
 
             st.markdown("##### 📞 Contacto Institucional")
-            telefono = st.text_input("Teléfono PBX", value=datos_empresa.get("telefono") or "2656868", key=f"pe_{slug_perfil}_tel")
-            pagina_web = st.text_input("Página Web", value=datos_empresa.get("pagina_web") or "iaclatam.com", key=f"pe_{slug_perfil}_web")
+            telefono = st.text_input("Teléfono PBX", value=str(datos_empresa.get("telefono") or ""), key=f"pe_{slug_perfil}_tel")
+            pagina_web = st.text_input("Página Web", value=str(datos_empresa.get("pagina_web") or ""), key=f"pe_{slug_perfil}_web")
 
         with tab_rep:
             st.markdown("##### 🪪 Identidad del Representante")
-            representante_legal = st.text_input("Nombre Completo", value=datos_empresa.get("representante_legal") or "Guillermo Humberto Cañón Sarria", key=f"pe_{slug_perfil}_rep_nom")
-            rep_nombres = st.text_input("Nombres", value=datos_empresa.get("representante_nombres") or "Guillermo Humberto", key=f"pe_{slug_perfil}_r_nom")
-            rep_apellidos = st.text_input("Apellidos", value=datos_empresa.get("representante_apellidos") or "Cañón Sarria", key=f"pe_{slug_perfil}_r_ape")
+            representante_legal = st.text_input("Nombre Completo", value=str(datos_empresa.get("representante_legal") or ""), key=f"pe_{slug_perfil}_rep_nom")
+            rep_nombres = st.text_input("Nombres", value=str(datos_empresa.get("representante_nombres") or ""), key=f"pe_{slug_perfil}_r_nom")
+            rep_apellidos = st.text_input("Apellidos", value=str(datos_empresa.get("representante_apellidos") or ""), key=f"pe_{slug_perfil}_r_ape")
             
-            tipo_documento = st.text_input("Tipo de Documento / Tipo ID", value=datos_empresa.get("tipo_documento") or "C.C.", key=f"pe_{slug_perfil}_tdoc")
+            tipo_documento = st.text_input("Tipo de Documento / Tipo ID", value=str(datos_empresa.get("tipo_documento") or "C.C."), key=f"pe_{slug_perfil}_tdoc")
             
-            cedula = st.text_input("Número de Documento (Cédula)", value=datos_empresa.get("cedula") or "98555384", key=f"pe_{slug_perfil}_ced")
-            lugar_expedicion = st.text_input("Lugar de Expedición (Ciudad)", value=datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or "Envigado",
-                                             help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Medellín, Envigado", key=f"pe_{slug_perfil}_exp")
+            cedula = st.text_input("Número de Documento (Cédula)", value=str(datos_empresa.get("cedula") or ""), key=f"pe_{slug_perfil}_ced")
+            lugar_expedicion = st.text_input(
+                "Lugar de Expedición (Ciudad)",
+                value=str(datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or ""),
+                help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Medellín, Envigado",
+                key=f"pe_{slug_perfil}_exp"
+            )
 
             st.markdown("##### 📱 Contacto Directo")
-            celular = st.text_input("Celular / Móvil", value=datos_empresa.get("celular") or "3104120217", key=f"pe_{slug_perfil}_cel")
-            correo = st.text_input("Correo Electrónico", value=datos_empresa.get("correo") or "guillermo.canon@iaclatam.com", key=f"pe_{slug_perfil}_cor")
+            celular = st.text_input("Celular / Móvil", value=str(datos_empresa.get("celular") or ""), key=f"pe_{slug_perfil}_cel")
+            correo = st.text_input("Correo Electrónico", value=str(datos_empresa.get("correo") or ""), key=f"pe_{slug_perfil}_cor")
 
         with tab_fin:
             st.markdown("##### 🏦 Entidad Bancaria")
-            banco = st.text_input("Banco", value=datos_empresa.get("banco") or "BANCOLOMBIA", key=f"pe_{slug_perfil}_banco")
-            sucursal = st.text_input("Sucursal Bancaria", value=datos_empresa.get("sucursal") or "Medellin", key=f"pe_{slug_perfil}_suc")
+            banco = st.text_input("Banco", value=str(datos_empresa.get("banco") or ""), key=f"pe_{slug_perfil}_banco")
+            sucursal = st.text_input("Sucursal Bancaria", value=str(datos_empresa.get("sucursal") or ""), key=f"pe_{slug_perfil}_suc")
 
             st.markdown("##### 💳 Cuenta para Pagos")
-            numero_cuenta = st.text_input("Número de Cuenta", value=datos_empresa.get("numero_cuenta") or "00300833888", key=f"pe_{slug_perfil}_num_cta")
-            tipo_cuenta = st.text_input("Tipo de Cuenta", value=datos_empresa.get("tipo_cuenta") or "AHORROS", key=f"pe_{slug_perfil}_tip_cta")
+            numero_cuenta = st.text_input("Número de Cuenta", value=str(datos_empresa.get("numero_cuenta") or ""), key=f"pe_{slug_perfil}_num_cta")
+            tipo_cuenta = st.text_input("Tipo de Cuenta", value=str(datos_empresa.get("tipo_cuenta") or "AHORROS"), key=f"pe_{slug_perfil}_tip_cta")
 
         if st.button("💾 Guardar Perfil Empresarial", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
@@ -528,7 +546,8 @@ with st.sidebar:
                 "tipo_cuenta": tipo_cuenta,
             }
             if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados):
-                st.success("✅ ¡Datos del perfil guardados en Taxonomía Semántica!")
+                profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
+                st.success("✅ ¡Datos del perfil guardados y persistidos correctamente!")
                 datos_empresa = datos_actualizados
                 _safe_rerun()
 
@@ -539,8 +558,40 @@ with st.sidebar:
                 exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
                 if exito:
                     st.session_state["perfil_activo_nombre"] = nueva_etiqueta
+                    profile_manager.guardar_perfil_activo_seleccionado(nueva_etiqueta)
                     st.success(f"✅ Perfil creado: {nueva_etiqueta}")
                     _safe_rerun()
+
+    with st.expander("💾 Respaldar / Cargar Perfil (JSON)", expanded=False):
+        st.caption("Exporta tus datos para guardarlos en tu equipo o impórtalos en la nube (Streamlit Cloud):")
+        json_descarga = profile_manager.obtener_perfil_para_descarga(ruta_perfil_activo)
+        st.download_button(
+            label="📥 Descargar Perfil Activo (JSON)",
+            data=json_descarga,
+            file_name=f"{slug_perfil}_datos_empresa.json",
+            mime="application/json",
+            use_container_width=True,
+            help="Descarga este perfil en tu equipo para conservarlo o importarlo en la versión web."
+        )
+        st.markdown("---")
+        archivo_perfil_subido = st.file_uploader(
+            "📤 Importar Perfil desde JSON:",
+            type=["json"],
+            key="uploader_perfil_json",
+            help="Sube un archivo JSON previamente exportado para restaurar o cargar una nueva empresa."
+        )
+        if archivo_perfil_subido is not None:
+            if st.button("Restaurar y Activar Perfil", key="btn_importar_perfil_json", use_container_width=True):
+                contenido = archivo_perfil_subido.getvalue().decode("utf-8")
+                nombre_base = archivo_perfil_subido.name.replace(".json", "").replace("datos_empresa_", "").replace("_", " ").title()
+                exito, ruta_imp, etiq_imp = profile_manager.importar_perfil_json(contenido, nombre_sugerido=nombre_base)
+                if exito:
+                    st.session_state["perfil_activo_nombre"] = etiq_imp
+                    profile_manager.guardar_perfil_activo_seleccionado(etiq_imp)
+                    st.success(f"✅ Perfil '{etiq_imp}' importado y activado exitosamente.")
+                    _safe_rerun()
+                else:
+                    st.error("❌ El archivo JSON no tiene un formato válido.")
 
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────
