@@ -38,6 +38,9 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`MacroLote`** | Balanced batch of 15–25 fields grouped by spatial section for parallel LLM inference via `ThreadPoolExecutor`. | "Micro-batch", "Chunk crudo" |
 | **`Diff Loop`** | Pure-Python audit pass comparing viable fields against mapped fields to trigger immediate recovery before rendering. | "Filtro posterior" |
 | **`Native OpenXML`** | Clean workbook generation strictly using `openpyxl.save(BytesIO)` without injecting raw VML/drawing parts. | "Zip patch", "Inyección VML" |
+| **`Cell Reservation`** | Global registry of written target coordinates (`celdas_ocupadas`) ensuring no physical cell is written twice by competing directives. | "Sobreescritura destructiva" |
+| **`Section Uniqueness`** | Invariant restricting canonical corporate fields (`nit`, `razon_social`, etc.) to at most one assignment per section. | "Multi-mapeo redundante" |
+| **`PEP Safe Passivity`** | Unconditional rejection (`DESCARTADO`) of all fields, columns, and questions belonging to PEP or Beneficiario Final sections. | "Inyección en PEP" |
 
 ---
 
@@ -47,3 +50,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0002: Deterministic Hybrid Spatial Pipeline (HSP)`](docs/adr/0002-deterministic-hybrid-pipeline-hsp.md)
 * [`ADR-0003: Zero-Omission Triad (Chunking + Diff Loop + FastEmbed)`](docs/adr/0003-triad-zero-omission.md)
 * [`ADR-0004: Domain Isolation, Underline Ray-Casting & Safe Passivity`](docs/adr/0004-domain-isolation-and-underline-raycasting.md)
+* [`ADR-0005: Cell Reservation, Section Uniqueness & PEP/Beneficiario Final Isolation`](docs/adr/0005-cell-reservation-and-pep-isolation.md)

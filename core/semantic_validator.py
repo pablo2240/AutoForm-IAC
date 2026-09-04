@@ -89,6 +89,7 @@ from core.domain_constants import (
     TOKENS_REP_LEGAL_SECCION,
     TOKENS_CONTACTO_SECCION,
     limpiar_rotulo,
+    es_seccion_o_campo_pep,
 )
 
 # Secciones semánticamente bancarias / financieras
@@ -457,6 +458,15 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # ── Safe Passivity (ADR-0005): Secciones o campos de PEP / Beneficiarios Finales ──
+    contexto_item = str(plan_item.get("contexto_fila") or "").strip()
+    if es_seccion_o_campo_pep(seccion_norm, rotulo_norm, contexto_item):
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = f"Safe Passivity (ADR-0005): Sección/Campo de PEP o Beneficiario Final '{rotulo}' reservado para llenado manual."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
     # ── Safe Passivity (ADR-0004): Contacto comercial y opciones ──────────
     es_contacto = (
         any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial"))
@@ -606,6 +616,8 @@ def validar_plan_mapeo(
             pass  # Si el IR no está disponible, seguimos sin short-circuit
 
     plan_validado: List[Dict[str, Any]] = []
+    # Registro de campos asignados por sección para Unicidad de Sección (ADR-0005)
+    asignados_por_seccion: Dict[str, Set[str]] = {}
 
     for item in plan_mapeo:
         # ── Short-circuit: sección marcada OMITIR_* en el IR ─────────────────
@@ -636,6 +648,28 @@ def validar_plan_mapeo(
         campo_prop = resultado.get("campo_propuesto", "")
         if campo_final and campo_final != campo_prop:
             resultado["campo"] = campo_final
+
+        # ── Unicidad de Campo por Sección (ADR-0005) ──────────────────────────
+        campo_activo = resultado.get("campo_final") or resultado.get("campo")
+        if resultado.get("estado") != EstadoMapeo.DESCARTADO and campo_activo:
+            sec_key = seccion_item if seccion_item else "SECCION_GENERAL"
+            campos_unicos_seccion = (
+                "nit", "razon_social", "direccion", "representante_legal",
+                "cedula", "tipo_documento", "lugar_expedicion", "tipo_sociedad",
+                "telefono", "correo", "ciudad", "departamento", "pais",
+                "banco", "numero_cuenta", "tipo_cuenta"
+            )
+            if campo_activo in campos_unicos_seccion:
+                if campo_activo in asignados_por_seccion.get(sec_key, set()):
+                    resultado["estado"] = EstadoMapeo.DESCARTADO
+                    resultado["campo_final"] = ""
+                    resultado["motivo"] = (
+                        f"Unicidad de Sección (ADR-0005): El campo '{campo_activo}' ya fue "
+                        f"asignado previamente en la sección '{sec_key}'."
+                    )
+                    resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                else:
+                    asignados_por_seccion.setdefault(sec_key, set()).add(campo_activo)
 
         plan_validado.append(resultado)
 

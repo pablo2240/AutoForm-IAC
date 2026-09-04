@@ -17,6 +17,12 @@ from core.semantic_validator import (
     _normalizar,
     _aplanar_datos_empresa,
 )
+from core.domain_constants import (
+    es_seccion_o_campo_pep,
+    ROTULOS_GENERICOS_BLOQUEADOS,
+    PATRON_CONTACTO_COMERCIAL,
+    limpiar_rotulo,
+)
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. PATRONES DE DETECCIÓN Y DOMINIOS DE SECCIÓN
@@ -31,7 +37,7 @@ PAT_SECCION_FINANCIERO = re.compile(
     re.IGNORECASE,
 )
 PAT_SECCION_JUNTA_COMP = re.compile(
-    r"\b(?:junta\s+directiva|composici[oó]n|accionistas?|socios?|beneficiarios?\s+finales?|administraci[oó]n)\b",
+    r"\b(?:junta\s+directiva|composici[oó]n|accionistas?|socios?|administraci[oó]n)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_EMPRESA = re.compile(
@@ -262,6 +268,27 @@ def ejecutar_pase_cobertura_exhaustiva(
             else:
                 coords_destino_ocupadas.add((h, f, c + 1))
 
+    # Bloquear filas que contengan o estén bajo preguntas/bloques de PEP o Beneficiario Final (ADR-0005)
+    filas_bloqueadas_pep: Set[Tuple[str, int]] = set()
+    if documento_ir is not None and hasattr(documento_ir, "secciones"):
+        for sec in documento_ir.secciones:
+            if es_seccion_o_campo_pep(sec.titulo):
+                for f_num in range(sec.fila_inicio, sec.fila_fin + 1):
+                    filas_bloqueadas_pep.add((sec.hoja, f_num))
+            for fila in sec.filas:
+                for elem in fila.elementos:
+                    if es_seccion_o_campo_pep("", elem.texto):
+                        for off in range(0, 8):
+                            filas_bloqueadas_pep.add((sec.hoja, fila.numero_fila + off))
+    elif elementos_raw:
+        for elem in elementos_raw:
+            txt_e = str(elem.get("valor") or elem.get("rotulo") or "")
+            if es_seccion_o_campo_pep("", txt_e):
+                h_e = str(elem.get("hoja", "Hoja1"))
+                f_e = int(elem.get("fila", 0))
+                for off in range(0, 8):
+                    filas_bloqueadas_pep.add((h_e, f_e + off))
+
     # Recopilar candidatos no mapeados desde el IR o desde elementos_raw
     candidatos: List[Dict[str, Any]] = []
 
@@ -322,6 +349,17 @@ def ejecutar_pase_cobertura_exhaustiva(
             continue
 
         sec_titulo = cand["seccion"]
+        # Safe Passivity (ADR-0005): Descartar totalmente secciones, filas o campos de PEP / Beneficiario Final
+        if (cand["hoja"], cand["fila"]) in filas_bloqueadas_pep:
+            continue
+        if es_seccion_o_campo_pep(sec_titulo, txt):
+            continue
+
+        # Safe Passivity (ADR-0004): Descartar rótulos genéricos o contacto comercial
+        txt_limpio = limpiar_rotulo(txt)
+        if txt_limpio in ROTULOS_GENERICOS_BLOQUEADOS or PATRON_CONTACTO_COMERCIAL.search(txt):
+            continue
+
         h = cand["hoja"]
         f = cand["fila"]
         c = cand["columna"]
@@ -334,6 +372,15 @@ def ejecutar_pase_cobertura_exhaustiva(
                 continue
 
             if not pat_rot.search(txt):
+                continue
+
+            # Unicidad de Sección (ADR-0005): Si el campo ya fue asignado en esta sección, no duplicar
+            campos_en_seccion = {
+                m.get("campo") for m in plan_resultado + nuevos_mapeos
+                if (m.get("seccion") == sec_titulo or m.get("seccion_padre") == sec_titulo)
+                and m.get("estado") != EstadoMapeo.DESCARTADO
+            }
+            if campo_sug in campos_en_seccion:
                 continue
 
             # 2. Comprobar que el campo tenga valor no vacío en la empresa

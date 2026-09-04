@@ -13,13 +13,26 @@ from typing import Set
 
 
 class DomainCategory(str, Enum):
-    """Categorías canónicas de sección y aislamiento de dominio (ADR-0004)."""
+    """Categorías canónicas de sección y aislamiento de dominio (ADR-0004 / ADR-0005)."""
     EMPRESA = "empresa"
     REPRESENTANTE_LEGAL = "representante_legal"
     FINANCIERO = "financiero"
     CONTACTO_COMERCIAL = "contacto_comercial"
+    PEP_BENEFICIARIO = "pep_beneficiario"
     GENERAL = "general"
     NO_APLICA = "no_aplica"
+
+
+# ── Triggers de PEP y Beneficiarios Finales para Safe Passivity (ADR-0005) ─────
+TOKENS_PEP_BENEFICIARIOS_SECCION: Set[str] = {
+    "pep", "peps", "persona expuesta", "politicamente expuesta", "politicamente expuesto",
+    "beneficiario final", "beneficiarios finales", "beneficiario real", "beneficiarios reales"
+}
+
+PATRON_PEP_BENEFICIARIOS = re.compile(
+    r"\b(?:pep|peps|persona\s+expuesta|pol[ií]ticamente\s+expuest[ao]s?|beneficiario\s+final|beneficiarios\s+finales|beneficiario\s+real|beneficiarios\s+reales)\b",
+    re.IGNORECASE
+)
 
 
 # ── Rótulos genéricos u opciones que NUNCA deben recibir mapeo automático ──────
@@ -70,3 +83,17 @@ def limpiar_rotulo(rotulo: str) -> str:
     if not rotulo:
         return ""
     return PATRON_LIMPIEZA_ROTULO.sub("", rotulo.lower().strip()).strip()
+
+
+def es_seccion_o_campo_pep(seccion: str = "", rotulo: str = "", contexto: str = "") -> bool:
+    """Determina si una sección, rótulo o contexto circundante pertenece al ámbito de PEP o Beneficiario Final (ADR-0005)."""
+    sec_norm = (seccion or "").lower()
+    rot_norm = (rotulo or "").lower()
+    ctx_norm = (contexto or "").lower()
+    if any(t in sec_norm for t in TOKENS_PEP_BENEFICIARIOS_SECCION) or bool(PATRON_PEP_BENEFICIARIOS.search(sec_norm)):
+        return True
+    if any(t in rot_norm for t in ("pep", "peps", "beneficiario final", "beneficiarios finales", "beneficiario real")) or bool(PATRON_PEP_BENEFICIARIOS.search(rot_norm)):
+        return True
+    if ctx_norm and (any(t in ctx_norm for t in ("pep", "peps", "beneficiario final", "beneficiarios finales", "beneficiario real")) or bool(PATRON_PEP_BENEFICIARIOS.search(ctx_norm))):
+        return True
+    return False

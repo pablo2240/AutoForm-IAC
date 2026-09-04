@@ -464,6 +464,8 @@ def rellenar_formulario_excel(
     workbook = load_workbook(filename=BytesIO(bytes_excel), data_only=False)
     reporte: List[Dict[str, Any]] = []
     _celdas_pre = celdas_prellenadas or {}
+    # ADR-0005: Registro global de celdas físicas ocupadas durante la sesión de escritura
+    celdas_ocupadas: Set[Tuple[str, int, int]] = set()
 
     for item in plan_mapeo:
         # Descartar ítems descartados por validación o sin campo válido
@@ -628,6 +630,12 @@ def rellenar_formulario_excel(
                 "NULL", item, None, fila_destino, columna_destino,
                 f"Campo '{campo}' no encontrado en DatosEmpresa"
             ))
+        # ── ADR-0005: Verificar Reserva Única de Celda Destino ─────────────
+        coord_dest = (hoja_nombre, fila_destino, columna_destino)
+        if coord_dest in celdas_ocupadas:
+            print(f"[AutoForm Writer] CELL_ALREADY_RESERVED: Celda ({hoja_nombre}!R{fila_destino}C{columna_destino}) ya fue reservada por una directiva anterior. SKIP campo '{campo}'.")
+            reporte.append(_log_item("SKIP", item, valor, fila_destino, columna_destino,
+                                     f"Celda ({hoja_nombre}!R{fila_destino}C{columna_destino}) ya fue reservada por una directiva anterior (ADR-0005)"))
             continue
 
         # ── 1. Intentar escribir en la celda destino prevista ─────────────
@@ -639,7 +647,7 @@ def rellenar_formulario_excel(
 
         # ── 2. Fallback en cascada si derecha está bloqueada/ocupada ──────
         if (not escrito or columna_destino >= max_col) and ubicacion == "derecha":
-            # Fallback 2A: Intentar ABAJO
+            # Fallback 2A: Intentar ABAJO solo si la celda inferior no pertenece a otro rótulo y no está reservada
             if rango_origen is not None:
                 fb_fila = rango_origen.max_row + 1
                 fb_col  = rango_origen.min_col
@@ -647,7 +655,14 @@ def rellenar_formulario_excel(
                 fb_fila = fila_origen + 1
                 fb_col  = columna_origen
 
-            if 1 <= fb_fila <= max_fila and 1 <= fb_col <= max_col:
+            coord_fb = (hoja_nombre, fb_fila, fb_col)
+            # PROTECCIÓN (ADR-0005): Si la fila inferior tiene su propio rótulo a la izquierda, no robar su celda de entrada
+            celda_izq_val = ws.cell(row=fb_fila, column=max(1, fb_col - 1)).value
+            fila_inf_tiene_rotulo = bool(celda_izq_val and str(celda_izq_val).strip() != "")
+
+            if (1 <= fb_fila <= max_fila and 1 <= fb_col <= max_col
+                and coord_fb not in celdas_ocupadas
+                and not fila_inf_tiene_rotulo):
                 celda_fb = _obtener_celda_escribible(ws, fb_fila, fb_col)
                 if _escribir_valor_en_celda(celda_fb, valor, False, hoja=ws):
                     fila_destino = fb_fila
@@ -735,6 +750,13 @@ def rellenar_formulario_excel(
                 verificado_real = True
 
         estado = "OK" if verificado_real else "SKIP"
+        if verificado_real:
+            celdas_ocupadas.add((hoja_nombre, fila_destino, columna_destino))
+            if rango_combinado is not None:
+                _, ini_c, _, fin_c = rango_combinado
+                for c_occ in range(ini_c, fin_c + 1):
+                    celdas_ocupadas.add((hoja_nombre, fila_destino, c_occ))
+
         motivo = "" if verificado_real else ("Valor no verificado físicamente en la celda destino" if escrito else "Celda no escribible o ya contiene contenido")
         reporte.append(_log_item(estado, item, valor, fila_destino, columna_destino, motivo))
 

@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from core.domain_constants import es_seccion_o_campo_pep, PATRON_PEP_BENEFICIARIOS
+
 
 # ──────────────────────────────────────────────────────────────────────────────
 # 1. Enumeraciones de Clasificación
@@ -274,6 +276,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     # Campos directos con indicadores inline nunca son títulos de sección
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
         return False
+
+    # Bloques, preguntas mayores o encabezados de PEP / Beneficiarios Finales (ADR-0005)
+    if PATRON_PEP_BENEFICIARIOS.search(t_clean):
+        return True
 
     # Numeración explícita: "3. REPRESENTANTE LEGAL" o "4.2 COMPOSICIÓN"
     m_num = re.match(r"^\s*(?:\d+(?:\.\d+)*[\.]?|[I|V|X]+\.?)\s+(.+)$", t_clean)
@@ -596,12 +602,29 @@ def construir_ir(
             # Ordenar filas por número
             filas_ordenadas = [filas_mapa[k] for k in sorted(filas_mapa.keys())]
 
+            # Asignar pertinencia según reglas de negocio (ADR-0004 / ADR-0005)
+            titulo_sec_norm = _normalizar(titulo_sec)
+            if es_seccion_o_campo_pep(titulo_sec):
+                pert_sec = PertinenciaSeccion.OMITIR_LEGAL
+                motivo_sec = "Sección o bloque de PEP / Beneficiarios Finales (Safe Passivity ADR-0005)"
+            elif _PATRON_USO_EXCLUSIVO.search(titulo_sec):
+                pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
+                motivo_sec = "Área de uso exclusivo de la entidad receptora / auditoría"
+            elif any(t in titulo_sec_norm for t in ("referencias comerciales", "contacto comercial")):
+                pert_sec = PertinenciaSeccion.OMITIR_TERCEROS
+                motivo_sec = "Sección de referencias o contacto comercial (Safe Passivity ADR-0004)"
+            else:
+                pert_sec = PertinenciaSeccion.PROCESAR
+                motivo_sec = "Sección procesable"
+
             seccion = SeccionIR(
                 id_seccion=sec_id,
                 titulo=titulo_sec,
                 fila_inicio=fila_min if fila_min < 999999 else 0,
                 fila_fin=fila_max,
                 hoja=hoja_nombre,
+                pertinencia=pert_sec,
+                motivo_pertinencia=motivo_sec,
                 filas=filas_ordenadas,
             )
 

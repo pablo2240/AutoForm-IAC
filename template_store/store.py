@@ -29,7 +29,7 @@ except ImportError:
 
 DEFAULT_TEMPLATES_DIR = Path("config") / "templates"
 LEGACY_CACHE_FILE = Path("config") / "plantillas_cache.json"
-CURRENT_ADR_VERSION = "0004"
+CURRENT_ADR_VERSION = "0005"
 
 
 def _normalizar_texto(texto: str) -> str:

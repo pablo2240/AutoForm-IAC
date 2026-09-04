@@ -41,6 +41,7 @@ from core.domain_constants import (
     TOKENS_REP_LEGAL_SECCION,
     TOKENS_CONTACTO_SECCION,
     limpiar_rotulo,
+    es_seccion_o_campo_pep,
 )
 
 
@@ -240,6 +241,10 @@ def _ejecutar_diff_loop_seccion(
     if not ids_omitidos:
         return mapeos_seccion
 
+    # Safe Passivity (ADR-0005): Si la sección es de PEP o Beneficiarios Finales, descartar todo rescate
+    if es_seccion_o_campo_pep(titulo_seccion):
+        return mapeos_seccion
+
     try:
         from core.coverage_engine import (
             PAT_SECCION_REP_LEGAL,
@@ -265,7 +270,9 @@ def _ejecutar_diff_loop_seccion(
         rotulo_txt = c_info["rotulo"]
         rotulo_limpio = limpiar_rotulo(rotulo_txt)
 
-        # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto comercial
+        # Safe Passivity (ADR-0005): Descartar rótulos genéricos, PEP o contacto comercial
+        if es_seccion_o_campo_pep(titulo_seccion, rotulo_txt):
+            continue
         if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
             continue
         if PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto:
@@ -311,6 +318,8 @@ def _ejecutar_diff_loop_seccion(
                 c_info = ids_viables[id_pend]
                 rot_txt = c_info["rotulo"]
                 rot_limpio = limpiar_rotulo(rot_txt)
+                if es_seccion_o_campo_pep(titulo_seccion, rot_txt):
+                    continue
                 if rot_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
                     continue
                 if PATRON_CONTACTO_COMERCIAL.search(rot_txt):
@@ -614,6 +623,19 @@ def ejecutar_stage_3_mapper(
         )
     except ImportError:
         pass
+
+    # ── HSP Fase 3: Post-Validación Determinística Final (ADR-0005) ──
+    # Re-validar todo el plan resultante de cobertura para garantizar
+    # Domain Isolation, PEP Safe Passivity y Unicidad de Sección
+    plan_final = _aplicar_validacion_deterministica(plan_final, ctx)
+
+    # Filtrar activamente elementos descartados para que no lleguen al Writer
+    plan_final = [
+        item for item in plan_final
+        if item.get("campo") not in ("DESCARTADO", "NO_APLICA", None, "")
+        and str(item.get("estado", "")).upper() != "DESCARTADO"
+        and item.get("valor") not in (None, "")
+    ]
 
     ctx.plan_mapeo = plan_final
 
