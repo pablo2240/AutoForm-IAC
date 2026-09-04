@@ -482,7 +482,7 @@ with st.sidebar:
             )
 
     with st.expander("✏️ Editar Datos de Empresa", expanded=False):
-        st.caption("🔒 **Persistencia Canónica Activa (SQLite + JSON)** — Cada campo se guarda automáticamente en tiempo real al editar.")
+        st.caption("Cada campo se guarda automáticamente en tiempo real al editar.")
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
         
         with tab_emp:
