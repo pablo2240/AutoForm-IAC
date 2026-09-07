@@ -56,6 +56,17 @@ CAMPOS_BANCARIOS: Set[str] = {
     "banco", "numero_cuenta", "tipo_cuenta", "sucursal"
 }
 
+# ADR-0006: Cifras de Balance y Estados Financieros Empresariales
+CAMPOS_FINANCIEROS_BALANCE: Set[str] = {
+    "total_activos", "total_pasivos", "total_patrimonio",
+    "total_ingresos_mensuales", "total_egresos_mensuales",
+    "total_ingresos_anuales", "total_egresos_anuales",
+    # Aliases cortos
+    "activos", "pasivos", "patrimonio",
+    "ingresos_mensuales", "egresos_mensuales",
+    "ingresos_anuales", "egresos_anuales",
+}
+
 CAMPOS_REP_LEGAL: Set[str] = {
     "representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion"
 }
@@ -67,6 +78,11 @@ CAMPOS_EMPRESA: Set[str] = {
 # ── Tokens de sección para clasificación de dominio ────────────────────────────
 TOKENS_FINANCIEROS_SECCION: Set[str] = {
     "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos", "pago", "transferencia", "contab", "giro", "tesoreria"
+}
+
+# ADR-0006: Tokens de sección estrictos para Cifras de Balance
+TOKENS_BALANCE_SECCION: Set[str] = {
+    "financier", "balance", "contab", "cifras", "econom", "económic", "estado de resultado", "situacion financiera"
 }
 
 TOKENS_REP_LEGAL_SECCION: Set[str] = {

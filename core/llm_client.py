@@ -89,6 +89,7 @@ Los datos maestros de la empresa se organizan en 3 dominios taxonómicos jerárq
 3. `financiero`:
    - `banco`: `banco` (Nombre de la entidad financiera), `sucursal`.
    - `cuenta`: `numero_cuenta` (Número de cuenta bancaria), `tipo_cuenta` (Ahorros / Corriente).
+   - `balance`: `total_activos`, `total_pasivos`, `total_patrimonio`, `total_ingresos_mensuales`, `total_egresos_mensuales`, `total_ingresos_anuales`, `total_egresos_anuales`.
 
 ## CONTEXTO Y ENTRADAS
 Recibes un objeto JSON con:
@@ -125,11 +126,19 @@ Recibes un objeto JSON con:
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
   * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
 
-- Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA:
+- Si la sección o el rótulo hace referencia a INFORMACIÓN BANCARIA / FINANCIERA / BALANCE:
   * Rótulos de Banco, Entidad Financiera, Nombre de la Entidad Financiera, Institución Bancaria -> "banco"
   * Rótulos de Número de Cuenta, No. Cuenta -> "numero_cuenta"
   * Rótulos de Tipo de Cuenta (Ahorros/Corriente) -> "tipo_cuenta"
   * Rótulos de Sucursal Bancaria -> "sucursal"
+  * Rótulos de Total Activos, Activos, Activo Total -> "total_activos"
+  * Rótulos de Total Pasivos, Pasivos, Pasivo Total -> "total_pasivos"
+  * Rótulos de Total Patrimonio, Patrimonio, Patrimonio Neto, Capital Contable -> "total_patrimonio"
+  * Rótulos de Total Ingresos Mensuales, Ingresos Mensuales, Ingresos Operacionales Mensuales -> "total_ingresos_mensuales"
+  * Rótulos de Total Egresos Mensuales, Egresos Mensuales, Gastos Mensuales -> "total_egresos_mensuales"
+  * Rótulos de Total Ingresos Anuales, Ingresos Anuales -> "total_ingresos_anuales"
+  * Rótulos de Total Egresos Anuales, Egresos Anuales -> "total_egresos_anuales"
+  * REGLA DE DISPARIDAD DE PERIODICIDAD (SAFE PASSIVITY): Si el formulario solicita ingresos o egresos anuales y el perfil de datos solo cuenta con cifras mensuales, NO intentes calcular ni multiplicar por 12; si no existe dato explícito anual, OMITE el rótulo para llenado manual.
 
 - REGLA DE DESAMBIGUACIÓN CONTEXTUAL DE RÓTULOS GENÉRICOS ("Número", "No.", "N°", "Identificación"):
   * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "Documento", "Identificación", "No. Identificación" y viene en el contexto o fila del REPRESENTANTE LEGAL / PERSONA NATURAL / GUILLERMO (tras el nombre de la persona) -> asigna "cedula".
@@ -141,6 +150,7 @@ Recibes un objeto JSON con:
   * Ejemplos: "1. INFORMACIÓN GENERAL", "2. INFORMACIÓN TRIBUTARIA", "3. COMPOSICIÓN ACCIONARIA", "DATOS DE LA EMPRESA", "Tipo de Solicitud", "Contraparte", "Tipo de Persona", "IDENTIFICACIÓN", "INSTRUCCIONES", "DECLARACIÓN".
   * Los títulos de sección son meros separadores estructurales del documento, NO casillas de llenado. OMITE COMPLETAMENTE SU ID (no lo incluyas en el JSON).
 - NUNCA cruces dominios:
+  * AISLAMIENTO DE DOMINIO DE BALANCE FINANCIERO: Las cifras de balance (total_activos, total_pasivos, total_patrimonio, ingresos, egresos) deben asignarse ÚNICAMENTE en secciones contables o financieras del balance general. NUNCA las asignes fuera de este contexto ni en casillas de ventas no operacionales o campos comerciales.
   * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
   * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
   * REGLA DE RÓTULOS COMPUESTOS (CC/CE/PAS/NIT vs Tipo): Si el rótulo pide el número combinado como "CC/CE/PAS/NIT" o "NIT/TAX ID", asigna "nit". Si el rótulo pide explícitamente el tipo ("Tipo de Identificación (CC-Pasaporte-CE)"), asigna "tipo_documento".

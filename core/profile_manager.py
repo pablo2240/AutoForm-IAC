@@ -53,6 +53,26 @@ def sincronizar_db_con_archivos() -> None:
                     json.dump(taxonomia, f, indent=2, ensure_ascii=False)
             except Exception:
                 pass
+    else:
+        # Si principal ya existe en SQLite, verificar si el archivo JSON tiene campos nuevos (ej. balance)
+        if PROFILE_DEFAULT_PATH.exists():
+            try:
+                datos_db_principal = database.obtener_perfil_db("principal")
+                if datos_db_principal:
+                    plano_db = aplanar_perfil(datos_db_principal)
+                    # Si a SQLite le faltan los campos de balance pero el JSON los tiene:
+                    if not plano_db.get("total_activos"):
+                        with PROFILE_DEFAULT_PATH.open("r", encoding="utf-8-sig") as f:
+                            datos_raw = json.load(f)
+                        plano_json = aplanar_perfil(datos_raw)
+                        if plano_json.get("total_activos"):
+                            for k, v in plano_json.items():
+                                if v and not plano_db.get(k):
+                                    plano_db[k] = v
+                            taxonomia = estructurar_perfil_taxonomia(plano_db)
+                            database.guardar_perfil_db("principal", "🏢 Principal (IAC Latam)", taxonomia, es_activo=True)
+            except Exception as exc:
+                print(f"[AutoForm AI] Error sincronizando campos nuevos de JSON a SQLite: {exc}")
 
     # 2. Sembrar perfiles secundarios JSON que no existan en SQLite
     for archivo in CONFIG_DIR.glob("datos_empresa_*.json"):
@@ -195,6 +215,24 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
     elif d_val:
         plano["ciudad_departamento"] = d_val
 
+    # Mapeo bidireccional y alias para cifras de balance financiero (ADR-0006)
+    balance_aliases = [
+        ("total_activos", "activos"),
+        ("total_pasivos", "pasivos"),
+        ("total_patrimonio", "patrimonio"),
+        ("total_ingresos_mensuales", "ingresos_mensuales"),
+        ("total_egresos_mensuales", "egresos_mensuales"),
+        ("total_ingresos_anuales", "ingresos_anuales"),
+        ("total_egresos_anuales", "egresos_anuales"),
+    ]
+    for canonico, alias in balance_aliases:
+        v_can = str(plano.get(canonico, "")).strip()
+        v_ali = str(plano.get(alias, "")).strip()
+        if v_can and not v_ali:
+            plano[alias] = v_can
+        elif v_ali and not v_can:
+            plano[canonico] = v_ali
+
     return plano
 
 
@@ -243,6 +281,15 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             "cuenta": {
                 "numero_cuenta": str(plano.get("numero_cuenta", "")),
                 "tipo_cuenta": str(plano.get("tipo_cuenta", "AHORROS")),
+            },
+            "balance": {
+                "total_activos": str(plano.get("total_activos") or plano.get("activos") or ""),
+                "total_pasivos": str(plano.get("total_pasivos") or plano.get("pasivos") or ""),
+                "total_patrimonio": str(plano.get("total_patrimonio") or plano.get("patrimonio") or ""),
+                "total_ingresos_mensuales": str(plano.get("total_ingresos_mensuales") or plano.get("ingresos_mensuales") or ""),
+                "total_egresos_mensuales": str(plano.get("total_egresos_mensuales") or plano.get("egresos_mensuales") or ""),
+                "total_ingresos_anuales": str(plano.get("total_ingresos_anuales") or plano.get("ingresos_anuales") or ""),
+                "total_egresos_anuales": str(plano.get("total_egresos_anuales") or plano.get("egresos_anuales") or ""),
             }
         }
     }
@@ -454,4 +501,11 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "numero_cuenta": "",
         "tipo_cuenta": "AHORROS",
         "sucursal": "",
+        "total_activos": "",
+        "total_pasivos": "",
+        "total_patrimonio": "",
+        "total_ingresos_mensuales": "",
+        "total_egresos_mensuales": "",
+        "total_ingresos_anuales": "",
+        "total_egresos_anuales": "",
     }

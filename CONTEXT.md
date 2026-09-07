@@ -41,6 +41,8 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`Cell Reservation`** | Global registry of written target coordinates (`celdas_ocupadas`) ensuring no physical cell is written twice by competing directives. | "Sobreescritura destructiva" |
 | **`Section Uniqueness`** | Invariant restricting canonical corporate fields (`nit`, `razon_social`, etc.) to at most one assignment per section. | "Multi-mapeo redundante" |
 | **`PEP Safe Passivity`** | Unconditional rejection (`DESCARTADO`) of all fields, columns, and questions belonging to PEP or Beneficiario Final sections. | "Inyección en PEP" |
+| **`Financial Balance Domain`** | Subset of financial statements (`total_activos`, `total_pasivos`, `total_patrimonio`, `total_ingresos_mensuales`, `total_egresos_mensuales`) strictly isolated to accounting sections (`TOKENS_BALANCE_SECCION`). | "Campos bancarios" |
+| **`Raw Numeric Injection`** | Writing pure numeric primitives (`int`/`float`) into OpenXML cells rather than currency text strings, preserving spreadsheet arithmetic formulas without `#¡VALOR!`. | "Texto formateado en celda" |
 
 ---
 
@@ -51,3 +53,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0003: Zero-Omission Triad (Chunking + Diff Loop + FastEmbed)`](docs/adr/0003-triad-zero-omission.md)
 * [`ADR-0004: Domain Isolation, Underline Ray-Casting & Safe Passivity`](docs/adr/0004-domain-isolation-and-underline-raycasting.md)
 * [`ADR-0005: Cell Reservation, Section Uniqueness & PEP/Beneficiario Final Isolation`](docs/adr/0005-cell-reservation-and-pep-isolation.md)
+* [`ADR-0006: Financial Balance Fields, Raw Numeric Injection & Strict Financial Domain Isolation`](docs/adr/0006-financial-balance-fields-and-domain-isolation.md)

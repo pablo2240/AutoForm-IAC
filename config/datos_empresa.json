@@ -39,6 +39,15 @@
     "cuenta": {
       "numero_cuenta": "00300833888",
       "tipo_cuenta": "AHORROS"
+    },
+    "balance": {
+      "total_activos": "16151175009",
+      "total_pasivos": "8831977528",
+      "total_patrimonio": "7319197482",
+      "total_ingresos_mensuales": "1110748257",
+      "total_egresos_mensuales": "975086377",
+      "total_ingresos_anuales": "",
+      "total_egresos_anuales": ""
     }
   }
 }

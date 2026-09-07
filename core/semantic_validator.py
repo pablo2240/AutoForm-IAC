@@ -83,9 +83,11 @@ from core.domain_constants import (
     ROTULOS_GENERICOS_BLOQUEADOS,
     PATRON_CONTACTO_COMERCIAL,
     CAMPOS_BANCARIOS,
+    CAMPOS_FINANCIEROS_BALANCE,
     CAMPOS_REP_LEGAL,
     CAMPOS_EMPRESA,
     TOKENS_FINANCIEROS_SECCION,
+    TOKENS_BALANCE_SECCION,
     TOKENS_REP_LEGAL_SECCION,
     TOKENS_CONTACTO_SECCION,
     limpiar_rotulo,
@@ -500,6 +502,41 @@ def validar_item_mapeo(
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 
+    # ── Domain Isolation (ADR-0006): Cifras de Balance y Estados Financieros ──
+    # Condición estricta: SECCIÓN AND RÓTULO (nunca OR).
+    if campo_original in CAMPOS_FINANCIEROS_BALANCE:
+        es_sec_bal = any(t in seccion_norm for t in TOKENS_BALANCE_SECCION)
+        es_rot_activos = any(t in rotulo_norm for t in ("activo", "activos")) and not ("inactivo" in rotulo_norm)
+        es_rot_pasivos = any(t in rotulo_norm for t in ("pasivo", "pasivos"))
+        es_rot_patrimonio = any(t in rotulo_norm for t in ("patrimonio", "capital social", "patrimonio neto", "patrimonio liquido"))
+        es_rot_ingresos = any(t in rotulo_norm for t in ("ingreso", "ingresos", "ventas"))
+        es_rot_egresos = any(t in rotulo_norm for t in ("egreso", "egresos", "gasto", "gastos", "costo", "costos"))
+
+        rotulo_valido = False
+        if campo_original in ("total_activos", "activos") and es_rot_activos:
+            rotulo_valido = True
+        elif campo_original in ("total_pasivos", "pasivos") and es_rot_pasivos:
+            rotulo_valido = True
+        elif campo_original in ("total_patrimonio", "patrimonio") and es_rot_patrimonio:
+            rotulo_valido = True
+        elif campo_original in ("total_ingresos_mensuales", "ingresos_mensuales") and es_rot_ingresos:
+            # Safe Passivity (ADR-0006): si pide explícitamente "anual", no asignar cifras mensuales
+            rotulo_valido = not ("anual" in rotulo_norm or "año" in rotulo_norm)
+        elif campo_original in ("total_egresos_mensuales", "egresos_mensuales") and es_rot_egresos:
+            # Safe Passivity (ADR-0006): si pide explícitamente "anual", no asignar cifras mensuales
+            rotulo_valido = not ("anual" in rotulo_norm or "año" in rotulo_norm)
+        elif campo_original in ("total_ingresos_anuales", "ingresos_anuales") and es_rot_ingresos:
+            rotulo_valido = ("anual" in rotulo_norm or "año" in rotulo_norm or "ejercicio" in rotulo_norm)
+        elif campo_original in ("total_egresos_anuales", "egresos_anuales") and es_rot_egresos:
+            rotulo_valido = ("anual" in rotulo_norm or "año" in rotulo_norm or "ejercicio" in rotulo_norm)
+
+        if not (es_sec_bal and rotulo_valido):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation (ADR-0006): Cifra financiera '{campo_original}' prohibida fuera de sección contable/balance o rótulo no coincidente ('{seccion}' -> '{rotulo}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
     if campo_original in _CAMPOS_REP_LEGAL:
         es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente"))
         es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
@@ -657,7 +694,13 @@ def validar_plan_mapeo(
                 "nit", "razon_social", "direccion", "representante_legal",
                 "cedula", "tipo_documento", "lugar_expedicion", "tipo_sociedad",
                 "telefono", "correo", "ciudad", "departamento", "pais",
-                "banco", "numero_cuenta", "tipo_cuenta"
+                "banco", "numero_cuenta", "tipo_cuenta",
+                "total_activos", "total_pasivos", "total_patrimonio",
+                "total_ingresos_mensuales", "total_egresos_mensuales",
+                "total_ingresos_anuales", "total_egresos_anuales",
+                "activos", "pasivos", "patrimonio",
+                "ingresos_mensuales", "egresos_mensuales",
+                "ingresos_anuales", "egresos_anuales",
             )
             if campo_activo in campos_unicos_seccion:
                 if campo_activo in asignados_por_seccion.get(sec_key, set()):

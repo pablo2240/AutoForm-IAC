@@ -122,6 +122,49 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         "sucursal",
         "derecha",
     ),
+    # ── Dominio 2b: Cifras de Balance y Estados Financieros (ADR-0006) ──
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+activos?|activos?\s+totales|activos?)\s*$", re.IGNORECASE),
+        "total_activos",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+pasivos?|pasivos?\s+totales|pasivos?)\s*$", re.IGNORECASE),
+        "total_pasivos",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+patrimonio|patrimonio(?:\s+neto|\s+l[ií]quido|\s+total)?|capital\s+social)\s*$", re.IGNORECASE),
+        "total_patrimonio",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+ingresos\s+mensuales|ingresos\s+mensuales|ingresos\s+operacionales\s+mensuales|ingresos\s+promedio\s+mensual(?:es)?)\s*$", re.IGNORECASE),
+        "total_ingresos_mensuales",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+egresos\s+mensuales|egresos\s+mensuales|gastos\s+mensuales|total\s+gastos\s+mensuales)\s*$", re.IGNORECASE),
+        "total_egresos_mensuales",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+ingresos\s+anuales|ingresos\s+anuales|ventas\s+anuales)\s*$", re.IGNORECASE),
+        "total_ingresos_anuales",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+egresos\s+anuales|egresos\s+anuales|gastos\s+anuales)\s*$", re.IGNORECASE),
+        "total_egresos_anuales",
+        "derecha",
+    ),
 
     # ── Dominio 3: Junta Directiva y Composición Accionaria (Tabla Vertical) ──
     (

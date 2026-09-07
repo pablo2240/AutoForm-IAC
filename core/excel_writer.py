@@ -19,6 +19,8 @@ from openpyxl import load_workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.worksheet.worksheet import Worksheet
 
+from core.domain_constants import CAMPOS_FINANCIEROS_BALANCE
+
 
 # ---------------------------------------------------------------------------
 # Helpers de celda
@@ -70,6 +72,59 @@ def _buscar_campo_anidado(obj: Any, campo: str) -> Any:
     return None
 
 
+def _convertir_a_numero_crudo(valor: Any) -> Any:
+    """Convierte un valor numérico de balance financiero a int o float primitivo.
+    Garantiza que openpyxl escriba celdas numéricas ('n') para que las fórmulas
+    aritméticas de Excel (=Activos - Pasivos) evalúen nativamente sin #¡VALOR!
+    """
+    if isinstance(valor, bool):
+        return valor
+    if isinstance(valor, (int, float)):
+        return valor
+    if valor is None:
+        return None
+    val_str = str(valor).strip()
+    if not val_str:
+        return ""
+    # Limpiar signos de moneda y espacios
+    s = val_str.replace("$", "").replace("COP", "").replace("USD", "").replace(" ", "").strip()
+    if not s:
+        return ""
+    # Si contiene coma y punto, determinar cuál es decimal
+    if "." in s and "," in s:
+        if s.rfind(",") > s.rfind("."):
+            s = s.replace(".", "").replace(",", ".")
+        else:
+            s = s.replace(",", "")
+    elif "." in s and not "," in s:
+        if s.count(".") > 1:
+            s = s.replace(".", "")
+        else:
+            partes = s.split(".")
+            if len(partes[1]) == 3 and len(partes[0]) <= 3:
+                s = s.replace(".", "")
+            elif len(partes[1]) in (1, 2):
+                pass
+            else:
+                s = s.replace(".", "")
+    elif "," in s and not "." in s:
+        if s.count(",") > 1:
+            s = s.replace(",", "")
+        else:
+            partes = s.split(",")
+            if len(partes[1]) in (1, 2):
+                s = s.replace(",", ".")
+            else:
+                s = s.replace(",", "")
+    try:
+        if "." in s:
+            f = float(s)
+            return int(f) if f.is_integer() else f
+        return int(s)
+    except (ValueError, TypeError):
+        return valor
+
+
 def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     """Resuelve el valor del campo, incluyendo campos virtuales nit_sin_dv / nit_dv y taxonomía jerárquica."""
     from core.profile_manager import aplanar_perfil
@@ -103,6 +158,8 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if campo in plano:
         val = plano[campo]
         if not isinstance(val, dict):
+            if campo in CAMPOS_FINANCIEROS_BALANCE and val is not None and str(val).strip() != "":
+                return _convertir_a_numero_crudo(val)
             return val
 
     if campo == "identificacion" and "identificacion" not in plano:
@@ -121,7 +178,10 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if "." in campo:
         subcampo = campo.split(".")[-1]
         if subcampo in plano and not isinstance(plano[subcampo], dict):
-            return plano[subcampo]
+            val = plano[subcampo]
+            if (subcampo in CAMPOS_FINANCIEROS_BALANCE or campo in CAMPOS_FINANCIEROS_BALANCE) and val is not None and str(val).strip() != "":
+                return _convertir_a_numero_crudo(val)
+            return val
 
     return None
 
@@ -624,12 +684,13 @@ def rellenar_formulario_excel(
         campo = str(item.get("campo", ""))
         valor = _obtener_valor_datos(datos_empresa, campo)
 
-        # WRITER-05: Skip silencioso si el valor es None
-        if valor is None:
+        # WRITER-05: Skip silencioso si el valor es None o balance vacío
+        if valor is None or (campo in CAMPOS_FINANCIEROS_BALANCE and str(valor).strip() == ""):
             reporte.append(_log_item(
                 "NULL", item, None, fila_destino, columna_destino,
-                f"Campo '{campo}' no encontrado en DatosEmpresa"
+                f"Campo '{campo}' no encontrado o vacío en DatosEmpresa"
             ))
+            continue
         # ── ADR-0005: Verificar Reserva Única de Celda Destino ─────────────
         coord_dest = (hoja_nombre, fila_destino, columna_destino)
         if coord_dest in celdas_ocupadas:

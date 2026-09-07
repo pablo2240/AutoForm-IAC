@@ -651,6 +651,63 @@ with st.sidebar:
                 args=(f"pe_{slug_perfil}_tip_cta", "tipo_cuenta"),
             )
 
+            st.markdown("##### 📊 Balance y Cifras Financieras")
+            total_activos = st.text_input(
+                "Total Activos",
+                value=str(datos_empresa.get("total_activos") or ""),
+                key=f"pe_{slug_perfil}_tot_act",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tot_act", "total_activos"),
+            )
+            total_pasivos = st.text_input(
+                "Total Pasivos",
+                value=str(datos_empresa.get("total_pasivos") or ""),
+                key=f"pe_{slug_perfil}_tot_pas",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tot_pas", "total_pasivos"),
+            )
+            total_patrimonio = st.text_input(
+                "Total Patrimonio",
+                value=str(datos_empresa.get("total_patrimonio") or ""),
+                key=f"pe_{slug_perfil}_tot_pat",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_tot_pat", "total_patrimonio"),
+            )
+            c_ing_men, c_egr_men = st.columns(2)
+            with c_ing_men:
+                total_ingresos_mensuales = st.text_input(
+                    "Total Ingresos Mensuales",
+                    value=str(datos_empresa.get("total_ingresos_mensuales") or ""),
+                    key=f"pe_{slug_perfil}_ing_men",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_ing_men", "total_ingresos_mensuales"),
+                )
+            with c_egr_men:
+                total_egresos_mensuales = st.text_input(
+                    "Total Egresos Mensuales",
+                    value=str(datos_empresa.get("total_egresos_mensuales") or ""),
+                    key=f"pe_{slug_perfil}_egr_men",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_egr_men", "total_egresos_mensuales"),
+                )
+            c_ing_anu, c_egr_anu = st.columns(2)
+            with c_ing_anu:
+                total_ingresos_anuales = st.text_input(
+                    "Total Ingresos Anuales (Opcional)",
+                    value=str(datos_empresa.get("total_ingresos_anuales") or ""),
+                    key=f"pe_{slug_perfil}_ing_anu",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_ing_anu", "total_ingresos_anuales"),
+                )
+            with c_egr_anu:
+                total_egresos_anuales = st.text_input(
+                    "Total Egresos Anuales (Opcional)",
+                    value=str(datos_empresa.get("total_egresos_anuales") or ""),
+                    key=f"pe_{slug_perfil}_egr_anu",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_egr_anu", "total_egresos_anuales"),
+                )
+
         if st.button("💾 Guardar y Confirmar Cambios", key="btn_guardar_perfil", width="stretch"):
             datos_actualizados = {
                 "razon_social": razon_social,
@@ -675,6 +732,13 @@ with st.sidebar:
                 "sucursal": sucursal,
                 "numero_cuenta": numero_cuenta,
                 "tipo_cuenta": tipo_cuenta,
+                "total_activos": total_activos,
+                "total_pasivos": total_pasivos,
+                "total_patrimonio": total_patrimonio,
+                "total_ingresos_mensuales": total_ingresos_mensuales,
+                "total_egresos_mensuales": total_egresos_mensuales,
+                "total_ingresos_anuales": total_ingresos_anuales,
+                "total_egresos_anuales": total_egresos_anuales,
             }
             if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados, nombre_visible=perfil_seleccionado_etiqueta):
                 profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
