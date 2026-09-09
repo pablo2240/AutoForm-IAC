@@ -92,7 +92,7 @@ def inicializar_db() -> None:
                     "Asesor Comercial / Aplicaciones",
                     "",
                     "",
-                    "antonio.prieto@iac.com.co",
+                    "antonio.prieto@iaclatam.com",
                     ahora,
                 ),
             )
@@ -145,11 +145,15 @@ def inicializar_db() -> None:
                     "Asesor Comercial / Aplicaciones",
                     "",
                     "",
-                    "antonio.prieto@iac.com.co",
+                    "antonio.prieto@iaclatam.com",
                     hashear_password(admin_pwd),
                     ahora,
                 ),
             )
+
+        # Migración automática de semilla de Antonio Prieto a @iaclatam.com
+        cursor.execute("UPDATE operadores SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
+        cursor.execute("UPDATE usuarios SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
 
         conn.commit()
 
@@ -413,6 +417,23 @@ def guardar_operador_db(
                     (id_limpio, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), activo_val, ahora_iso),
                 )
 
+            # Sincronización bidireccional automática con la tabla usuarios si el operador tiene cuenta de usuario
+            correo_limpio = correo.strip().lower()
+            correo_alt = ""
+            if correo_limpio.endswith("@iac.com.co"):
+                correo_alt = correo_limpio.replace("@iac.com.co", "@iaclatam.com")
+            elif correo_limpio.endswith("@iaclatam.com"):
+                correo_alt = correo_limpio.replace("@iaclatam.com", "@iac.com.co")
+
+            cursor.execute(
+                """
+                UPDATE usuarios
+                SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?
+                WHERE id = ? OR LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != '')
+                """,
+                (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), id_limpio, correo_limpio, correo_alt, correo_alt),
+            )
+
             conn.commit()
             return True
     except Exception as exc:
@@ -612,9 +633,15 @@ def crear_usuario_db(
 
 
 def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
-    """Obtiene un usuario por su correo electrónico."""
+    """Obtiene un usuario por su correo electrónico (con soporte a variantes @iaclatam.com / @iac.com.co)."""
     inicializar_db()
     correo_limpio = correo.strip().lower()
+    correo_alt = ""
+    if correo_limpio.endswith("@iac.com.co"):
+        correo_alt = correo_limpio.replace("@iac.com.co", "@iaclatam.com")
+    elif correo_limpio.endswith("@iaclatam.com"):
+        correo_alt = correo_limpio.replace("@iaclatam.com", "@iac.com.co")
+
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
@@ -622,9 +649,10 @@ def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
                 """
                 SELECT id, nombre, cargo, cedula, telefono, correo, password_hash, es_admin, activo, creado_en
                 FROM usuarios
-                WHERE correo = ? AND activo = 1
+                WHERE (LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != '')) AND activo = 1
+                LIMIT 1
                 """,
-                (correo_limpio,),
+                (correo_limpio, correo_alt, correo_alt),
             )
             row = cursor.fetchone()
             if row:

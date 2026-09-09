@@ -54,25 +54,34 @@ def sincronizar_db_con_archivos() -> None:
             except Exception:
                 pass
     else:
-        # Si principal ya existe en SQLite, verificar si el archivo JSON tiene campos nuevos (ej. balance)
+        # Si principal ya existe en SQLite, verificar si el archivo JSON tiene modificaciones o campos nuevos
         if PROFILE_DEFAULT_PATH.exists():
             try:
+                perfil_db_meta = next((p for p in perfiles_db if p["id"] == "principal"), None)
+                mtime_archivo = PROFILE_DEFAULT_PATH.stat().st_mtime
+                db_mtime = 0.0
+                if perfil_db_meta and perfil_db_meta.get("actualizado_en"):
+                    try:
+                        db_mtime = datetime.fromisoformat(perfil_db_meta["actualizado_en"]).timestamp()
+                    except Exception:
+                        db_mtime = 0.0
+
                 datos_db_principal = database.obtener_perfil_db("principal")
                 if datos_db_principal:
                     plano_db = aplanar_perfil(datos_db_principal)
-                    # Si a SQLite le faltan los campos de balance pero el JSON los tiene:
-                    if not plano_db.get("total_activos"):
+                    debe_sincronizar = (mtime_archivo > db_mtime + 2.0) or (not plano_db.get("total_activos"))
+                    if debe_sincronizar:
                         with PROFILE_DEFAULT_PATH.open("r", encoding="utf-8-sig") as f:
                             datos_raw = json.load(f)
                         plano_json = aplanar_perfil(datos_raw)
-                        if plano_json.get("total_activos"):
-                            for k, v in plano_json.items():
-                                if v and not plano_db.get(k):
-                                    plano_db[k] = v
-                            taxonomia = estructurar_perfil_taxonomia(plano_db)
-                            database.guardar_perfil_db("principal", "🏢 Principal (IAC Latam)", taxonomia, es_activo=True)
+                        for k, v in plano_json.items():
+                            if v and str(v).strip():
+                                plano_db[k] = v
+                        taxonomia = estructurar_perfil_taxonomia(plano_db)
+                        database.guardar_perfil_db("principal", "🏢 Principal (IAC Latam)", taxonomia, es_activo=True)
             except Exception as exc:
-                print(f"[AutoForm AI] Error sincronizando campos nuevos de JSON a SQLite: {exc}")
+                print(f"[AutoForm AI] Error sincronizando archivo JSON a SQLite: {exc}")
+
 
     # 2. Sembrar perfiles secundarios JSON que no existan en SQLite
     for archivo in CONFIG_DIR.glob("datos_empresa_*.json"):
@@ -240,7 +249,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
     """Convierte un perfil plano o semiestructurado en la taxonomía semántica estándar de 3 niveles."""
     plano = aplanar_perfil(datos)
 
-    return {
+    resultado = {
         "empresa": {
             "identidad": {
                 "razon_social": str(plano.get("razon_social", "")),
@@ -293,6 +302,23 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             }
         }
     }
+
+    # Preservar atributos corporativos adicionales (ej. ciiu, actividad_economica, fechas) sin descartarlos
+    claves_procesadas = {
+        "razon_social", "nit", "tipo_sociedad", "direccion", "ciudad", "departamento", "pais",
+        "telefono", "pagina_web", "representante_legal", "representante_nombres", "representante_apellidos",
+        "tipo_documento", "cedula", "lugar_expedicion", "expedicion", "correo", "correo_representante",
+        "telefono_representante", "celular", "celular_representante", "banco", "sucursal",
+        "numero_cuenta", "tipo_cuenta", "total_activos", "activos", "total_pasivos", "pasivos",
+        "total_patrimonio", "patrimonio", "total_ingresos_mensuales", "ingresos_mensuales",
+        "total_egresos_mensuales", "egresos_mensuales", "total_ingresos_anuales", "ingresos_anuales",
+        "total_egresos_anuales", "egresos_anuales", "ciudad_departamento"
+    }
+    for k, v in plano.items():
+        if k not in claves_procesadas and "." not in k and v:
+            resultado[k] = v
+
+    return resultado
 
 
 def _extraer_slug_y_ruta(ruta_o_id: Union[Path, str], nombre_sugerido: str = "") -> Tuple[str, Path, str]:
