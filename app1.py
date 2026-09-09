@@ -21,6 +21,7 @@ import importlib
 for modulo in [
     "core.database", "core.auth_manager", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper",
     "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
+    "core.coverage_engine", "core.embedding_engine", "core.field_detection_engine", "core.schema_models",
     "core.domain_constants", "pipeline.context", "pipeline.orchestrator",
     "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler",
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
@@ -504,6 +505,15 @@ if not st.session_state.get("usuario_activo"):
 
 # 3. Header Hero Institucional y Barra de Sesión
 usuario_actual = st.session_state["usuario_activo"]
+# Sincronización automática de datos frescos desde SQLite (garantiza columnas nuevas como direccion y ciudad)
+try:
+    _u_fresco = profile_manager.database.obtener_usuario_por_correo_db(usuario_actual.get("correo", ""))
+    if _u_fresco:
+        st.session_state["usuario_activo"].update(_u_fresco)
+        usuario_actual = st.session_state["usuario_activo"]
+except Exception:
+    pass
+
 es_admin_usuario = bool(usuario_actual.get("es_admin", False))
 rol_badge_label = "🛡️ Administrador" if es_admin_usuario else "💼 Asesor Comercial"
 
@@ -592,6 +602,8 @@ with st.sidebar:
             "cedula": usuario_actual.get("cedula", ""),
             "telefono": usuario_actual.get("telefono", ""),
             "correo": usuario_actual["correo"],
+            "direccion": usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
+            "ciudad": usuario_actual.get("ciudad", "Bogotá"),
         }
         st.markdown(f"""
             <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">
