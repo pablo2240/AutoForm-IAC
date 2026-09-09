@@ -304,6 +304,20 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         re.match(r"^[\s_\.\:\-]+$", txt_actual)
     )
 
+    # 0. IDEMPOTENCIA: Si la celda destino ya contiene exactamente el valor a escribir,
+    # se considera una escritura exitosa (evita duplicar el dato abajo en reprocesamientos).
+    val_str = str(valor).strip()
+    if txt_actual and val_str:
+        if txt_actual.lower() == val_str.lower():
+            return True
+        if isinstance(valor, (int, float)):
+            try:
+                num_actual = _convertir_a_numero_crudo(txt_actual)
+                if num_actual == valor:
+                    return True
+            except Exception:
+                pass
+
     # CASO A: Escritura en celda adyacente (derecha / abajo)
     if not es_misma_celda:
         if not es_formula_o_vacio_visualmente:

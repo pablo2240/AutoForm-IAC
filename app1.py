@@ -1287,6 +1287,12 @@ if uploaded_file is not None:
     file_name = uploaded_file.name
     file_type = file_name.split(".")[-1].lower()
 
+    es_archivo_autoform = "_autoform" in file_name.lower()
+    if es_archivo_autoform:
+        st.warning(
+            f"⚠️ **Atención:** Has subido un archivo que parece haber sido generado previamente por AutoForm AI (`{file_name}`). "
+            "Para un diligenciamiento limpio desde cero y evitar solapamientos de valores ya inyectados, sube la **plantilla original en blanco** (ej: `FMCA07J.- 6.2.xlsx`)."
+        )
     st.markdown(f"""
         <div style="background: #ECFDF5; border: 1px solid #10B981; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 1.25rem; color: #065F46; font-weight: 600; font-size: 0.92rem;">
             ✅ Archivo listo para procesar: <strong>{file_name}</strong> ({(uploaded_file.size/1024):.1f} KB)
