@@ -563,6 +563,8 @@ def guardar_operador(
     cedula: str = "",
     telefono: str = "",
     correo: str = "",
+    direccion: str = "",
+    ciudad: str = "",
     es_activo: bool = False,
 ) -> bool:
     """Crea o actualiza un operador en SQLite."""
@@ -573,6 +575,8 @@ def guardar_operador(
         cedula=cedula,
         telefono=telefono,
         correo=correo,
+        direccion=direccion,
+        ciudad=ciudad,
         es_activo=es_activo,
     )
 
@@ -605,6 +609,8 @@ def fusionar_operador_en_datos_empresa(
         copia["responsable_telefono"] = str(operador.get("telefono") or "").strip()
         copia["responsable_celular"] = str(operador.get("telefono") or "").strip()
         copia["responsable_correo"] = str(operador.get("correo") or "").strip()
+        copia["responsable_direccion"] = str(operador.get("direccion") or "").strip()
+        copia["responsable_ciudad"] = str(operador.get("ciudad") or "").strip()
         copia["operador"] = dict(operador)
 
     return copia
@@ -626,6 +632,8 @@ def registrar_usuario(
     cargo: str = "",
     cedula: str = "",
     telefono: str = "",
+    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
+    ciudad: str = "Bogotá",
     es_admin: int = 0,
 ) -> Tuple[bool, str]:
     """Registra un nuevo usuario con verificación de dominio corporativo."""
@@ -636,6 +644,8 @@ def registrar_usuario(
         cargo=cargo,
         cedula=cedula,
         telefono=telefono,
+        direccion=direccion,
+        ciudad=ciudad,
         es_admin=es_admin,
     )
 

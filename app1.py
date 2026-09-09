@@ -462,6 +462,8 @@ if not st.session_state.get("usuario_activo"):
             reg_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones", key="gate_reg_car")
             reg_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050", key="gate_reg_ced")
             reg_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="gate_reg_tel")
+            reg_dir = st.text_input("Dirección Corporativa", value="Carrera 63 B # 32 E -25 OFC 206", key="gate_reg_dir")
+            reg_ciu = st.text_input("Ciudad", value="Bogotá", key="gate_reg_ciu")
             reg_cor = st.text_input("Correo Corporativo (@iac.com.co o @iaclatam.com)", placeholder="nombre@iaclatam.com", key="gate_reg_cor")
             reg_pwd1 = st.text_input("Contraseña (mínimo 6 caracteres)", type="password", key="gate_reg_pwd1")
             reg_pwd2 = st.text_input("Confirmar Contraseña", type="password", key="gate_reg_pwd2")
@@ -483,6 +485,8 @@ if not st.session_state.get("usuario_activo"):
                         cargo=reg_car.strip(),
                         cedula=reg_ced.strip(),
                         telefono=reg_tel.strip(),
+                        direccion=reg_dir.strip(),
+                        ciudad=reg_ciu.strip(),
                         es_admin=0,
                     )
                     if exito_reg:
@@ -958,6 +962,8 @@ with st.sidebar:
                 op_cedula = st.text_input("Cédula / Documento", value=operador_activo.get("cedula", ""), key=f"edit_op_ced_{operador_activo['id']}")
                 op_tel = st.text_input("Teléfono / Celular", value=operador_activo.get("telefono", ""), key=f"edit_op_tel_{operador_activo['id']}")
                 op_correo = st.text_input("Correo Electrónico", value=operador_activo.get("correo", ""), key=f"edit_op_cor_{operador_activo['id']}")
+                op_dir = st.text_input("Dirección", value=operador_activo.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key=f"edit_op_dir_{operador_activo['id']}")
+                op_ciu = st.text_input("Ciudad", value=operador_activo.get("ciudad") or "Bogotá", key=f"edit_op_ciu_{operador_activo['id']}")
 
                 if st.button("💾 Guardar Datos del Operador", key="btn_guardar_op_actual", use_container_width=True):
                     profile_manager.guardar_operador(
@@ -967,6 +973,8 @@ with st.sidebar:
                         cedula=op_cedula,
                         telefono=op_tel,
                         correo=op_correo,
+                        direccion=op_dir,
+                        ciudad=op_ciu,
                         es_activo=True,
                     )
                     # Sincronizar en la sesión activa si corresponde al usuario conectado
@@ -976,6 +984,8 @@ with st.sidebar:
                         st.session_state["usuario_activo"]["cedula"] = op_cedula
                         st.session_state["usuario_activo"]["telefono"] = op_tel
                         st.session_state["usuario_activo"]["correo"] = op_correo
+                        st.session_state["usuario_activo"]["direccion"] = op_dir
+                        st.session_state["usuario_activo"]["ciudad"] = op_ciu
 
                     st.success("✅ Datos del operador actualizados exitosamente en SQLite y sesión.")
                     _safe_rerun()
@@ -987,6 +997,8 @@ with st.sidebar:
             nuevo_op_ced = st.text_input("Cédula", placeholder="Ej: 1020304050", key="nuevo_op_ced")
             nuevo_op_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="nuevo_op_tel")
             nuevo_op_cor = st.text_input("Correo", placeholder="Ej: diana.gomez@iaclatam.com", key="nuevo_op_cor")
+            nuevo_op_dir = st.text_input("Dirección", value="Carrera 63 B # 32 E -25 OFC 206", key="nuevo_op_dir")
+            nuevo_op_ciu = st.text_input("Ciudad", value="Bogotá", key="nuevo_op_ciu")
 
             if st.button("Crear Asesor", key="btn_crear_nuevo_op", use_container_width=True):
                 if nuevo_op_nombre.strip():
@@ -998,6 +1010,8 @@ with st.sidebar:
                         cedula=nuevo_op_ced.strip(),
                         telefono=nuevo_op_tel.strip(),
                         correo=nuevo_op_cor.strip(),
+                        direccion=nuevo_op_dir.strip(),
+                        ciudad=nuevo_op_ciu.strip(),
                         es_activo=True,
                     )
                     st.success(f"✅ Operador '{nuevo_op_nombre}' registrado y activado.")
@@ -1011,6 +1025,8 @@ with st.sidebar:
             mi_car = st.text_input("Cargo / Rol", value=usuario_actual.get("cargo", ""), key="mi_op_car")
             mi_ced = st.text_input("Cédula / Documento", value=usuario_actual.get("cedula", ""), key="mi_op_ced")
             mi_tel = st.text_input("Teléfono / Celular", value=usuario_actual.get("telefono", ""), key="mi_op_tel")
+            mi_dir = st.text_input("Dirección", value=usuario_actual.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key="mi_op_dir")
+            mi_ciu = st.text_input("Ciudad", value=usuario_actual.get("ciudad") or "Bogotá", key="mi_op_ciu")
             st.text_input("Correo Corporativo", value=usuario_actual.get("correo", ""), disabled=True, key="mi_op_cor")
 
             if st.button("💾 Guardar Mis Datos", key="btn_guardar_mis_datos", use_container_width=True):
@@ -1021,12 +1037,16 @@ with st.sidebar:
                     cedula=mi_ced,
                     telefono=mi_tel,
                     correo=usuario_actual["correo"],
+                    direccion=mi_dir,
+                    ciudad=mi_ciu,
                     es_activo=True,
                 )
                 st.session_state["usuario_activo"]["nombre"] = mi_nom
                 st.session_state["usuario_activo"]["cargo"] = mi_car
                 st.session_state["usuario_activo"]["cedula"] = mi_ced
                 st.session_state["usuario_activo"]["telefono"] = mi_tel
+                st.session_state["usuario_activo"]["direccion"] = mi_dir
+                st.session_state["usuario_activo"]["ciudad"] = mi_ciu
                 st.success("✅ Tus datos se han actualizado permanentemente en SQLite y sesión.")
                 _safe_rerun()
 

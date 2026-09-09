@@ -30,7 +30,7 @@ from core.domain_constants import (
 # ──────────────────────────────────────────────────────────────────────────────
 
 PAT_SECCION_REP_LEGAL = re.compile(
-    r"\b(?:representante|apoderado|gerente|persona\s+natural|firmante|firma)\b",
+    r"\b(?:representante|apoderado|gerente|persona\s+natural|firmante|firma|declaraci[oó]n)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_FINANCIERO = re.compile(
@@ -55,13 +55,13 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 1: Representante Legal / Persona Natural / Firma ──
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n)\s*:?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n|identificado\s+con\s+(?:el\s+)?(?:documento|c[eé]dula|c\.?c\.?|doc)?(?:\s+de\s+identidad)?)\s*:?\s*$", re.IGNORECASE),
         "cedula",
         "derecha",
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos|nombre)\s*:?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos|nombre|yo)\s*:?,?\s*$", re.IGNORECASE),
         "representante_legal",
         "derecha",
     ),
@@ -97,7 +97,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:lugar\s+(?:de\s+)?expedici[oó]n|ciudad\s+(?:de\s+)?expedici[oó]n|expedici[oó]n)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:lugar\s+(?:de\s+)?expedici[oó]n|ciudad\s+(?:de\s+)?expedici[oó]n|expedici[oó]n|expedid[ao]\s+en)\s*:?\s*$", re.IGNORECASE),
         "lugar_expedicion",
         "derecha",
     ),
@@ -300,6 +300,18 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         PAT_SECCION_CONTACTO_COMERCIAL,
         re.compile(r"^\s*(?:email|e-mail|correo|correo\s+electr[oó]nico)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_correo",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:direcci[oó]n(?:\s+de\s+contacto|\s+comercial|\s+oficina)?|domicilio)\s*$", re.IGNORECASE),
+        "responsable_direccion",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:ciudad|municipio)(?:\s+de\s+contacto|\s+comercial)?\s*$", re.IGNORECASE),
+        "responsable_ciudad",
         "derecha",
     ),
 ]

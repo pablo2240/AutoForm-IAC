@@ -75,8 +75,10 @@ CAMPOS_REP_LEGAL: Set[str] = {
 CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
     "responsable_nombre", "responsable_cargo", "responsable_cedula",
     "responsable_telefono", "responsable_celular", "responsable_correo",
+    "responsable_direccion", "responsable_ciudad",
     # Aliases
-    "contacto_nombre", "contacto_cargo", "contacto_telefono", "contacto_correo"
+    "contacto_nombre", "contacto_cargo", "contacto_telefono", "contacto_correo",
+    "contacto_direccion", "contacto_ciudad",
 }
 
 CAMPOS_EMPRESA: Set[str] = {
@@ -171,6 +173,11 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "no. documento": "responsable_cedula",
     "numero de documento": "responsable_cedula",
     "número de documento": "responsable_cedula",
+    "direccion": "responsable_direccion",
+    "dirección": "responsable_direccion",
+    "domicilio": "responsable_direccion",
+    "ciudad": "responsable_ciudad",
+    "municipio": "responsable_ciudad",
 }
 
 # ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
@@ -188,6 +195,8 @@ CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
     "celular_representante": "responsable_telefono",
     "telefono": "responsable_telefono",
     "telefono_representante": "responsable_telefono",
+    "direccion": "responsable_direccion",
+    "ciudad": "responsable_ciudad",
 }
 
 

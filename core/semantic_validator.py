@@ -563,6 +563,14 @@ def validar_item_mapeo(
             campo_original = "responsable_cedula"
             resultado["campo_final"] = "responsable_cedula"
             resultado["motivo"] = "Context-First (ADR-0009): Asignado a documento del responsable comercial."
+        elif any(t in rotulo_norm for t in ("direccion", "domicilio")) and datos_planos.get("responsable_direccion"):
+            campo_original = "responsable_direccion"
+            resultado["campo_final"] = "responsable_direccion"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a dirección del responsable comercial."
+        elif any(t in rotulo_norm for t in ("ciudad", "municipio")) and datos_planos.get("responsable_ciudad"):
+            campo_original = "responsable_ciudad"
+            resultado["campo_final"] = "responsable_ciudad"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a ciudad del responsable comercial."
         elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación")) and datos_planos.get("responsable_nombre"):
             campo_original = "responsable_nombre"
             resultado["campo_final"] = "responsable_nombre"
@@ -821,6 +829,7 @@ def validar_plan_mapeo(
                 "responsable_nombre", "responsable_cargo",
                 "responsable_telefono", "responsable_celular",
                 "responsable_correo", "responsable_cedula",
+                "responsable_direccion", "responsable_ciudad",
             )
             if campo_activo in campos_unicos_seccion:
                 if campo_activo in asignados_por_seccion.get(sec_key, set()):

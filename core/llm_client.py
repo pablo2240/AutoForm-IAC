@@ -93,6 +93,7 @@ Los datos maestros de la empresa se organizan en 4 dominios taxonómicos jerárq
 4. `responsable` (Operador / Asesor Comercial / Diligenciado Por):
    - `identidad`: `responsable_nombre` (Nombre completo del asesor/contacto comercial/operador), `responsable_cargo` (Cargo del asesor), `responsable_cedula` (Documento de identidad del asesor).
    - `contacto`: `responsable_telefono` (Teléfono móvil / Celular del asesor), `responsable_correo` (Correo electrónico del asesor).
+   - `ubicacion`: `responsable_direccion` (Dirección del asesor / contacto comercial), `responsable_ciudad` (Ciudad del asesor / contacto comercial).
 
 ## CONTEXTO Y ENTRADAS
 Recibes un objeto JSON con:
@@ -122,6 +123,7 @@ Recibes un objeto JSON con:
 
 - Si la sección o el rótulo hace referencia al REPRESENTANTE LEGAL / PERSONA NATURAL / APODERADO / FIRMANTE / FIRMA:
   * Rótulos de Nombre, "Nombre :", Nombre del Representante, Representante Legal, o "Razón social o Nombres y Apellidos" -> "representante_legal" (NUNCA "razon_social" de la empresa).
+  * Declaraciones juramentadas o fórmulas declarativas (ej. "Yo,", "Yo ,", "identificado con el documento de identidad:", "expedido en:") -> "representante_legal", "cedula", "lugar_expedicion" respectivamente.
   * Rótulos específicos de Primer/Segundo Nombre -> "representante_nombres"
   * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
   * Rótulos explícitos del Tipo de Documento, como "Tipo de Identificación (CC-Pasaporte-CE)", "Tipo Doc", "Tipo ID" -> "tipo_documento" (inscribirá C.C.)
@@ -135,6 +137,8 @@ Recibes un objeto JSON con:
   * CUALQUIER rótulo de Documento ("Cédula", "Identificación", "Documento") dentro de este bloque -> OBLIGATORIO "responsable_cedula".
   * CUALQUIER rótulo de Teléfono ("Teléfono", "Celular", "Móvil", "Tel/Cel") dentro de este bloque -> OBLIGATORIO "responsable_telefono".
   * CUALQUIER rótulo de Correo ("Correo", "Email", "Correo Electrónico") dentro de este bloque -> OBLIGATORIO "responsable_correo" (NUNCA "correo" del representante ni de la empresa).
+  * CUALQUIER rótulo de Dirección ("Dirección", "Domicilio") dentro de este bloque -> OBLIGATORIO "responsable_direccion".
+  * CUALQUIER rótulo de Ciudad ("Ciudad", "Municipio") dentro de este bloque -> OBLIGATORIO "responsable_ciudad".
   * REGLA DE DOMAIN ISOLATION DE RESPONSABLE (ADR-0009): NUNCA asignes campos de "responsable_*" a casillas de la empresa, ni del Representante Legal, ni de Junta Directiva, ni de PEPs, ni de Firmantes Legales.
   * REGLA INVERSA ESTRICTA: NUNCA asignes datos del Representante Legal ("representante_legal", "cedula", etc.) ni de la Empresa general a casillas de Contacto Comercial o Diligenciado Por.
   * REGLA DE REFERENCIAS COMERCIALES EXTERNAS: Si la sección se titula "Referencias Comerciales" y consiste en tablas o grillas de clientes/proveedores terceros con casillas de "Empresa / Razón Social", DESCARTA (Safe Passivity), NUNCA asignes al asesor como su propia referencia comercial.

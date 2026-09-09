@@ -51,6 +51,8 @@ DESCRIPCIONES_TAXONOMIA: Dict[str, str] = {
     "responsable_cedula": "Cédula de ciudadanía o documento de identidad del asesor comercial o responsable del diligenciamiento",
     "responsable_telefono": "Teléfono celular o móvil del asesor comercial o responsable de diligenciamiento",
     "responsable_correo": "Correo electrónico o email del asesor comercial o responsable de diligenciamiento",
+    "responsable_direccion": "Dirección física, domicilio o sede de contacto del asesor comercial o responsable del diligenciamiento",
+    "responsable_ciudad": "Ciudad o municipio de ubicación del asesor comercial o responsable de diligenciamiento",
 }
 
 

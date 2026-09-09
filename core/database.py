@@ -64,6 +64,8 @@ def inicializar_db() -> None:
                 cedula TEXT,
                 telefono TEXT,
                 correo TEXT,
+                direccion TEXT DEFAULT '',
+                ciudad TEXT DEFAULT '',
                 es_activo INTEGER DEFAULT 0,
                 actualizado_en TEXT NOT NULL
             );
@@ -76,6 +78,14 @@ def inicializar_db() -> None:
             """
         )
 
+        # Migración dinámica de columnas direccion y ciudad si no existen en operadores
+        cursor.execute("PRAGMA table_info(operadores)")
+        cols_op = {row["name"] for row in cursor.fetchall()}
+        if "direccion" not in cols_op:
+            cursor.execute("ALTER TABLE operadores ADD COLUMN direccion TEXT DEFAULT ''")
+        if "ciudad" not in cols_op:
+            cursor.execute("ALTER TABLE operadores ADD COLUMN ciudad TEXT DEFAULT ''")
+
         # Sembrar operador predeterminado inicial si la tabla está vacía
         cursor.execute("SELECT COUNT(*) AS total FROM operadores")
         fila_count = cursor.fetchone()
@@ -83,8 +93,8 @@ def inicializar_db() -> None:
             ahora = datetime.now(timezone.utc).isoformat()
             cursor.execute(
                 """
-                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, 1, ?)
+                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
                 (
                     "antonio_prieto",
@@ -93,6 +103,8 @@ def inicializar_db() -> None:
                     "",
                     "",
                     "antonio.prieto@iaclatam.com",
+                    "Carrera 63 B # 32 E -25 OFC 206",
+                    "Bogotá",
                     ahora,
                 ),
             )
@@ -107,6 +119,8 @@ def inicializar_db() -> None:
                 cedula TEXT,
                 telefono TEXT,
                 correo TEXT UNIQUE NOT NULL,
+                direccion TEXT DEFAULT '',
+                ciudad TEXT DEFAULT '',
                 password_hash TEXT NOT NULL,
                 es_admin INTEGER DEFAULT 0,
                 activo INTEGER DEFAULT 1,
@@ -127,6 +141,14 @@ def inicializar_db() -> None:
             """
         )
 
+        # Migración dinámica de columnas direccion y ciudad si no existen en usuarios
+        cursor.execute("PRAGMA table_info(usuarios)")
+        cols_usr = {row["name"] for row in cursor.fetchall()}
+        if "direccion" not in cols_usr:
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN direccion TEXT DEFAULT ''")
+        if "ciudad" not in cols_usr:
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN ciudad TEXT DEFAULT ''")
+
         # ADR-0008: Sembrar usuario administrador inicial si la tabla usuarios está vacía
         cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
         fila_user_count = cursor.fetchone()
@@ -136,8 +158,8 @@ def inicializar_db() -> None:
             ahora = datetime.now(timezone.utc).isoformat()
             cursor.execute(
                 """
-                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, password_hash, es_admin, activo, creado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
+                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
                 """,
                 (
                     "antonio_prieto",
@@ -146,14 +168,18 @@ def inicializar_db() -> None:
                     "",
                     "",
                     "antonio.prieto@iaclatam.com",
+                    "Carrera 63 B # 32 E -25 OFC 206",
+                    "Bogotá",
                     hashear_password(admin_pwd),
                     ahora,
                 ),
             )
 
-        # Migración automática de semilla de Antonio Prieto a @iaclatam.com
+        # Migración automática de semilla de Antonio Prieto a @iaclatam.com y asignación de dirección y ciudad por defecto
         cursor.execute("UPDATE operadores SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
         cursor.execute("UPDATE usuarios SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
+        cursor.execute("UPDATE operadores SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá' WHERE id = 'antonio_prieto' AND (direccion IS NULL OR direccion = '')")
+        cursor.execute("UPDATE usuarios SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá' WHERE id = 'antonio_prieto' AND (direccion IS NULL OR direccion = '')")
 
         conn.commit()
 
@@ -358,6 +384,8 @@ def guardar_operador_db(
     cedula: str = "",
     telefono: str = "",
     correo: str = "",
+    direccion: str = "",
+    ciudad: str = "",
     es_activo: Optional[bool] = None,
 ) -> bool:
     """Guarda o actualiza un operador comercial en SQLite.
@@ -369,6 +397,8 @@ def guardar_operador_db(
         cedula: Documento de identidad del operador.
         telefono: Celular o teléfono directo.
         correo: Correo corporativo del operador.
+        direccion: Dirección de contacto del operador.
+        ciudad: Ciudad de ubicación del operador.
         es_activo: Si es True, marca este operador como el activo y desmarca los demás.
     """
     inicializar_db()
@@ -397,10 +427,10 @@ def guardar_operador_db(
                 cursor.execute(
                     """
                     UPDATE operadores
-                    SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?, es_activo = ?, actualizado_en = ?
+                    SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?, direccion = ?, ciudad = ?, es_activo = ?, actualizado_en = ?
                     WHERE id = ?
                     """,
-                    (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), activo_val, ahora_iso, id_limpio),
+                    (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val, ahora_iso, id_limpio),
                 )
             else:
                 if activo_val is None:
@@ -411,10 +441,10 @@ def guardar_operador_db(
 
                 cursor.execute(
                     """
-                    INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (id_limpio, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), activo_val, ahora_iso),
+                    (id_limpio, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val, ahora_iso),
                 )
 
             # Sincronización bidireccional automática con la tabla usuarios si el operador tiene cuenta de usuario
@@ -428,10 +458,10 @@ def guardar_operador_db(
             cursor.execute(
                 """
                 UPDATE usuarios
-                SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?
+                SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?, direccion = ?, ciudad = ?
                 WHERE id = ? OR LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != '')
                 """,
-                (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), id_limpio, correo_limpio, correo_alt, correo_alt),
+                (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), id_limpio, correo_limpio, correo_alt, correo_alt),
             )
 
             conn.commit()
@@ -450,7 +480,7 @@ def listar_operadores_db() -> List[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en
                 FROM operadores
                 ORDER BY es_activo DESC, nombre ASC
                 """
@@ -463,6 +493,8 @@ def listar_operadores_db() -> List[Dict[str, Any]]:
                     "cedula": str(row["cedula"] or ""),
                     "telefono": str(row["telefono"] or ""),
                     "correo": str(row["correo"] or ""),
+                    "direccion": str(row["direccion"] or ""),
+                    "ciudad": str(row["ciudad"] or ""),
                     "es_activo": bool(row["es_activo"]),
                     "actualizado_en": str(row["actualizado_en"]),
                 })
@@ -479,7 +511,7 @@ def obtener_operador_db(id_operador: str) -> Optional[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en
                 FROM operadores
                 WHERE id = ?
                 """,
@@ -494,6 +526,8 @@ def obtener_operador_db(id_operador: str) -> Optional[Dict[str, Any]]:
                     "cedula": str(row["cedula"] or ""),
                     "telefono": str(row["telefono"] or ""),
                     "correo": str(row["correo"] or ""),
+                    "direccion": str(row["direccion"] or ""),
+                    "ciudad": str(row["ciudad"] or ""),
                     "es_activo": bool(row["es_activo"]),
                     "actualizado_en": str(row["actualizado_en"]),
                 }
@@ -510,7 +544,7 @@ def obtener_operador_activo_db() -> Optional[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en
                 FROM operadores
                 WHERE es_activo = 1
                 LIMIT 1
@@ -525,6 +559,8 @@ def obtener_operador_activo_db() -> Optional[Dict[str, Any]]:
                     "cedula": str(row["cedula"] or ""),
                     "telefono": str(row["telefono"] or ""),
                     "correo": str(row["correo"] or ""),
+                    "direccion": str(row["direccion"] or ""),
+                    "ciudad": str(row["ciudad"] or ""),
                     "es_activo": True,
                     "actualizado_en": str(row["actualizado_en"]),
                 }
@@ -573,6 +609,8 @@ def crear_usuario_db(
     cargo: str = "",
     cedula: str = "",
     telefono: str = "",
+    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
+    ciudad: str = "Bogotá",
     es_admin: int = 0,
 ) -> Tuple[bool, str]:
     """Registra un nuevo usuario en SQLite tras hashear su contraseña.
@@ -604,25 +642,27 @@ def crear_usuario_db(
             cursor = conn.cursor()
             cursor.execute(
                 """
-                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, password_hash, es_admin, activo, creado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
                 """,
-                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, pwd_hash, int(es_admin), ahora_iso),
+                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, int(es_admin), ahora_iso),
             )
             # También sincronizar en operadores para compatibilidad
             cursor.execute(
                 """
-                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, es_activo, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
                 ON CONFLICT(id) DO UPDATE SET
                     nombre = excluded.nombre,
                     cargo = excluded.cargo,
                     cedula = excluded.cedula,
                     telefono = excluded.telefono,
                     correo = excluded.correo,
+                    direccion = excluded.direccion,
+                    ciudad = excluded.ciudad,
                     actualizado_en = excluded.actualizado_en
                 """,
-                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, ahora_iso),
+                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), ahora_iso),
             )
             conn.commit()
             return True, slug_id
@@ -647,7 +687,7 @@ def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, password_hash, es_admin, activo, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en
                 FROM usuarios
                 WHERE (LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != '')) AND activo = 1
                 LIMIT 1
@@ -663,6 +703,8 @@ def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
                     "cedula": str(row["cedula"] or ""),
                     "telefono": str(row["telefono"] or ""),
                     "correo": str(row["correo"]),
+                    "direccion": str(row["direccion"] or "Carrera 63 B # 32 E -25 OFC 206"),
+                    "ciudad": str(row["ciudad"] or "Bogotá"),
                     "password_hash": str(row["password_hash"]),
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
@@ -702,7 +744,7 @@ def listar_usuarios_db() -> List[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, es_admin, activo, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_admin, activo, creado_en
                 FROM usuarios
                 ORDER BY es_admin DESC, nombre ASC
                 """
@@ -715,6 +757,8 @@ def listar_usuarios_db() -> List[Dict[str, Any]]:
                     "cedula": str(row["cedula"] or ""),
                     "telefono": str(row["telefono"] or ""),
                     "correo": str(row["correo"]),
+                    "direccion": str(row["direccion"] or ""),
+                    "ciudad": str(row["ciudad"] or ""),
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
                     "creado_en": str(row["creado_en"]),

@@ -479,10 +479,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 if isinstance(valor, (int, float, bool)):
                     continue
 
-                texto = str(valor).strip()
+                texto = " ".join(str(valor).split())
                 # Omitir textos vacíos o demasiado cortos (menor a 2)
-                # FIX-2: Ampliado límite superior a 200 para capturar rótulos compuestos largos
-                if not texto or len(texto) < 2 or len(texto) > 200:
+                # FIX-2: Ampliado límite superior a 400 caracteres sobre texto con espacios normalizados
+                if not texto or len(texto) < 2 or len(texto) > 400:
                     continue
 
                 # PARSER-08: Filtrar ruido: fechas, numeros, codigos, puntuacion y URLs
