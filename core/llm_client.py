@@ -120,8 +120,8 @@ Recibes un objeto JSON con:
   * Rótulos de Teléfono corporativo, PBX -> "telefono"
   * Rótulos de Email institucional -> "correo"
 
-- Si la sección o el rótulo hace referencia al REPRESENTANTE LEGAL / PERSONA NATURAL / APODERADO:
-  * Rótulos de Nombre del Representante, Representante Legal, o "Razón social o Nombres y Apellidos" -> "representante_legal"
+- Si la sección o el rótulo hace referencia al REPRESENTANTE LEGAL / PERSONA NATURAL / APODERADO / FIRMANTE / FIRMA:
+  * Rótulos de Nombre, "Nombre :", Nombre del Representante, Representante Legal, o "Razón social o Nombres y Apellidos" -> "representante_legal" (NUNCA "razon_social" de la empresa).
   * Rótulos específicos de Primer/Segundo Nombre -> "representante_nombres"
   * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
   * Rótulos explícitos del Tipo de Documento, como "Tipo de Identificación (CC-Pasaporte-CE)", "Tipo Doc", "Tipo ID" -> "tipo_documento" (inscribirá C.C.)

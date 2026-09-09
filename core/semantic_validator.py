@@ -68,7 +68,7 @@ _CAMPOS_FECHA: Set[str] = {"fecha_expedicion", "fecha_nacimiento", "fecha_consti
 _CAMPOS_NUMERICOS: Set[str] = {"nit", "cedula", "numero_cuenta"}
 
 _TOKENS_SECCION_REP_LEGAL = {
-    "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular",
+    "representante", "apoderado", "persona natural", "rep legal", "firmante", "firma", "conyuge", "gerente", "titular",
     "junta", "directiv", "administra", "organo", "declaracion", "legal",
 }
 
@@ -327,6 +327,18 @@ def _regla_autocorrecciones_semanticas_adicionales(
     if "razon social" in rotulo_normalizado and ("nombres" in rotulo_normalizado or "apellidos" in rotulo_normalizado):
         if campo != "representante_legal":
             return "representante_legal", "Rótulo 'Razón Social o Nombres y Apellidos' → asignado a 'representante_legal'."
+
+    # 2b. 'Nombre' / 'Nombre :' en sección de Representante Legal o Firma -> representante_legal (NUNCA razon_social ni empresa)
+    es_rotulo_nombre = bool(re.match(r"^\s*(?:nombre|nombres|nombre\s+completo|nombres?\s+y\s+apellidos?)\s*:?\s*$", rotulo_normalizado, re.IGNORECASE))
+    es_sec_rep_o_firma = (
+        any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
+        or "firma" in seccion_normalizada
+        or "firmante" in seccion_normalizada
+    )
+    es_sec_contacto = any(t in seccion_normalizada for t in ("contacto", "comercial", "asesor", "operacion", "operativo", "responsable"))
+    if es_rotulo_nombre and es_sec_rep_o_firma and not es_sec_contacto:
+        if campo in ("razon_social", "empresa", "responsable_nombre", "contacto") or not campo:
+            return "representante_legal", "Rótulo 'Nombre' en contexto de Firma / Representante Legal → corregido a 'representante_legal' (persona natural firmante)."
 
     # 3. Nombre Comercial -> razon_social
     if "nombre comercial" in rotulo_normalizado:
@@ -626,7 +638,7 @@ def validar_item_mapeo(
             return resultado
 
     if campo_original in _CAMPOS_REP_LEGAL:
-        es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente", "junta", "directiv", "administra", "organo"))
+        es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "firma", "apoderado", "gerente", "junta", "directiv", "administra", "organo"))
         es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
         if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c.c", "exped")))):
             resultado["estado"] = EstadoMapeo.DESCARTADO

@@ -244,7 +244,7 @@ _PATRON_USO_EXCLUSIVO = re.compile(
 _PATRON_FIRMAS = re.compile(
     r"^\s*(?:firma\s+del\s+representante|firma\s+autorizada|"
     r"firma\s+y\s+huella|firma\s*:?|signature|"
-    r"huella\s+dactilar|sello\s+y\s+firma)\b",
+    r"huella(?:\s+dactilar)?|sello(?:\s+de\s+la\s+empresa|\s+y\s+firma)?)\b",
     re.IGNORECASE,
 )
 
@@ -282,6 +282,11 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
 
     # Campos directos con indicadores inline nunca son títulos de sección
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
+        return False
+
+    # Elementos de firma, huella o sello nunca son títulos de sección por sí solos
+    t_lower = _normalizar(t_clean)
+    if t_lower in ("huella", "huella dactilar", "sello", "sello de la empresa", "sello y firma", "firma y huella"):
         return False
 
     # Bloques, preguntas mayores o encabezados de PEP / Beneficiarios Finales (ADR-0005)

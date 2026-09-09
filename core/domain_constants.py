@@ -94,7 +94,7 @@ TOKENS_BALANCE_SECCION: Set[str] = {
 }
 
 TOKENS_REP_LEGAL_SECCION: Set[str] = {
-    "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular", "declaracion", "legal",
+    "representante", "apoderado", "persona natural", "rep legal", "firmante", "firma", "conyuge", "gerente", "titular", "declaracion", "legal",
     "junta", "directiv", "administra", "organo"
 }
 

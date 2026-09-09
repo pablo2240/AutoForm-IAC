@@ -30,7 +30,7 @@ from core.domain_constants import (
 # ──────────────────────────────────────────────────────────────────────────────
 
 PAT_SECCION_REP_LEGAL = re.compile(
-    r"\b(?:representante|apoderado|gerente|persona\s+natural)\b",
+    r"\b(?:representante|apoderado|gerente|persona\s+natural|firmante|firma)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_FINANCIERO = re.compile(
@@ -52,28 +52,28 @@ PAT_SECCION_EMPRESA = re.compile(
 
 # Lista exhaustiva de tuplas: (patron_seccion, patron_rotulo, campo_empresa, direccion_fallback)
 PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
-    # ── Dominio 1: Representante Legal / Persona Natural ──
+    # ── Dominio 1: Representante Legal / Persona Natural / Firma ──
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n)\s*:?\s*$", re.IGNORECASE),
         "cedula",
         "derecha",
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos|nombre)\s*:?\s*$", re.IGNORECASE),
         "representante_legal",
         "derecha",
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*nombres?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*nombres?\s*:?\s*$", re.IGNORECASE),
         "representante_nombres",
         "derecha",
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*apellidos?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*apellidos?\s*:?\s*$", re.IGNORECASE),
         "representante_apellidos",
         "derecha",
     ),
