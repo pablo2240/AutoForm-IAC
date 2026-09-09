@@ -533,7 +533,7 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 # Barra de Sesión Activa
-col_ses_info, col_ses_btn = st.columns([5, 1])
+col_ses_info, col_ses_cache, col_ses_btn = st.columns([4, 1.2, 1])
 with col_ses_info:
     color_rol = "#1E3A8A" if es_admin_usuario else "#059669"
     st.markdown(f"""
@@ -545,6 +545,22 @@ with col_ses_info:
             <span><code>{usuario_actual['correo']}</code></span>
         </div>
     """, unsafe_allow_html=True)
+with col_ses_cache:
+    if st.button("🧹 Limpiar Caché", key="btn_limpiar_cache_top", use_container_width=True, help="Elimina el contexto del formulario en memoria, resetea plantillas y recarga los perfiles"):
+        for k in list(st.session_state.keys()):
+            if k != "usuario_activo":
+                del st.session_state[k]
+        try:
+            p_emb = Path("config") / "embedding_cache.json"
+            if p_emb.exists():
+                p_emb.write_text("{}", encoding="utf-8")
+            p_tpl = Path("config") / "plantillas_cache.json"
+            if p_tpl.exists():
+                p_tpl.write_text("{}", encoding="utf-8")
+        except Exception:
+            pass
+        st.success("✅ Caché reiniciado.")
+        _safe_rerun()
 with col_ses_btn:
     if st.button("🚪 Cerrar Sesión", key="btn_logout_top", use_container_width=True):
         st.session_state.clear()
