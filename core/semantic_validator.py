@@ -337,7 +337,7 @@ def _regla_autocorrecciones_semanticas_adicionales(
     )
     es_sec_contacto = any(t in seccion_normalizada for t in ("contacto", "comercial", "asesor", "operacion", "operativo", "responsable"))
     if es_rotulo_nombre and es_sec_rep_o_firma and not es_sec_contacto:
-        if campo in ("razon_social", "empresa", "responsable_nombre", "contacto") or not campo:
+        if campo in ("razon_social", "empresa", "responsable_nombre", "contacto", "representante_nombres") or not campo:
             return "representante_legal", "Rótulo 'Nombre' en contexto de Firma / Representante Legal → corregido a 'representante_legal' (persona natural firmante)."
 
     # 3. Nombre Comercial -> razon_social
