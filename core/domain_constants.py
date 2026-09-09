@@ -71,6 +71,14 @@ CAMPOS_REP_LEGAL: Set[str] = {
     "representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion"
 }
 
+# ADR-0007: Campos del Responsable del Diligenciamiento / Operador Comercial
+CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
+    "responsable_nombre", "responsable_cargo", "responsable_cedula",
+    "responsable_telefono", "responsable_celular", "responsable_correo",
+    # Aliases
+    "contacto_nombre", "contacto_cargo", "contacto_telefono", "contacto_correo"
+}
+
 CAMPOS_EMPRESA: Set[str] = {
     "razon_social", "nit", "direccion", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
 }
@@ -86,11 +94,13 @@ TOKENS_BALANCE_SECCION: Set[str] = {
 }
 
 TOKENS_REP_LEGAL_SECCION: Set[str] = {
-    "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular", "declaracion", "legal"
+    "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular", "declaracion", "legal",
+    "junta", "directiv", "administra", "organo"
 }
 
 TOKENS_CONTACTO_SECCION: Set[str] = {
-    "contacto", "asesor", "consultor", "ejecutivo", "comercial", "operativo"
+    "contacto", "asesor", "consultor", "ejecutivo", "comercial", "operativo",
+    "responsable", "diligenciado", "diligenciamiento", "verificacion", "verificación", "cuenta"
 }
 
 

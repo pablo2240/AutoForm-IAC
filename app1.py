@@ -19,7 +19,7 @@ import sys
 import importlib
 
 for modulo in [
-    "core.database", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper",
+    "core.database", "core.auth_manager", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper",
     "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
     "core.domain_constants", "pipeline.context", "pipeline.orchestrator",
     "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler",
@@ -30,7 +30,7 @@ for modulo in [
     if modulo in sys.modules:
         importlib.reload(sys.modules[modulo])
 
-from core import excel_parser, excel_writer, mapper, profile_manager, llm_client
+from core import excel_parser, excel_writer, mapper, profile_manager, llm_client, auth_manager
 from core.mapper import get_debug_info as _get_debug_info
 
 from pipeline.context import PipelineContext
@@ -409,7 +409,100 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 3. Header Hero Institucional
+# ── ADR-0008: GATEKEEPER SHIELD (AUTENTICACIÓN OBLIGATORIA) ────────────────
+if not st.session_state.get("usuario_activo"):
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] { display: none !important; }
+            [data-testid="stSidebarNav"] { display: none !important; }
+            [data-testid="collapsedControl"] { display: none !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    col_izq, col_gate, col_der = st.columns([1, 2, 1])
+    with col_gate:
+        logo_gate = Path("assets") / "logo_iac_cropped.png"
+        if logo_gate.exists():
+            st.image(str(logo_gate), width=200)
+        else:
+            st.markdown("## 🏢 **IAC Latam**")
+
+        st.markdown("""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 5px solid #1E3A8A; border-radius: 12px; padding: 1.4rem 1.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.06); margin-top: 1rem; margin-bottom: 1.25rem;">
+                <h3 style="color: #0F172A; margin-bottom: 0.25rem; font-family: 'Montserrat', sans-serif;">⚡ AutoForm <span style="color: #FF6B00;">EXCEL</span></h3>
+                <p style="color: #64748B; font-size: 0.88rem; margin: 0;">Plataforma de Diligenciamiento Inteligente de Formularios Oficiales.</p>
+                <div style="margin-top: 0.75rem; font-size: 0.78rem; background: #F8FAFC; border: 1px solid #E2E8F0; padding: 0.45rem 0.75rem; border-radius: 6px; color: #475569;">
+                    🔒 Acceso restringido exclusivamente al personal corporativo de IAC Latam.
+                </div>
+            </div>
+        """, unsafe_allow_html=True)
+
+        tab_login, tab_reg = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
+
+        with tab_login:
+            st.markdown("##### Ingreso con Credenciales Corporativas")
+            login_correo = st.text_input("Correo Corporativo", placeholder="usuario@iac.com.co", key="gate_login_correo")
+            login_pwd = st.text_input("Contraseña", type="password", key="gate_login_pwd")
+
+            if st.button("Ingresar a la Plataforma", type="primary", use_container_width=True, key="btn_gate_login"):
+                if login_correo.strip() and login_pwd:
+                    user_auth = profile_manager.autenticar_usuario(login_correo.strip(), login_pwd)
+                    if user_auth:
+                        st.session_state["usuario_activo"] = user_auth
+                        st.success(f"✅ ¡Bienvenido, {user_auth['nombre']}!")
+                        _safe_rerun()
+                    else:
+                        st.error("Credenciales incorrectas o usuario no autorizado.")
+                else:
+                    st.warning("Ingresa tu correo y contraseña.")
+
+        with tab_reg:
+            st.markdown("##### Alta de Nuevo Usuario Corporativo")
+            reg_nom = st.text_input("Nombre Completo", placeholder="Ej: Diana Gómez", key="gate_reg_nom")
+            reg_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones", key="gate_reg_car")
+            reg_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050", key="gate_reg_ced")
+            reg_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="gate_reg_tel")
+            reg_cor = st.text_input("Correo Corporativo (@iac.com.co o @iaclatam.com)", placeholder="nombre@iac.com.co", key="gate_reg_cor")
+            reg_pwd1 = st.text_input("Contraseña (mínimo 6 caracteres)", type="password", key="gate_reg_pwd1")
+            reg_pwd2 = st.text_input("Confirmar Contraseña", type="password", key="gate_reg_pwd2")
+
+            if st.button("Crear Cuenta", type="primary", use_container_width=True, key="btn_gate_reg"):
+                if not reg_nom.strip():
+                    st.error("El nombre completo es obligatorio.")
+                elif not reg_cor.strip():
+                    st.error("El correo electrónico es obligatorio.")
+                elif reg_pwd1 != reg_pwd2:
+                    st.error("Las contraseñas no coinciden.")
+                elif len(reg_pwd1) < 6:
+                    st.error("La contraseña debe tener al menos 6 caracteres.")
+                else:
+                    exito_reg, msg_reg = profile_manager.registrar_usuario(
+                        nombre=reg_nom.strip(),
+                        correo=reg_cor.strip(),
+                        password=reg_pwd1,
+                        cargo=reg_car.strip(),
+                        cedula=reg_ced.strip(),
+                        telefono=reg_tel.strip(),
+                        es_admin=0,
+                    )
+                    if exito_reg:
+                        user_auth = profile_manager.autenticar_usuario(reg_cor.strip(), reg_pwd1)
+                        if user_auth:
+                            st.session_state["usuario_activo"] = user_auth
+                            st.success("✅ ¡Cuenta creada exitosamente! Ingresando...")
+                            _safe_rerun()
+                        else:
+                            st.success("✅ Cuenta creada. Inicia sesión en la pestaña anterior.")
+                    else:
+                        st.error(msg_reg)
+
+    st.stop()
+
+# 3. Header Hero Institucional y Barra de Sesión
+usuario_actual = st.session_state["usuario_activo"]
+es_admin_usuario = bool(usuario_actual.get("es_admin", False))
+rol_badge_label = "🛡️ Administrador" if es_admin_usuario else "💼 Asesor Comercial"
+
 nombre_despliegue = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 motor_label = f"AZURE OPENAI ({nombre_despliegue.upper()}) ACTIVE" if (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")) else f"OPENAI {nombre_despliegue.upper()} ACTIVE"
 
@@ -424,6 +517,24 @@ st.markdown(f"""
         </div>
     </div>
 """, unsafe_allow_html=True)
+
+# Barra de Sesión Activa
+col_ses_info, col_ses_btn = st.columns([5, 1])
+with col_ses_info:
+    color_rol = "#1E3A8A" if es_admin_usuario else "#059669"
+    st.markdown(f"""
+        <div style="font-size: 0.84rem; color: #475569; padding: 0.35rem 0.75rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            <span>👤 Sesión: <strong>{usuario_actual['nombre']}</strong></span>
+            <span style="color: #CBD5E1;">|</span>
+            <span style="color: {color_rol}; font-weight: 700;">{rol_badge_label}</span>
+            <span style="color: #CBD5E1;">|</span>
+            <span><code>{usuario_actual['correo']}</code></span>
+        </div>
+    """, unsafe_allow_html=True)
+with col_ses_btn:
+    if st.button("🚪 Cerrar Sesión", key="btn_logout_top", use_container_width=True):
+        st.session_state.clear()
+        _safe_rerun()
 
 # 4. Sidebar Corporativa
 with st.sidebar:
@@ -467,10 +578,63 @@ with st.sidebar:
     ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
     datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
 
+    # 👤 Fase 3: Gestión de Operadores / Diligenciado Por (ADR-0007)
+    st.markdown("### 👤 **Diligenciado Por (Operador)**")
+    if not es_admin_usuario:
+        operador_activo = {
+            "id": usuario_actual["id"],
+            "nombre": usuario_actual["nombre"],
+            "cargo": usuario_actual.get("cargo", ""),
+            "cedula": usuario_actual.get("cedula", ""),
+            "telefono": usuario_actual.get("telefono", ""),
+            "correo": usuario_actual["correo"],
+        }
+        st.markdown(f"""
+            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">
+                <div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Asesor Comercial Activo</div>
+                <div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual['nombre']}</div>
+                <div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get('cargo') or 'Asesor Comercial'}</div>
+                <div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual['correo']}</div>
+            </div>
+        """, unsafe_allow_html=True)
+    else:
+        operadores_db = profile_manager.listar_operadores()
+        nombres_operadores = [f"👤 {op['nombre']}" + (f" ({op['cargo']})" if op.get("cargo") else "") for op in operadores_db]
+        mapa_operadores = {
+            (f"👤 {op['nombre']}" + (f" ({op['cargo']})" if op.get("cargo") else "")): op
+            for op in operadores_db
+        }
+
+        opcion_sin_operador = "⚪ Ninguno (Safe Passivity / Manual)"
+        opciones_op = [opcion_sin_operador] + nombres_operadores
+
+        op_activo_db = profile_manager.obtener_operador_activo()
+        idx_op_def = 0
+        if op_activo_db:
+            etiq_activa = f"👤 {op_activo_db['nombre']}" + (f" ({op_activo_db['cargo']})" if op_activo_db.get("cargo") else "")
+            if etiq_activa in opciones_op:
+                idx_op_def = opciones_op.index(etiq_activa)
+
+        op_seleccionado_etiqueta = st.selectbox(
+            "Seleccionar Asesor / Operador:",
+            options=opciones_op,
+            index=idx_op_def,
+            key="sb_selector_operador_activo",
+            help="El asesor seleccionado será asignado a los campos comerciales y de contacto sin tocar la información jurídica de la empresa.",
+        )
+
+        operador_activo = None
+        if op_seleccionado_etiqueta != opcion_sin_operador:
+            operador_activo = mapa_operadores.get(op_seleccionado_etiqueta)
+            if operador_activo and (not op_activo_db or op_activo_db["id"] != operador_activo["id"]):
+                profile_manager.activar_operador(operador_activo["id"])
+
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
 
     def _al_cambiar_campo(key_w: str, campo_nombre: str):
+        if not es_admin_usuario:
+            return
         val = st.session_state.get(key_w)
         if val is not None:
             profile_manager.auto_guardar_campo(
@@ -481,7 +645,10 @@ with st.sidebar:
             )
 
     with st.expander("✏️ Editar Datos de Empresa", expanded=False):
-        st.caption("Cada campo se guarda automáticamente en tiempo real al editar.")
+        if not es_admin_usuario:
+            st.info("🔒 **Modo Solo Lectura**: Como asesor comercial, puedes consultar la información corporativa pero la modificación de datos fiscales, bancarios o de balance está reservada a los administradores.")
+        else:
+            st.caption("Cada campo se guarda automáticamente en tiempo real al editar.")
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
         
         with tab_emp:
@@ -492,6 +659,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_rs",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_rs", "razon_social"),
+                disabled=not es_admin_usuario,
             )
             nit = st.text_input(
                 "NIT / Identificación Tributaria",
@@ -499,6 +667,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_nit",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_nit", "nit"),
+                disabled=not es_admin_usuario,
             )
             tipo_sociedad = st.text_input(
                 "Tipo de Sociedad",
@@ -506,6 +675,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tsoc",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tsoc", "tipo_sociedad"),
+                disabled=not es_admin_usuario,
             )
 
             st.markdown("##### 📍 Ubicación Principal")
@@ -515,6 +685,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_dir",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_dir", "direccion"),
+                disabled=not es_admin_usuario,
             )
             ciudad = st.text_input(
                 "Ciudad / Municipio",
@@ -522,6 +693,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_ciu",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_ciu", "ciudad"),
+                disabled=not es_admin_usuario,
             )
             departamento = st.text_input(
                 "Departamento",
@@ -529,6 +701,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_dep",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_dep", "departamento"),
+                disabled=not es_admin_usuario,
             )
             pais = st.text_input(
                 "País",
@@ -536,6 +709,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_pais",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_pais", "pais"),
+                disabled=not es_admin_usuario,
             )
 
             st.markdown("##### 📞 Contacto Institucional")
@@ -545,6 +719,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tel",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tel", "telefono"),
+                disabled=not es_admin_usuario,
             )
             pagina_web = st.text_input(
                 "Página Web",
@@ -552,6 +727,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_web",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_web", "pagina_web"),
+                disabled=not es_admin_usuario,
             )
 
         with tab_rep:
@@ -562,6 +738,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_rep_nom",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_rep_nom", "representante_legal"),
+                disabled=not es_admin_usuario,
             )
             rep_nombres = st.text_input(
                 "Nombres",
@@ -569,6 +746,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_r_nom",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_r_nom", "representante_nombres"),
+                disabled=not es_admin_usuario,
             )
             rep_apellidos = st.text_input(
                 "Apellidos",
@@ -576,6 +754,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_r_ape",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_r_ape", "representante_apellidos"),
+                disabled=not es_admin_usuario,
             )
             
             tipo_documento = st.text_input(
@@ -584,6 +763,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tdoc",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tdoc", "tipo_documento"),
+                disabled=not es_admin_usuario,
             )
             
             cedula = st.text_input(
@@ -592,6 +772,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_ced",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_ced", "cedula"),
+                disabled=not es_admin_usuario,
             )
             lugar_expedicion = st.text_input(
                 "Lugar de Expedición (Ciudad)",
@@ -600,6 +781,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_exp",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_exp", "lugar_expedicion"),
+                disabled=not es_admin_usuario,
             )
 
             st.markdown("##### 📱 Contacto Directo")
@@ -609,6 +791,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_cel",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_cel", "celular"),
+                disabled=not es_admin_usuario,
             )
             correo = st.text_input(
                 "Correo Electrónico",
@@ -616,6 +799,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_cor",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_cor", "correo"),
+                disabled=not es_admin_usuario,
             )
 
         with tab_fin:
@@ -626,6 +810,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_banco",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_banco", "banco"),
+                disabled=not es_admin_usuario,
             )
             sucursal = st.text_input(
                 "Sucursal Bancaria",
@@ -633,6 +818,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_suc",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_suc", "sucursal"),
+                disabled=not es_admin_usuario,
             )
 
             st.markdown("##### 💳 Cuenta para Pagos")
@@ -642,6 +828,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_num_cta",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_num_cta", "numero_cuenta"),
+                disabled=not es_admin_usuario,
             )
             tipo_cuenta = st.text_input(
                 "Tipo de Cuenta",
@@ -649,6 +836,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tip_cta",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tip_cta", "tipo_cuenta"),
+                disabled=not es_admin_usuario,
             )
 
             st.markdown("##### 📊 Balance y Cifras Financieras")
@@ -658,6 +846,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tot_act",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tot_act", "total_activos"),
+                disabled=not es_admin_usuario,
             )
             total_pasivos = st.text_input(
                 "Total Pasivos",
@@ -665,6 +854,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tot_pas",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tot_pas", "total_pasivos"),
+                disabled=not es_admin_usuario,
             )
             total_patrimonio = st.text_input(
                 "Total Patrimonio",
@@ -672,6 +862,7 @@ with st.sidebar:
                 key=f"pe_{slug_perfil}_tot_pat",
                 on_change=_al_cambiar_campo,
                 args=(f"pe_{slug_perfil}_tot_pat", "total_patrimonio"),
+                disabled=not es_admin_usuario,
             )
             c_ing_men, c_egr_men = st.columns(2)
             with c_ing_men:
@@ -681,6 +872,7 @@ with st.sidebar:
                     key=f"pe_{slug_perfil}_ing_men",
                     on_change=_al_cambiar_campo,
                     args=(f"pe_{slug_perfil}_ing_men", "total_ingresos_mensuales"),
+                    disabled=not es_admin_usuario,
                 )
             with c_egr_men:
                 total_egresos_mensuales = st.text_input(
@@ -689,6 +881,7 @@ with st.sidebar:
                     key=f"pe_{slug_perfil}_egr_men",
                     on_change=_al_cambiar_campo,
                     args=(f"pe_{slug_perfil}_egr_men", "total_egresos_mensuales"),
+                    disabled=not es_admin_usuario,
                 )
             c_ing_anu, c_egr_anu = st.columns(2)
             with c_ing_anu:
@@ -698,6 +891,7 @@ with st.sidebar:
                     key=f"pe_{slug_perfil}_ing_anu",
                     on_change=_al_cambiar_campo,
                     args=(f"pe_{slug_perfil}_ing_anu", "total_ingresos_anuales"),
+                    disabled=not es_admin_usuario,
                 )
             with c_egr_anu:
                 total_egresos_anuales = st.text_input(
@@ -706,87 +900,140 @@ with st.sidebar:
                     key=f"pe_{slug_perfil}_egr_anu",
                     on_change=_al_cambiar_campo,
                     args=(f"pe_{slug_perfil}_egr_anu", "total_egresos_anuales"),
+                    disabled=not es_admin_usuario,
                 )
 
-        if st.button("💾 Guardar y Confirmar Cambios", key="btn_guardar_perfil", width="stretch"):
-            datos_actualizados = {
-                "razon_social": razon_social,
-                "nit": nit,
-                "tipo_sociedad": tipo_sociedad,
-                "direccion": direccion,
-                "ciudad": ciudad,
-                "departamento": departamento,
-                "pais": pais,
-                "telefono": telefono,
-                "pagina_web": pagina_web,
-                "representante_legal": representante_legal,
-                "representante_nombres": rep_nombres,
-                "representante_apellidos": rep_apellidos,
-                "tipo_documento": tipo_documento,
-                "cedula": cedula,
-                "lugar_expedicion": lugar_expedicion,
-                "expedicion": lugar_expedicion,
-                "celular": celular,
-                "correo": correo,
-                "banco": banco,
-                "sucursal": sucursal,
-                "numero_cuenta": numero_cuenta,
-                "tipo_cuenta": tipo_cuenta,
-                "total_activos": total_activos,
-                "total_pasivos": total_pasivos,
-                "total_patrimonio": total_patrimonio,
-                "total_ingresos_mensuales": total_ingresos_mensuales,
-                "total_egresos_mensuales": total_egresos_mensuales,
-                "total_ingresos_anuales": total_ingresos_anuales,
-                "total_egresos_anuales": total_egresos_anuales,
-            }
-            if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados, nombre_visible=perfil_seleccionado_etiqueta):
-                profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
-                st.success("✅ ¡Datos guardados permanentemente en SQLite canónico y archivo JSON!")
-                datos_empresa = datos_actualizados
-                _safe_rerun()
-
-    with st.expander("➕ Crear Nuevo Perfil", expanded=False):
-        nuevo_nombre = st.text_input("Nombre del Nuevo Perfil", placeholder="Ej: IAC Sucursal Bogotá")
-        if st.button("Crear Perfil", key="btn_crear_perfil", width="stretch"):
-            if nuevo_nombre.strip():
-                exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
-                if exito:
-                    st.session_state["perfil_activo_nombre"] = nueva_etiqueta
-                    profile_manager.guardar_perfil_activo_seleccionado(nueva_etiqueta)
-                    st.success(f"✅ Perfil creado: {nueva_etiqueta}")
+        if es_admin_usuario:
+            if st.button("💾 Guardar y Confirmar Cambios", key="btn_guardar_perfil", width="stretch"):
+                datos_actualizados = {
+                    "razon_social": razon_social,
+                    "nit": nit,
+                    "tipo_sociedad": tipo_sociedad,
+                    "direccion": direccion,
+                    "ciudad": ciudad,
+                    "departamento": departamento,
+                    "pais": pais,
+                    "telefono": telefono,
+                    "pagina_web": pagina_web,
+                    "representante_legal": representante_legal,
+                    "representante_nombres": rep_nombres,
+                    "representante_apellidos": rep_apellidos,
+                    "tipo_documento": tipo_documento,
+                    "cedula": cedula,
+                    "lugar_expedicion": lugar_expedicion,
+                    "expedicion": lugar_expedicion,
+                    "celular": celular,
+                    "correo": correo,
+                    "banco": banco,
+                    "sucursal": sucursal,
+                    "numero_cuenta": numero_cuenta,
+                    "tipo_cuenta": tipo_cuenta,
+                    "total_activos": total_activos,
+                    "total_pasivos": total_pasivos,
+                    "total_patrimonio": total_patrimonio,
+                    "total_ingresos_mensuales": total_ingresos_mensuales,
+                    "total_egresos_mensuales": total_egresos_mensuales,
+                    "total_ingresos_anuales": total_ingresos_anuales,
+                    "total_egresos_anuales": total_egresos_anuales,
+                }
+                if profile_manager.guardar_perfil(ruta_perfil_activo, datos_actualizados, nombre_visible=perfil_seleccionado_etiqueta):
+                    profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
+                    st.success("✅ ¡Datos guardados permanentemente en SQLite canónico y archivo JSON!")
+                    datos_empresa = datos_actualizados
                     _safe_rerun()
 
-    with st.expander("💾 Respaldar / Cargar Perfil (JSON)", expanded=False):
-        st.caption("Exporta tus datos para guardarlos en tu equipo o impórtalos en la nube (Streamlit Cloud):")
-        json_descarga = profile_manager.obtener_perfil_para_descarga(ruta_perfil_activo)
-        st.download_button(
-            label="📥 Descargar Perfil Activo (JSON)",
-            data=json_descarga,
-            file_name=f"{slug_perfil}_datos_empresa.json",
-            mime="application/json",
-            use_container_width=True,
-            help="Descarga este perfil en tu equipo para conservarlo o importarlo en la versión web."
-        )
-        st.markdown("---")
-        archivo_perfil_subido = st.file_uploader(
-            "📤 Importar Perfil desde JSON:",
-            type=["json"],
-            key="uploader_perfil_json",
-            help="Sube un archivo JSON previamente exportado para restaurar o cargar una nueva empresa."
-        )
-        if archivo_perfil_subido is not None:
-            if st.button("Restaurar y Activar Perfil", key="btn_importar_perfil_json", use_container_width=True):
-                contenido = archivo_perfil_subido.getvalue().decode("utf-8")
-                nombre_base = archivo_perfil_subido.name.replace(".json", "").replace("datos_empresa_", "").replace("_", " ").title()
-                exito, ruta_imp, etiq_imp = profile_manager.importar_perfil_json(contenido, nombre_sugerido=nombre_base)
-                if exito:
-                    st.session_state["perfil_activo_nombre"] = etiq_imp
-                    profile_manager.guardar_perfil_activo_seleccionado(etiq_imp)
-                    st.success(f"✅ Perfil '{etiq_imp}' importado y activado exitosamente.")
+    if es_admin_usuario:
+        with st.expander("➕ Crear Nuevo Perfil", expanded=False):
+            nuevo_nombre = st.text_input("Nombre del Nuevo Perfil", placeholder="Ej: IAC Sucursal Bogotá")
+            if st.button("Crear Perfil", key="btn_crear_perfil", width="stretch"):
+                if nuevo_nombre.strip():
+                    exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
+                    if exito:
+                        st.session_state["perfil_activo_nombre"] = nueva_etiqueta
+                        profile_manager.guardar_perfil_activo_seleccionado(nueva_etiqueta)
+                        st.success(f"✅ Perfil creado: {nueva_etiqueta}")
+                        _safe_rerun()
+
+        with st.expander("💾 Respaldar / Cargar Perfil (JSON)", expanded=False):
+            st.caption("Exporta tus datos para guardarlos en tu equipo o impórtalos en la nube (Streamlit Cloud):")
+            json_descarga = profile_manager.obtener_perfil_para_descarga(ruta_perfil_activo)
+            st.download_button(
+                label="📥 Descargar Perfil Activo (JSON)",
+                data=json_descarga,
+                file_name=f"{slug_perfil}_datos_empresa.json",
+                mime="application/json",
+                use_container_width=True,
+                help="Descarga este perfil en tu equipo para conservarlo o importarlo en la versión web."
+            )
+            st.markdown("---")
+            archivo_perfil_subido = st.file_uploader(
+                "📤 Importar Perfil desde JSON:",
+                type=["json"],
+                key="uploader_perfil_json",
+                help="Sube un archivo JSON previamente exportado para restaurar o cargar una nueva empresa."
+            )
+            if archivo_perfil_subido is not None:
+                if st.button("Restaurar y Activar Perfil", key="btn_importar_perfil_json", use_container_width=True):
+                    contenido = archivo_perfil_subido.getvalue().decode("utf-8")
+                    nombre_base = archivo_perfil_subido.name.replace(".json", "").replace("datos_empresa_", "").replace("_", " ").title()
+                    exito, ruta_imp, etiq_imp = profile_manager.importar_perfil_json(contenido, nombre_sugerido=nombre_base)
+                    if exito:
+                        st.session_state["perfil_activo_nombre"] = etiq_imp
+                        profile_manager.guardar_perfil_activo_seleccionado(etiq_imp)
+                        st.success(f"✅ Perfil '{etiq_imp}' importado y activado exitosamente.")
+                        _safe_rerun()
+                    else:
+                        st.error("❌ El archivo JSON no tiene un formato válido.")
+
+        with st.expander("👤 Gestionar Operadores / Asesores", expanded=False):
+            st.caption("Administra los asesores que diligencian los formularios comerciales:")
+
+            # Si hay un operador seleccionado, permitir editar sus datos
+            if operador_activo:
+                st.markdown(f"##### ✏️ Editar: **{operador_activo['nombre']}**")
+                op_nombre = st.text_input("Nombre Completo", value=operador_activo.get("nombre", ""), key=f"edit_op_nom_{operador_activo['id']}")
+                op_cargo = st.text_input("Cargo / Rol", value=operador_activo.get("cargo", ""), key=f"edit_op_car_{operador_activo['id']}")
+                op_cedula = st.text_input("Cédula / Documento", value=operador_activo.get("cedula", ""), key=f"edit_op_ced_{operador_activo['id']}")
+                op_tel = st.text_input("Teléfono / Celular", value=operador_activo.get("telefono", ""), key=f"edit_op_tel_{operador_activo['id']}")
+                op_correo = st.text_input("Correo Electrónico", value=operador_activo.get("correo", ""), key=f"edit_op_cor_{operador_activo['id']}")
+
+                if st.button("💾 Guardar Datos del Operador", key="btn_guardar_op_actual", use_container_width=True):
+                    profile_manager.guardar_operador(
+                        operador_id=operador_activo["id"],
+                        nombre=op_nombre,
+                        cargo=op_cargo,
+                        cedula=op_cedula,
+                        telefono=op_tel,
+                        correo=op_correo,
+                        es_activo=True,
+                    )
+                    st.success("✅ Datos del operador actualizados exitosamente.")
+                    _safe_rerun()
+                st.markdown("---")
+
+            st.markdown("##### ➕ Registrar Nuevo Asesor")
+            nuevo_op_nombre = st.text_input("Nombre Completo", placeholder="Ej: Diana Gómez", key="nuevo_op_nom")
+            nuevo_op_cargo = st.text_input("Cargo", placeholder="Ej: Consultora Comercial", key="nuevo_op_car")
+            nuevo_op_ced = st.text_input("Cédula", placeholder="Ej: 1020304050", key="nuevo_op_ced")
+            nuevo_op_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="nuevo_op_tel")
+            nuevo_op_cor = st.text_input("Correo", placeholder="Ej: diana.gomez@iac.com.co", key="nuevo_op_cor")
+
+            if st.button("Crear Asesor", key="btn_crear_nuevo_op", use_container_width=True):
+                if nuevo_op_nombre.strip():
+                    slug_op = profile_manager._slugify(nuevo_op_nombre)
+                    profile_manager.guardar_operador(
+                        operador_id=slug_op,
+                        nombre=nuevo_op_nombre.strip(),
+                        cargo=nuevo_op_cargo.strip(),
+                        cedula=nuevo_op_ced.strip(),
+                        telefono=nuevo_op_tel.strip(),
+                        correo=nuevo_op_cor.strip(),
+                        es_activo=True,
+                    )
+                    st.success(f"✅ Operador '{nuevo_op_nombre}' registrado y activado.")
                     _safe_rerun()
                 else:
-                    st.error("❌ El archivo JSON no tiene un formato válido.")
+                    st.warning("Ingresa al menos el nombre del asesor.")
 
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────
@@ -922,6 +1169,25 @@ def _deduplicar_por_campo(resultados):
     return resultado
 
 
+# 5. Barra de Contexto Activo (Empresa y Operador)
+col_ctx1, col_ctx2 = st.columns([1, 1])
+with col_ctx1:
+    st.markdown(f"""
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid #1E3A8A; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
+            <div style="font-size: 0.72rem; color: #64748B; font-weight: 700; text-transform: uppercase;">🏢 Perfil Empresarial</div>
+            <div style="font-size: 0.95rem; color: #0F172A; font-weight: 700;">{perfil_seleccionado_etiqueta}</div>
+        </div>
+    """, unsafe_allow_html=True)
+with col_ctx2:
+    op_label = f"👤 {operador_activo['nombre']}" + (f" ({operador_activo['cargo']})" if operador_activo.get("cargo") else "") if operador_activo else "⚪ Sin operador (Safe Passivity / Manual)"
+    op_color = "#10B981" if operador_activo else "#94A3B8"
+    st.markdown(f"""
+        <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid {op_color}; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
+            <div style="font-size: 0.72rem; color: #64748B; font-weight: 700; text-transform: uppercase;">👤 Diligenciado Por</div>
+            <div style="font-size: 0.95rem; color: #0F172A; font-weight: 700;">{op_label}</div>
+        </div>
+    """, unsafe_allow_html=True)
+
 # 6. Zona de Carga Principal
 st.markdown("### 📥 Cargar Formulario de Terceros")
 
@@ -989,10 +1255,16 @@ if uploaded_file is not None:
                     uploaded_file.seek(0)
                     archivo_bytes = uploaded_file.read()
 
+                    # Fusión no invasiva de operador activo en datos_empresa (ADR-0007)
+                    datos_empresa_efectivos = profile_manager.fusionar_operador_en_datos_empresa(
+                        datos_empresa,
+                        operador=operador_activo,
+                    )
+
                     ctx = PipelineContext(
                         archivo_bytes=archivo_bytes,
                         nombre_archivo=file_name,
-                        datos_empresa=datos_empresa,
+                        datos_empresa=datos_empresa_efectivos,
                     )
 
                     def callback_progreso(msg: str, pct: float):

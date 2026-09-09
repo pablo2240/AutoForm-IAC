@@ -67,9 +67,9 @@ _CAMPOS_FECHA: Set[str] = {"fecha_expedicion", "fecha_nacimiento", "fecha_consti
 # Campos del perfil que almacenan valores numéricos o con formato
 _CAMPOS_NUMERICOS: Set[str] = {"nit", "cedula", "numero_cuenta"}
 
-# Secciones semánticamente propias del representante legal / persona natural
 _TOKENS_SECCION_REP_LEGAL = {
     "representante", "apoderado", "persona natural", "rep legal", "firmante", "conyuge", "gerente", "titular",
+    "junta", "directiv", "administra", "organo", "declaracion", "legal",
 }
 
 # Secciones semánticamente propias de la empresa / persona jurídica / proponente
@@ -85,6 +85,7 @@ from core.domain_constants import (
     CAMPOS_BANCARIOS,
     CAMPOS_FINANCIEROS_BALANCE,
     CAMPOS_REP_LEGAL,
+    CAMPOS_RESPONSABLE_COMERCIAL,
     CAMPOS_EMPRESA,
     TOKENS_FINANCIEROS_SECCION,
     TOKENS_BALANCE_SECCION,
@@ -101,6 +102,7 @@ _TOKENS_CONTACTO_COMERCIAL = TOKENS_CONTACTO_SECCION
 _ROTULOS_GENERICOS_BLOQUEADOS = ROTULOS_GENERICOS_BLOQUEADOS
 _CAMPOS_BANCARIOS = CAMPOS_BANCARIOS
 _CAMPOS_REP_LEGAL = CAMPOS_REP_LEGAL
+_CAMPOS_RESPONSABLE_COMERCIAL = CAMPOS_RESPONSABLE_COMERCIAL
 
 # Tokens que identifican secciones de terceros u uso interno
 _TOKENS_SECCION_OMITIR = {
@@ -469,17 +471,50 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
-    # ── Safe Passivity (ADR-0004): Contacto comercial y opciones ──────────
+    # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007): Contacto comercial ──
     es_contacto = (
-        any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial"))
+        any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial", "responsable", "diligenciado por", "diligenciado", "verificacion", "verificación"))
         or (any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL) and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL))
     )
     if es_contacto:
-        resultado["estado"] = EstadoMapeo.DESCARTADO
-        resultado["campo_final"] = ""
-        resultado["motivo"] = "Safe Passivity (ADR-0004): Campo de contacto comercial reservado para diligenciamiento manual por el asesor."
-        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-        return resultado
+        tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
+        if campo_original in _CAMPOS_RESPONSABLE_COMERCIAL and tiene_datos_op:
+            pass  # Permitido: el campo pertenece al dominio del responsable y el operador tiene datos
+        elif tiene_datos_op:
+            # Context-First Autocorrección (ADR-0007): redirigir rótulos comerciales al operador
+            if any(t in rotulo_norm for t in ("email", "correo")) and datos_planos.get("responsable_correo"):
+                campo_original = "responsable_correo"
+                resultado["campo_final"] = "responsable_correo"
+                resultado["motivo"] = "Context-First (ADR-0007): Asignado a correo del responsable comercial."
+            elif any(t in rotulo_norm for t in ("tel", "celular", "movil", "fijo")) and (datos_planos.get("responsable_telefono") or datos_planos.get("responsable_celular")):
+                c_dest = "responsable_telefono" if datos_planos.get("responsable_telefono") else "responsable_celular"
+                campo_original = c_dest
+                resultado["campo_final"] = c_dest
+                resultado["motivo"] = "Context-First (ADR-0007): Asignado a teléfono/celular del responsable comercial."
+            elif any(t in rotulo_norm for t in ("cargo", "posicion", "rol")) and datos_planos.get("responsable_cargo"):
+                campo_original = "responsable_cargo"
+                resultado["campo_final"] = "responsable_cargo"
+                resultado["motivo"] = "Context-First (ADR-0007): Asignado a cargo del responsable comercial."
+            elif any(t in rotulo_norm for t in ("cedula", "documento", "id")) and datos_planos.get("responsable_cedula"):
+                campo_original = "responsable_cedula"
+                resultado["campo_final"] = "responsable_cedula"
+                resultado["motivo"] = "Context-First (ADR-0007): Asignado a documento del responsable comercial."
+            elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación")) and datos_planos.get("responsable_nombre"):
+                campo_original = "responsable_nombre"
+                resultado["campo_final"] = "responsable_nombre"
+                resultado["motivo"] = "Context-First (ADR-0007): Asignado a nombre del responsable comercial."
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = "Safe Passivity (ADR-0007): Campo comercial sin datos en operador activo."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
+        else:
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = "Safe Passivity (ADR-0004): Campo de contacto comercial reservado para diligenciamiento manual."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
 
     rotulo_limpio = limpiar_rotulo(rotulo_norm)
     if rotulo_limpio in _ROTULOS_GENERICOS_BLOQUEADOS or (campo_original in ("numero_cuenta", "tipo_cuenta", "correo", "celular") and rotulo_limpio in ("cliente", "vinculacion", "otros", "otro", "pep")):
@@ -538,12 +573,22 @@ def validar_item_mapeo(
             return resultado
 
     if campo_original in _CAMPOS_REP_LEGAL:
-        es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente"))
+        es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente", "junta", "directiv", "administra", "organo"))
         es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
         if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c.c", "exped")))):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección ('{seccion}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
+    # ADR-0007: Barrera estricta - El Responsable Comercial NUNCA entra a Representante Legal, Junta Directiva ni PEP
+    if campo_original in _CAMPOS_RESPONSABLE_COMERCIAL:
+        es_sec_prohibida = any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente", "junta", "directiv", "administra", "organo", "pep", "beneficiario"))
+        if es_sec_prohibida or not es_contacto:
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation (ADR-0007): Datos de Responsable Comercial '{campo_original}' prohibidos en sección legal, directiva o fuera de contacto comercial ('{seccion}')."
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 

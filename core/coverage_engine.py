@@ -21,6 +21,7 @@ from core.domain_constants import (
     es_seccion_o_campo_pep,
     ROTULOS_GENERICOS_BLOQUEADOS,
     PATRON_CONTACTO_COMERCIAL,
+    CAMPOS_RESPONSABLE_COMERCIAL,
     limpiar_rotulo,
 )
 
@@ -38,6 +39,10 @@ PAT_SECCION_FINANCIERO = re.compile(
 )
 PAT_SECCION_JUNTA_COMP = re.compile(
     r"\b(?:junta\s+directiva|composici[oó]n|accionistas?|socios?|administraci[oó]n)\b",
+    re.IGNORECASE,
+)
+PAT_SECCION_CONTACTO_COMERCIAL = re.compile(
+    r"\b(?:contacto|asesor|comercial|ejecutivo|operativo|responsable|diligenciado|verificacion|verificación)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_EMPRESA = re.compile(
@@ -265,6 +270,38 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         "tipo_sociedad",
         "derecha",
     ),
+
+    # ── Dominio 5: Contacto Comercial / Responsable del Diligenciamiento (ADR-0007) ──
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario)|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto)\s*$", re.IGNORECASE),
+        "responsable_nombre",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:cargo|posici[oó]n|rol)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        "responsable_cargo",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:c[eé]dula|c\.?c\.?|identificaci[oó]n|documento)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        "responsable_cedula",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:tel[eé]fono|celular|m[oó]vil|tel[\s/]*cel)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        "responsable_telefono",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:email|correo|correo\s+electr[oó]nico)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        "responsable_correo",
+        "derecha",
+    ),
 ]
 
 
@@ -398,9 +435,13 @@ def ejecutar_pase_cobertura_exhaustiva(
         if es_seccion_o_campo_pep(sec_titulo, txt):
             continue
 
-        # Safe Passivity (ADR-0004): Descartar rótulos genéricos o contacto comercial
+        # Safe Passivity & Operadores (ADR-0004 / ADR-0007): Descartar rótulos genéricos o contacto sin operador
         txt_limpio = limpiar_rotulo(txt)
-        if txt_limpio in ROTULOS_GENERICOS_BLOQUEADOS or PATRON_CONTACTO_COMERCIAL.search(txt):
+        if txt_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
+            continue
+        tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
+        es_rot_contacto = bool(PATRON_CONTACTO_COMERCIAL.search(txt) or PAT_SECCION_CONTACTO_COMERCIAL.search(sec_titulo))
+        if es_rot_contacto and not tiene_datos_op:
             continue
 
         h = cand["hoja"]
@@ -409,8 +450,15 @@ def ejecutar_pase_cobertura_exhaustiva(
         coord_orig = (h, f, c)
 
         for pat_sec, pat_rot, campo_sug, dir_fallback in PATRONES_SWEEP:
+            # Domain Isolation (ADR-0007): campos de responsable comercial SOLO aplican a contacto comercial
+            es_campo_resp = campo_sug in CAMPOS_RESPONSABLE_COMERCIAL
+            if es_campo_resp and not es_rot_contacto:
+                continue
+            if not es_campo_resp and es_rot_contacto:
+                continue
+
             # 1. Comprobar pertinencia de sección y texto de rótulo
-            aplica_sec = bool(pat_sec.search(sec_titulo)) or pat_sec == PAT_SECCION_EMPRESA
+            aplica_sec = bool(pat_sec.search(sec_titulo)) or (pat_sec == PAT_SECCION_EMPRESA and not es_rot_contacto)
             if not aplica_sec:
                 continue
 
@@ -433,7 +481,14 @@ def ejecutar_pase_cobertura_exhaustiva(
 
             # 3. Determinar ubicación espacial de escritura
             dir_espacial = cand["direccion_sugerida"]
-            ubicacion = dir_espacial if dir_espacial in ("derecha", "abajo", "misma") else dir_fallback
+            elem_raw = cand.get("propiedades_raw") or {}
+            der_vacia = bool(elem_raw.get("derechaVacia", False))
+            ab_vacia = bool(elem_raw.get("abajoVacia", False))
+
+            if dir_fallback == "abajo" or (not der_vacia and ab_vacia) or pat_sec == PAT_SECCION_JUNTA_COMP:
+                ubicacion = "abajo"
+            else:
+                ubicacion = dir_espacial if dir_espacial in ("derecha", "abajo", "misma") else dir_fallback
 
             # Calcular celda destino física
             if ubicacion == "abajo":

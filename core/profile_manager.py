@@ -509,3 +509,120 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "total_ingresos_anuales": "",
         "total_egresos_anuales": "",
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 6. GESTIÓN DE OPERADORES Y FUSIÓN RUNTIME (ADR-0007)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def listar_operadores() -> List[Dict[str, Any]]:
+    """Devuelve la lista de operadores registrados en SQLite."""
+    return database.listar_operadores_db()
+
+
+def obtener_operador_activo() -> Optional[Dict[str, Any]]:
+    """Devuelve el operador activo actual o None."""
+    return database.obtener_operador_activo_db()
+
+
+def activar_operador(operador_id: str) -> bool:
+    """Marca un operador como el activo en el sistema."""
+    return database.activar_operador_db(operador_id)
+
+
+def guardar_operador(
+    operador_id: str,
+    nombre: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    correo: str = "",
+    es_activo: bool = False,
+) -> bool:
+    """Crea o actualiza un operador en SQLite."""
+    return database.guardar_operador_db(
+        id_operador=operador_id,
+        nombre=nombre,
+        cargo=cargo,
+        cedula=cedula,
+        telefono=telefono,
+        correo=correo,
+        es_activo=es_activo,
+    )
+
+
+def eliminar_operador(operador_id: str) -> bool:
+    """Elimina un operador no activo de SQLite."""
+    return database.eliminar_operador_db(operador_id)
+
+
+def fusionar_operador_en_datos_empresa(
+    datos_empresa: Dict[str, Any],
+    operador: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Inyecta de forma no invasiva los datos del operador activo en datos_empresa.
+
+    Si operador es None, intenta obtener el operador activo desde SQLite.
+    Si no hay operador activo o sus campos están vacíos, mantiene Safe Passivity.
+    """
+    copia = dict(datos_empresa)
+    if operador is None:
+        try:
+            operador = database.obtener_operador_activo_db()
+        except Exception:
+            operador = None
+
+    if operador:
+        copia["responsable_nombre"] = str(operador.get("nombre") or "").strip()
+        copia["responsable_cargo"] = str(operador.get("cargo") or "").strip()
+        copia["responsable_cedula"] = str(operador.get("cedula") or "").strip()
+        copia["responsable_telefono"] = str(operador.get("telefono") or "").strip()
+        copia["responsable_celular"] = str(operador.get("telefono") or "").strip()
+        copia["responsable_correo"] = str(operador.get("correo") or "").strip()
+        copia["operador"] = dict(operador)
+
+    return copia
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# 7. AUTENTICACIÓN Y CONTROL DE ACCESO (ADR-0008)
+# ──────────────────────────────────────────────────────────────────────────────
+
+def autenticar_usuario(correo: str, password: str) -> Optional[Dict[str, Any]]:
+    """Valida credenciales y retorna los datos del usuario o None."""
+    return database.autenticar_usuario_db(correo, password)
+
+
+def registrar_usuario(
+    nombre: str,
+    correo: str,
+    password: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    es_admin: int = 0,
+) -> Tuple[bool, str]:
+    """Registra un nuevo usuario con verificación de dominio corporativo."""
+    return database.crear_usuario_db(
+        nombre=nombre,
+        correo=correo,
+        password=password,
+        cargo=cargo,
+        cedula=cedula,
+        telefono=telefono,
+        es_admin=es_admin,
+    )
+
+
+def listar_usuarios() -> List[Dict[str, Any]]:
+    """Retorna los usuarios registrados."""
+    return database.listar_usuarios_db()
+
+
+def puede_editar_empresa(usuario: Optional[Dict[str, Any]]) -> bool:
+    """Indica si el usuario tiene privilegios para modificar los perfiles institucionales."""
+    if not usuario:
+        return False
+    return bool(usuario.get("es_admin", False))
+
+

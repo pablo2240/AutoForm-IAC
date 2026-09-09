@@ -97,6 +97,8 @@ _TERMINOS_CAMPO_CORTO = re.compile(
 _PATRON_CABECERAS_TABLA = re.compile(
     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
     r"nombre\s+socio|identificaci[oó]n\s*/?\s*tipo\s+id|"
+    r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|id|"
+    r"nombres?|apellidos?|"
     r"porcentaje|%\s*participaci[oó]n|valor|parentesco|vinculo)\s*$",
     re.IGNORECASE
 )
@@ -205,6 +207,7 @@ def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[s
 
 def clasificar_elementos_formulario(
     elementos_raw: List[Dict[str, Any]],
+    datos_empresa: Optional[Dict[str, Any]] = None,
 ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
     """Clasifica todos los elementos del formulario y asigna jerarquía de secciones.
     
@@ -264,19 +267,29 @@ def clasificar_elementos_formulario(
                 rango_pep_activo = True
                 fila_inicio_pep = fila
 
-            # Safe Passivity (ADR-0004): Campos de contacto comercial o asesor se descartan para diligenciamiento manual
+            # Safe Passivity & Operadores (ADR-0004 / ADR-0007): Contacto comercial o asesor
             sec_norm = seccion_actual.lower()
             rot_norm = rotulo.lower()
             es_contacto_comercial = bool(
                 PATRON_CONTACTO_COMERCIAL.search(rotulo)
                 or (
-                    any(k in sec_norm for k in ("contacto", "asesor", "comercial", "ejecutivo", "operativo"))
-                    and any(k in rot_norm for k in ("nombre", "cargo", "celular", "email", "correo", "tel", "fijo", "firma"))
-                    and not any(k in sec_norm for k in ("representante", "rep legal", "firmante", "empresa", "banco", "tributari"))
+                    any(k in sec_norm for k in ("contacto", "asesor", "comercial", "ejecutivo", "operativo", "responsable", "diligenciado"))
+                    and any(k in rot_norm for k in ("nombre", "cargo", "celular", "email", "correo", "tel", "fijo", "firma", "cedula", "documento"))
+                    and not any(k in sec_norm for k in ("representante", "rep legal", "firmante", "empresa", "banco", "tributari", "junta", "directiv", "pep"))
                 )
             )
             if es_contacto_comercial:
-                tipo_clasif = ClasificacionElemento.NO_APLICA
+                tiene_op = bool(
+                    datos_empresa and (
+                        datos_empresa.get("responsable_nombre")
+                        or datos_empresa.get("responsable_correo")
+                        or (isinstance(datos_empresa.get("operador"), dict) and datos_empresa["operador"].get("nombre"))
+                    )
+                )
+                if tiene_op:
+                    tipo_clasif = ClasificacionElemento.CAMPO_ENTRADA
+                else:
+                    tipo_clasif = ClasificacionElemento.NO_APLICA
 
             # Safe Passivity (ADR-0005): Secciones o campos de PEPs y Beneficiarios Finales se descartan
             if (rango_pep_activo and fila <= fila_inicio_pep + 8) or es_seccion_o_campo_pep(seccion_actual, rotulo):
@@ -292,14 +305,15 @@ def clasificar_elementos_formulario(
                 or bool(elem.get("derechaEsMerge", False))
                 or bool(elem.get("derechaConBordeInferior", False))
                 or int(elem.get("anchoLinea", 1) or 1) > 1
-                or str(elem.get("tipoEspacioEscritura", "")).lower() in ("subrayado", "merge", "cuadro", "vacio")
             )
 
             if tiene_guiones_inline:
                 ubicacion_sugerida = "misma"
-            elif derecha_disponible and tipo_clasif != ClasificacionElemento.TABLA_CABECERA:
+            elif (not derecha_vacia and abajo_vacia) or tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+                ubicacion_sugerida = "abajo"
+            elif derecha_disponible:
                 ubicacion_sugerida = "derecha"
-            elif abajo_vacia or tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+            elif abajo_vacia:
                 ubicacion_sugerida = "abajo"
             else:
                 ubicacion_sugerida = "derecha"

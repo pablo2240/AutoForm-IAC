@@ -46,7 +46,7 @@ class PipelineOrchestrator:
         # Etapa 2: Classifier (33% -> 66%)
         if on_progress:
             on_progress("Clasificando campos de entrada y jerarquía de secciones...", 0.45)
-        todos_clasif, viables = clasificar_elementos_formulario(ctx.elementos_raw)
+        todos_clasif, viables = clasificar_elementos_formulario(ctx.elementos_raw, datos_empresa=ctx.datos_empresa)
         ctx.elementos_clasificados = todos_clasif
 
         # Etapa 2b: Construir Representación Intermedia Espacial (IR) — HSP Fase 1

@@ -15,6 +15,7 @@ import numpy as np
 from core.domain_constants import (
     ROTULOS_GENERICOS_BLOQUEADOS,
     PATRON_CONTACTO_COMERCIAL,
+    CAMPOS_RESPONSABLE_COMERCIAL,
     limpiar_rotulo,
 )
 
@@ -45,6 +46,11 @@ DESCRIPCIONES_TAXONOMIA: Dict[str, str] = {
     "numero_cuenta": "Número de cuenta bancaria, número de cuenta de ahorros o corriente",
     "tipo_cuenta": "Tipo de cuenta bancaria, ahorros, corriente",
     "sucursal": "Sucursal bancaria, oficina bancaria",
+    "responsable_nombre": "Nombre del asesor comercial, ejecutivo de cuenta, contacto comercial, funcionario que diligencia o responsable",
+    "responsable_cargo": "Cargo del asesor comercial, posición o rol del contacto comercial o responsable del diligenciamiento",
+    "responsable_cedula": "Cédula de ciudadanía o documento de identidad del asesor comercial o responsable del diligenciamiento",
+    "responsable_telefono": "Teléfono celular o móvil del asesor comercial o responsable de diligenciamiento",
+    "responsable_correo": "Correo electrónico o email del asesor comercial o responsable de diligenciamiento",
 }
 
 
@@ -73,7 +79,7 @@ def buscar_rescate_vectorial(
 ) -> Optional[Tuple[str, float]]:
     """Compara semánticamente el rótulo contra las descripciones de campos candidatos.
 
-    1. Filtro Safe Passivity: Descartar rótulos genéricos o de contacto comercial.
+    1. Filtro Safe Passivity: Descartar rótulos genéricos o de contacto comercial sin operador.
     2. Paso Ultrarrápido (<0.01ms): Token Match con RapidFuzz (0 costo de CPU y Red).
     3. Paso Vectorial (FastEmbed): Rescate profundo con embeddings ONNX.
     """
@@ -83,10 +89,12 @@ def buscar_rescate_vectorial(
     rotulo_norm = rotulo.lower().strip()
     rotulo_limpio = limpiar_rotulo(rotulo_norm)
 
-    # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto
+    # Safe Passivity & Blacklist: no forzar rescate en rótulos genéricos o de contacto sin operador
     if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS or len(rotulo_limpio) < 3:
         return None
-    if PATRON_CONTACTO_COMERCIAL.search(rotulo_norm):
+    es_contacto = bool(PATRON_CONTACTO_COMERCIAL.search(rotulo_norm))
+    tiene_candidatos_resp = any(c in CAMPOS_RESPONSABLE_COMERCIAL for c in campos_candidatos)
+    if es_contacto and not tiene_candidatos_resp:
         return None
 
     candidatos_validos = [c for c in campos_candidatos if c in DESCRIPCIONES_TAXONOMIA] or list(campos_candidatos)

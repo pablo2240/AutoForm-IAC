@@ -217,22 +217,25 @@ def _calcular_ubicacion_fisica(
     if _PATRON_INLINE_GUIONES.search(val_rotulo):
         return "misma"
 
-    # Regla 2: Espacio libre, subrayado o merge a la derecha → DERECHA
+    # Regla 2: Si la derecha está ocupada pero abajo libre → ABAJO obligatoria
+    if not derecha_vacia and abajo_vacia:
+        return "abajo"
+
+    # Regla 3: Espacio libre, subrayado o merge a la derecha → DERECHA
     espacio_derecha = (
         derecha_vacia
         or derecha_es_merge
         or derecha_con_borde_inf
         or ancho_linea > 1
-        or tipo_espacio in ("subrayado", "merge", "cuadro", "vacio")
     )
     if espacio_derecha and tipo_espacio != "abajo":
         return "derecha"
 
-    # Regla 3: Derecha bloqueada pero abajo libre → ABAJO
+    # Regla 4: Abajo libre → ABAJO
     if abajo_vacia:
         return "abajo"
 
-    # Regla 4: Fallback seguro → DERECHA
+    # Regla 5: Fallback seguro → DERECHA
     return "derecha"
 
 

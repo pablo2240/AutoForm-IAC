@@ -36,6 +36,7 @@ from core.domain_constants import (
     PATRON_CONTACTO_COMERCIAL,
     CAMPOS_BANCARIOS,
     CAMPOS_REP_LEGAL,
+    CAMPOS_RESPONSABLE_COMERCIAL,
     CAMPOS_EMPRESA,
     TOKENS_FINANCIEROS_SECCION,
     TOKENS_REP_LEGAL_SECCION,
@@ -261,6 +262,7 @@ def _ejecutar_diff_loop_seccion(
     rescates_count = 0
 
     # Domain Isolation (ADR-0004): Banderas de categoría de sección
+    tiene_datos_op = bool(datos_empresa.get("responsable_nombre") or datos_empresa.get("responsable_correo"))
     es_sec_financiera = any(t in titulo_norm for t in TOKENS_FINANCIEROS_SECCION)
     es_sec_rep_legal = any(t in titulo_norm for t in TOKENS_REP_LEGAL_SECCION)
     es_sec_contacto = any(t in titulo_norm for t in TOKENS_CONTACTO_SECCION) and not es_sec_rep_legal
@@ -270,12 +272,13 @@ def _ejecutar_diff_loop_seccion(
         rotulo_txt = c_info["rotulo"]
         rotulo_limpio = limpiar_rotulo(rotulo_txt)
 
-        # Safe Passivity (ADR-0005): Descartar rótulos genéricos, PEP o contacto comercial
+        # Safe Passivity (ADR-0005): Descartar rótulos genéricos, PEP o contacto comercial sin operador
         if es_seccion_o_campo_pep(titulo_seccion, rotulo_txt):
             continue
         if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
             continue
-        if PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto:
+        es_rotulo_contacto = bool(PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto)
+        if es_rotulo_contacto and not tiene_datos_op:
             continue
 
         for pat_sec, pat_rot, campo_dest, dir_fall in PATRONES_SWEEP:
@@ -283,6 +286,10 @@ def _ejecutar_diff_loop_seccion(
             if campo_dest in CAMPOS_BANCARIOS and not es_sec_financiera:
                 continue
             if campo_dest in CAMPOS_REP_LEGAL and not es_sec_rep_legal and not pat_sec.search(titulo_norm):
+                continue
+            if campo_dest in CAMPOS_RESPONSABLE_COMERCIAL and not es_rotulo_contacto:
+                continue
+            if es_rotulo_contacto and campo_dest not in CAMPOS_RESPONSABLE_COMERCIAL:
                 continue
 
             if (pat_sec.search(titulo_norm) or not (PAT_SECCION_REP_LEGAL.search(titulo_norm) or PAT_SECCION_FINANCIERO.search(titulo_norm))):
@@ -312,7 +319,9 @@ def _ejecutar_diff_loop_seccion(
             if not es_sec_rep_legal:
                 candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_REP_LEGAL]
             if es_sec_contacto:
-                candidatos_disponibles = []  # No rescatar datos institucionales para contacto comercial
+                candidatos_disponibles = [k for k in candidatos_disponibles if k in CAMPOS_RESPONSABLE_COMERCIAL] if tiene_datos_op else []
+            else:
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_RESPONSABLE_COMERCIAL]
 
             for id_pend in sorted(ids_pendientes):
                 c_info = ids_viables[id_pend]
@@ -322,10 +331,15 @@ def _ejecutar_diff_loop_seccion(
                     continue
                 if rot_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
                     continue
-                if PATRON_CONTACTO_COMERCIAL.search(rot_txt):
+                es_rot_contacto_pend = bool(PATRON_CONTACTO_COMERCIAL.search(rot_txt))
+                if es_rot_contacto_pend and not tiene_datos_op:
                     continue
 
-                res_vector = buscar_rescate_vectorial(rot_txt, candidatos_disponibles, umbral=0.78)
+                candidatos_elem = [k for k in candidatos_disponibles if (k in CAMPOS_RESPONSABLE_COMERCIAL if es_rot_contacto_pend else k not in CAMPOS_RESPONSABLE_COMERCIAL)]
+                if not candidatos_elem:
+                    continue
+
+                res_vector = buscar_rescate_vectorial(rot_txt, candidatos_elem, umbral=0.78)
                 if res_vector is not None:
                     campo_res, score = res_vector
                     mapeos_rescatados.append({

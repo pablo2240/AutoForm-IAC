@@ -557,10 +557,16 @@ def construir_ir(
                 # Color de fondo
                 color = str(elem.get("colorFondo", ""))
 
-                # Dirección de escritura heredada del parser
-                dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
-                if dir_esc not in ("derecha", "abajo", "misma"):
-                    dir_esc = "derecha"
+                # Dirección de escritura calculada
+                der_vacia = bool(elem.get("derechaVacia", False))
+                ab_vacia = bool(elem.get("abajoVacia", False))
+                es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta)\s*$", texto, re.IGNORECASE))
+                if ab_vacia and (not der_vacia or es_cabecera_tabla):
+                    dir_esc = "abajo"
+                else:
+                    dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
+                    if dir_esc not in ("derecha", "abajo", "misma"):
+                        dir_esc = "derecha"
                 if color and dir_esc == "misma" and not re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "derecha"
 

@@ -32,8 +32,10 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`Ubicación Física`** | Direction from the label to the input field: strictly `derecha`, `abajo`, or `misma` (where `misma` is only allowed if the label contains inline fill dots `___`). Writing `arriba` is strictly forbidden. | "arriba" |
 | **`Underline Ray-Casting`** | Mandatory detection of bottom-bordered cells (`bottom_border`) or merged ranges contiguously to the right, ensuring values are placed on the underline line `______`. | "Escritura inline forzada" |
 | **`Domain Isolation`** | Categorical barrier strictly segregating banking/accounting and legal representative fields by section domain. Cross-domain mapping is prohibited regardless of lexical similarity. | "Fuzzy match libre" |
-| **`Safe Passivity`** | Safety policy marking checkboxes, option buttons (`OPTION`), unmapped generic tokens (`Vinculación`, `Otros`, `PEP`, `SI`, `NO`), and commercial contact fields (`Nombre del Contacto`, `Cargo`, etc.) as `DESCARTADO` (empty) so each salesperson can fill their own info manually without being polluted by company or representative data. | "Forzado de sobrantes" |
-| **`DatosEmpresa`** | Enterprise profile dictionary (`config/datos_empresa.json`) containing official institutional entities: `empresa`, `representante_legal`, `financiero`. | "JSON global", "Variables" |
+| **`Safe Passivity`** | Safety policy marking checkboxes, option buttons (`OPTION`), unmapped generic tokens (`Vinculación`, `Otros`, `PEP`, `SI`, `NO`), and unconfigured commercial contact fields as `DESCARTADO` (empty) so forms remain unpolluted by company or representative data. | "Forzado de sobrantes" |
+| **`OperadorActivo` (Active Operator)** | The specific physical user/salesperson/admin currently filling the form (`responsable_nombre`, `responsable_cargo`, `responsable_cedula`, `responsable_telefono`, `responsable_correo`), managed in a dedicated SQLite table (`operadores`). | "Usuario de sesión", "Login" |
+| **`ContactoComercialDomain`** | Domain category covering commercial contacts, form completion responsible persons, and account managers, strictly isolated from legal representative, board of directors, and PEP sections. | "Contacto general", "Vendedor" |
+| **`DatosEmpresa`** | Enterprise profile dictionary (`config/datos_empresa.json` & SQLite) containing official institutional entities: `empresa`, `representante_legal`, `financiero`, augmented at runtime with `OperadorActivo`. | "JSON global", "Variables" |
 | **`PlanMapeo`** | List of validated mapping directives linking a `Rótulo` coordinate to a canonical `DatosEmpresa` key and destination cell. | "Mapeador", "Lista de campos" |
 | **`MacroLote`** | Balanced batch of 15–25 fields grouped by spatial section for parallel LLM inference via `ThreadPoolExecutor`. | "Micro-batch", "Chunk crudo" |
 | **`Diff Loop`** | Pure-Python audit pass comparing viable fields against mapped fields to trigger immediate recovery before rendering. | "Filtro posterior" |
@@ -43,6 +45,9 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`PEP Safe Passivity`** | Unconditional rejection (`DESCARTADO`) of all fields, columns, and questions belonging to PEP or Beneficiario Final sections. | "Inyección en PEP" |
 | **`Financial Balance Domain`** | Subset of financial statements (`total_activos`, `total_pasivos`, `total_patrimonio`, `total_ingresos_mensuales`, `total_egresos_mensuales`) strictly isolated to accounting sections (`TOKENS_BALANCE_SECCION`). | "Campos bancarios" |
 | **`Raw Numeric Injection`** | Writing pure numeric primitives (`int`/`float`) into OpenXML cells rather than currency text strings, preserving spreadsheet arithmetic formulas without `#¡VALOR!`. | "Texto formateado en celda" |
+| **`Usuario` (User Account)** | Registered corporate person (`id`, `nombre`, `cargo`, `cedula`, `telefono`, `correo`, `password_hash`, `es_admin`, `activo`) authenticated via PBKDF2-HMAC-SHA256, mapped directly to `OperadorActivo` upon session creation. | "Cuenta de empresa", "Tenant" |
+| **`Gatekeeper` (Auth Shield)** | Full-screen authentication shield in Streamlit blocking all sidebar navigation, form viewing, and corporate profile access until successful login/registration. | "Login modal", "Popup" |
+| **`RolUsuario` (User Role)** | Binary permission flag: `es_admin = 1` enables corporate profile configuration and operator management; `es_admin = 0` provides shared read-only profile access and form diligence capabilities. | "Nivel de acceso", "Permisos" |
 
 ---
 
@@ -54,3 +59,5 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0004: Domain Isolation, Underline Ray-Casting & Safe Passivity`](docs/adr/0004-domain-isolation-and-underline-raycasting.md)
 * [`ADR-0005: Cell Reservation, Section Uniqueness & PEP/Beneficiario Final Isolation`](docs/adr/0005-cell-reservation-and-pep-isolation.md)
 * [`ADR-0006: Financial Balance Fields, Raw Numeric Injection & Strict Financial Domain Isolation`](docs/adr/0006-financial-balance-fields-and-domain-isolation.md)
+* [`ADR-0007: Operator Catalog, Runtime Fusion & Commercial Contact Domain Isolation`](docs/adr/0007-operator-catalog-and-commercial-contact-domain.md)
+* [`ADR-0008: User Authentication, Gatekeeper Shield & Role-Based Access Control`](docs/adr/0008-user-authentication-gatekeeper-and-role-based-access.md)
