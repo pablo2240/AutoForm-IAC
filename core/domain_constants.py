@@ -116,6 +116,13 @@ TOKENS_CONTACTO_COMERCIAL: Set[str] = {
     "atención comercial",
     "contacto de verificación",
     "contacto de verificacion",
+    "personal que realiza directamente la operacion",
+    "personal que realiza directamente la operación",
+    "personal que realiza la operacion",
+    "personal que realiza la operación",
+    "informacion operativa",
+    "información operativa",
+    "contacto operativo",
 }
 
 TOKENS_REFERENCIAS_EXCLUIDAS: Set[str] = {

@@ -534,6 +534,6 @@ def ejecutar_pase_cobertura_exhaustiva(
                 break
 
     if nuevos_mapeos:
-        print(f"[AutoForm AI CoverageEngine] ✨ Pase de Cobertura: {len(nuevos_mapeos)} campos adicionales recuperados con éxito.")
+        print(f"[AutoForm AI CoverageEngine] [*] Pase de Cobertura: {len(nuevos_mapeos)} campos adicionales recuperados con exito.")
 
     return plan_resultado + nuevos_mapeos

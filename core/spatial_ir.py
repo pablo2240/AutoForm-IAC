@@ -262,11 +262,12 @@ _TERMINOS_CABECERA = re.compile(
 )
 
 _TERMINOS_CAMPO_CORTO = re.compile(
-    r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombre|"
+    r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombres?|apellidos?|"
     r"tel[eé]fono|celular|direcci[oó]n|correo|email|ciudad|municipio|"
     r"departamento|pa[ií]s|cargo|banco|cuenta|p[aá]gina|web|objeto|"
     r"actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
-    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento)\b",
+    r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento|"
+    r"empresa|contacto)\b",
     re.IGNORECASE,
 )
 
