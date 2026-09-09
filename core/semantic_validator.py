@@ -97,6 +97,7 @@ from core.domain_constants import (
     CONTACTO_COMERCIAL_REMAP,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
+    SINONIMOS_CIUDAD_RESIDENCIA,
 )
 
 # Secciones semánticamente bancarias / financieras
@@ -318,10 +319,45 @@ def _regla_autocorrecciones_semanticas_adicionales(
     seccion_normalizada: str = "",
 ) -> Tuple[str, str]:
     """R5b (autocorrecciones semánticas de negocio solicitadas con desambiguación contextual)."""
-    # 1. Ciudad / Departamento combinado
-    if re.search(r"\bciudad[\s/]+departamento\b|\bciudad[\s/]+depto\b|\bmunicipio[\s/]+departamento\b", rotulo_normalizado):
+    # 1. Ciudad / Departamento combinado vs Ciudad/Municipio (Q1)
+    if re.search(r"\bciudad[\s/]+departamento\b|\bciudad[\s/]+depto\b|\bmunicipio[\s/]+departamento\b|\bdepartamento[\s/]+ciudad\b|\bdepartamento[\s/]+municipio\b", rotulo_normalizado):
         if campo != "ciudad_departamento":
-            return "ciudad_departamento", "Rótulo combinado 'Ciudad/Departamento' → asignado a campo compuesto 'ciudad_departamento'."
+            return "ciudad_departamento", "Rótulo combinado de dos niveles distintos ('Ciudad/Departamento') → asignado a campo compuesto 'ciudad_departamento'."
+    elif re.search(r"^\s*(?:ciudad|municipio|ciudad[\s/]+municipio|municipio[\s/]+ciudad)\s*$", rotulo_normalizado):
+        es_sec_rep_geo = any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
+        if es_sec_rep_geo and any(k in rotulo_normalizado for k in ("residencia", "domicilio")):
+            if campo != "ciudad_residencia":
+                return "ciudad_residencia", "Rótulo de residencia del Representante Legal → asignado a 'ciudad_residencia'."
+        elif campo == "ciudad_departamento":
+            return "ciudad", "Rótulo de un solo nivel territorial ('Ciudad/Municipio') → corregido a 'ciudad' (evita concatenar departamento)."
+
+    # 1b. Geografía y Residencia del Representante Legal (Q3)
+    es_sec_rep_base = any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
+    if es_sec_rep_base or any(t in rotulo_normalizado for t in ("representante", "apoderado", "firmante")):
+        if any(sin in rotulo_normalizado for sin in SINONIMOS_CIUDAD_RESIDENCIA) or ("residencia" in rotulo_normalizado and "depto" not in rotulo_normalizado and "departamento" not in rotulo_normalizado):
+            if campo != "ciudad_residencia":
+                return "ciudad_residencia", "Rótulo de residencia personal del Representante Legal → asignado a 'ciudad_residencia'."
+        if any(sin in rotulo_normalizado for sin in ("departamento de residencia", "depto de residencia", "depto residencia", "departamento residencia")):
+            if campo != "departamento_residencia":
+                return "departamento_residencia", "Rótulo de departamento de residencia del Representante Legal → asignado a 'departamento_residencia'."
+        if any(sin in rotulo_normalizado for sin in ("lugar de nacimiento", "ciudad de nacimiento", "municipio de nacimiento", "nacimiento", "nacido en")):
+            if campo != "lugar_nacimiento":
+                return "lugar_nacimiento", "Rótulo de lugar de nacimiento del Representante Legal → asignado a 'lugar_nacimiento'."
+
+    # 1c. Nombres y Apellidos Desglosados del Representante Legal (Q2)
+    if es_sec_rep_base or any(t in rotulo_normalizado for t in ("representante", "apoderado", "firmante")):
+        if re.search(r"^\s*(?:primer\s+nombre|1er\s+nombre|1°\s*nombre|primer\s+nombre\s+del\s+representante)\s*:?\s*$", rotulo_normalizado):
+            if campo != "primer_nombre":
+                return "primer_nombre", "Rótulo 'Primer Nombre' → asignado a 'primer_nombre'."
+        elif re.search(r"^\s*(?:segundo\s+nombre|2do\s+nombre|2°\s*nombre|segundo\s+nombre\s+del\s+representante|otros?\s+nombres?)\s*:?\s*$", rotulo_normalizado):
+            if campo != "segundo_nombre":
+                return "segundo_nombre", "Rótulo 'Segundo Nombre' → asignado a 'segundo_nombre'."
+        elif re.search(r"^\s*(?:primer\s+apellido|1er\s+apellido|1°\s*apellido|primer\s+apellido\s+del\s+representante)\s*:?\s*$", rotulo_normalizado):
+            if campo != "primer_apellido":
+                return "primer_apellido", "Rótulo 'Primer Apellido' → asignado a 'primer_apellido'."
+        elif re.search(r"^\s*(?:segundo\s+apellido|2do\s+apellido|2°\s*apellido|segundo\s+apellido\s+del\s+representante)\s*:?\s*$", rotulo_normalizado):
+            if campo != "segundo_apellido":
+                return "segundo_apellido", "Rótulo 'Segundo Apellido' → asignado a 'segundo_apellido'."
 
     # 2. Razón Social o Nombres y Apellidos -> representante_legal
     if "razon social" in rotulo_normalizado and ("nombres" in rotulo_normalizado or "apellidos" in rotulo_normalizado):

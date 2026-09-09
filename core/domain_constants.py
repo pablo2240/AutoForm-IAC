@@ -68,7 +68,10 @@ CAMPOS_FINANCIEROS_BALANCE: Set[str] = {
 }
 
 CAMPOS_REP_LEGAL: Set[str] = {
-    "representante_legal", "representante_nombres", "representante_apellidos", "cedula", "lugar_expedicion"
+    "representante_legal", "representante_nombres", "representante_apellidos",
+    "primer_nombre", "segundo_nombre", "primer_apellido", "segundo_apellido",
+    "cedula", "lugar_expedicion", "lugar_nacimiento",
+    "ciudad_residencia", "departamento_residencia",
 }
 
 # ADR-0007: Campos del Responsable del Diligenciamiento / Operador Comercial
@@ -220,3 +223,106 @@ def es_seccion_o_campo_pep(seccion: str = "", rotulo: str = "", contexto: str = 
     if ctx_norm and (any(t in ctx_norm for t in ("pep", "peps", "beneficiario final", "beneficiarios finales", "beneficiario real")) or bool(PATRON_PEP_BENEFICIARIOS.search(ctx_norm))):
         return True
     return False
+
+
+# ── Reglas de Inyección Geográfica (Q1) ────────────────────────────────────────
+NIVELES_TERRITORIALES: Set[str] = {"ciudad", "municipio"}
+NIVEL_DEPARTAMENTAL: Set[str] = {"departamento", "depto"}
+
+
+def resolver_rotulo_geografico(rotulo_norm: str, valor_ciudad: str = "Medellín", valor_depto: str = "Antioquia") -> str:
+    """Resuelve el valor geográfico estricto según la distinción territorial del rótulo (Q1).
+
+    - Si el rótulo combina dos niveles territoriales distintos (municipal + departamental): "Medellín / Antioquia".
+    - Si el rótulo es puramente municipal ("ciudad", "municipio", "ciudad/municipio"): "Medellín".
+    - Si el rótulo es puramente departamental ("departamento", "depto"): "Antioquia".
+    """
+    rot_limpio = rotulo_norm.lower().strip()
+    partes = [p.strip() for p in rot_limpio.split("/") if p.strip()]
+
+    tiene_municipal = any(p in NIVELES_TERRITORIALES for p in partes) or any(t in rot_limpio for t in NIVELES_TERRITORIALES)
+    tiene_departamental = any(p in NIVEL_DEPARTAMENTAL for p in partes) or any(d in rot_limpio for d in NIVEL_DEPARTAMENTAL)
+
+    c = (valor_ciudad or "Medellín").strip()
+    d = (valor_depto or "Antioquia").strip()
+
+    if tiene_municipal and tiene_departamental:
+        return f"{c} / {d}" if (c and d) else (c or d)
+    elif tiene_municipal:
+        return c
+    elif tiene_departamental:
+        return d
+    return c
+
+
+# ── Prioridad de Títulos de Sección (Q4) ───────────────────────────────────────
+TOKENS_TITULO_SECCION_PRIORITARIO: Set[str] = {
+    "información financiera", "informacion financiera",
+    "información fiscal", "informacion fiscal",
+    "datos financieros", "datos fiscales",
+}
+
+
+# ── Representante Legal: Geografía y Sinónimos de Residencia (Q3) ─────────────
+REPRESENTANTE_GEOGRAFIA: Dict[str, str] = {
+    "lugar_nacimiento": "Popayán",
+    "ciudad_residencia": "Medellín",
+    "departamento_residencia": "Antioquia",
+}
+
+SINONIMOS_CIUDAD_RESIDENCIA: Set[str] = {
+    "municipio de residencia", "ciudad domicilio",
+    "lugar de residencia", "domicilio del representante",
+    "ciudad de residencia", "ciudad residencia", "municipio residencia",
+}
+
+
+# ── Desglose de Nombres del Representante Legal (Q2) ──────────────────────────
+def desglosar_nombre_completo(nombre_completo: str) -> Dict[str, str]:
+    """Desglosa un nombre completo en sus 4 componentes canónicos (Q2).
+
+    Guillermo Humberto Cañón Sarria -> 4 partes: 2 nombres + 2 apellidos.
+    """
+    partes = str(nombre_completo or "").strip().split()
+    if len(partes) == 4:
+        return {
+            "primer_nombre": partes[0],
+            "segundo_nombre": partes[1],
+            "primer_apellido": partes[2],
+            "segundo_apellido": partes[3],
+        }
+    elif len(partes) == 3:
+        return {
+            "primer_nombre": partes[0],
+            "segundo_nombre": "",
+            "primer_apellido": partes[1],
+            "segundo_apellido": partes[2],
+        }
+    elif len(partes) == 2:
+        return {
+            "primer_nombre": partes[0],
+            "segundo_nombre": "",
+            "primer_apellido": partes[1],
+            "segundo_apellido": "",
+        }
+    elif len(partes) > 4:
+        return {
+            "primer_nombre": partes[0],
+            "segundo_nombre": " ".join(partes[1:-2]),
+            "primer_apellido": partes[-2],
+            "segundo_apellido": partes[-1],
+        }
+    elif len(partes) == 1:
+        return {
+            "primer_nombre": partes[0],
+            "segundo_nombre": "",
+            "primer_apellido": "",
+            "segundo_apellido": "",
+        }
+    return {
+        "primer_nombre": "",
+        "segundo_nombre": "",
+        "primer_apellido": "",
+        "segundo_apellido": "",
+    }
+

@@ -21,14 +21,23 @@
       "representante_legal": "Guillermo Humberto Cañón Sarria",
       "representante_nombres": "Guillermo Humberto",
       "representante_apellidos": "Cañón Sarria",
+      "primer_nombre": "Guillermo",
+      "segundo_nombre": "Humberto",
+      "primer_apellido": "Cañón",
+      "segundo_apellido": "Sarria",
       "tipo_documento": "C.C",
       "cedula": "98555384",
-      "lugar_expedicion": "Envigado"
+      "lugar_expedicion": "Envigado",
+      "lugar_nacimiento": "Popayán"
     },
     "contacto": {
       "correo": "guillermo.canon@iaclatam.com",
       "telefono": "2656868",
       "celular": "3104120217"
+    },
+    "ubicacion": {
+      "ciudad_residencia": "Medellín",
+      "departamento_residencia": "Antioquia"
     }
   },
   "financiero": {

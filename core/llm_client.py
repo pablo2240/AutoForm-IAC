@@ -84,8 +84,9 @@ Los datos maestros de la empresa se organizan en 4 dominios taxonómicos jerárq
    - `ubicacion`: `direccion` (Domicilio principal), `ciudad` (Municipio/Ciudad fiscal), `departamento`, `pais`.
    - `contacto`: `telefono` (PBX institucional), `pagina_web`.
 2. `representante_legal`:
-   - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre), `representante_apellidos` (Primer y segundo apellido), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `lugar_expedicion` (Ciudad/Lugar donde se expidió la cédula, ej. "Envigado").
+   - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre juntos), `representante_apellidos` (Primer y segundo apellido juntos), `primer_nombre` (Primer nombre individual), `segundo_nombre` (Segundo nombre individual), `primer_apellido` (Primer apellido individual), `segundo_apellido` (Segundo apellido individual), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `lugar_expedicion` (Ciudad/Lugar donde se expidió la cédula, ej. "Envigado"), `lugar_nacimiento` (Ciudad/Municipio de nacimiento del apoderado, ej. "Popayán").
    - `contacto`: `correo`, `telefono`, `celular` (Teléfono móvil / Celular del representante).
+   - `ubicacion`: `ciudad_residencia` (Ciudad/Municipio de residencia o domicilio personal del representante, ej. "Medellín"), `departamento_residencia` (Departamento de residencia del representante, ej. "Antioquia").
 3. `financiero`:
    - `banco`: `banco` (Nombre de la entidad financiera), `sucursal`.
    - `cuenta`: `numero_cuenta` (Número de cuenta bancaria), `tipo_cuenta` (Ahorros / Corriente).
@@ -117,19 +118,26 @@ Recibes un objeto JSON con:
   * Rótulos de NIT, RUT, "NIT / TAX ID", "TAX ID", Identificación Tributaria, o listas de tipos como "CC/CE/PAS/NIT", "CC/NIT", "NIT/CC" -> "nit" (la empresa es persona jurídica y su número de identificación tributaria es el NIT).
   * Rótulos de "C.C.", "Cédula", "C.C.:" (cuando coexistan junto al NIT en la identificación de la empresa) -> "cedula" (cédula del representante legal).
   * Rótulos de Domicilio, Sede Principal, Dirección -> "direccion"
-  * Rótulos de Municipio, Ciudad de domicilio -> "ciudad"
-  * Rótulos combinados de "Ciudad / Departamento", "Ciudad/Depto", "Municipio / Departamento" -> "ciudad_departamento"
+  * Rótulos de Municipio, Ciudad de domicilio, "Ciudad / Municipio", "Ciudad/Municipio" -> "ciudad" (si el formulario pide "Ciudad/Municipio", inyecta "ciudad" porque ambos son el mismo nivel territorial; NUNCA agregues Antioquia).
+  * Rótulos combinados de dos niveles distintos como "Ciudad / Departamento", "Ciudad/Depto", "Municipio / Departamento" -> "ciudad_departamento"
+  * Rótulos de Departamento solo -> "departamento"
   * Rótulos de Teléfono corporativo, PBX -> "telefono"
   * Rótulos de Email institucional -> "correo"
 
 - Si la sección o el rótulo hace referencia al REPRESENTANTE LEGAL / PERSONA NATURAL / APODERADO / FIRMANTE / FIRMA:
   * Rótulos de Nombre, "Nombre :", Nombre del Representante, Representante Legal, o "Razón social o Nombres y Apellidos" -> "representante_legal" (NUNCA "razon_social" de la empresa).
   * Declaraciones juramentadas o fórmulas declarativas (ej. "Yo,", "Yo ,", "identificado con el documento de identidad:", "expedido en:") -> "representante_legal", "cedula", "lugar_expedicion" respectivamente.
-  * Rótulos específicos de Primer/Segundo Nombre -> "representante_nombres"
-  * Rótulos específicos de Primer/Segundo Apellido -> "representante_apellidos"
+  * Rótulos específicos de Primer Nombre -> "primer_nombre"
+  * Rótulos específicos de Segundo Nombre / Otros Nombres -> "segundo_nombre"
+  * Rótulos específicos de Primer Apellido -> "primer_apellido"
+  * Rótulos específicos de Segundo Apellido -> "segundo_apellido"
+  * Rótulos de Nombres juntos -> "representante_nombres"
+  * Rótulos de Apellidos juntos -> "representante_apellidos"
   * Rótulos explícitos del Tipo de Documento, como "Tipo de Identificación (CC-Pasaporte-CE)", "Tipo Doc", "Tipo ID" -> "tipo_documento" (inscribirá C.C.)
   * Rótulos de C.C., Cédula, "Identificación", "Número de Identificación", "Nro de Identificación", "No de Documento" -> "cedula"
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
+  * Rótulos de Lugar de Nacimiento, Ciudad de Nacimiento, Municipio de Nacimiento -> "lugar_nacimiento" (ej. "Popayán").
+  * Rótulos de Ciudad de Residencia, Municipio de Residencia, Ciudad Domicilio, Lugar de Residencia, Domicilio del Representante -> "ciudad_residencia" (ej. "Medellín").
   * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
 
 - Si la sección o el rótulo hace referencia a CONTACTO COMERCIAL / INFORMACIÓN DE CONTACTO / PERSONAL DE CONTACTO / ASESOR / RESPONSABLE DEL DILIGENCIAMIENTO (ADR-0009):

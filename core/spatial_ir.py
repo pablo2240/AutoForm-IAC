@@ -26,6 +26,7 @@ from core.domain_constants import (
     PATRON_PEP_BENEFICIARIOS,
     TOKENS_CONTACTO_COMERCIAL,
     TOKENS_REFERENCIAS_EXCLUIDAS,
+    TOKENS_TITULO_SECCION_PRIORITARIO,
 )
 
 
@@ -284,8 +285,13 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
         return False
 
+    t_norm = _normalizar(t_clean)
+    # Títulos prioritarios de sección (Q4: Información Financiera/Fiscal, etc.)
+    if any(tok in t_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO):
+        return True
+
     # Elementos de firma, huella o sello nunca son títulos de sección por sí solos
-    t_lower = _normalizar(t_clean)
+    t_lower = t_norm
     if t_lower in ("huella", "huella dactilar", "sello", "sello de la empresa", "sello y firma", "firma y huella"):
         return False
 

@@ -67,6 +67,30 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:primer\s+nombre|1er\s+nombre|1°\s*nombre|primer\s+nombre\s+del\s+representante)\s*:?\s*$", re.IGNORECASE),
+        "primer_nombre",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:segundo\s+nombre|2do\s+nombre|2°\s*nombre|segundo\s+nombre\s+del\s+representante|otros?\s+nombres?)\s*:?\s*$", re.IGNORECASE),
+        "segundo_nombre",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:primer\s+apellido|1er\s+apellido|1°\s*apellido|primer\s+apellido\s+del\s+representante)\s*:?\s*$", re.IGNORECASE),
+        "primer_apellido",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:segundo\s+apellido|2do\s+apellido|2°\s*apellido|segundo\s+apellido\s+del\s+representante)\s*:?\s*$", re.IGNORECASE),
+        "segundo_apellido",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
         re.compile(r"^\s*nombres?\s*:?\s*$", re.IGNORECASE),
         "representante_nombres",
         "derecha",
@@ -99,6 +123,24 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         PAT_SECCION_REP_LEGAL,
         re.compile(r"^\s*(?:lugar\s+(?:de\s+)?expedici[oó]n|ciudad\s+(?:de\s+)?expedici[oó]n|expedici[oó]n|expedid[ao]\s+en)\s*:?\s*$", re.IGNORECASE),
         "lugar_expedicion",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:lugar\s+(?:de\s+)?nacimiento|ciudad\s+(?:de\s+)?nacimiento|municipio\s+(?:de\s+)?nacimiento|nacido\s+en|nacimiento)\s*:?\s*$", re.IGNORECASE),
+        "lugar_nacimiento",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:ciudad\s+(?:de\s+)?residencia|municipio\s+(?:de\s+)?residencia|ciudad\s+(?:de\s+)?domicilio|lugar\s+(?:de\s+)?residencia|domicilio\s+(?:del\s+)?representante|ciudad\s+residencia|municipio\s+residencia|residencia)\s*:?\s*$", re.IGNORECASE),
+        "ciudad_residencia",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:departamento\s+(?:de\s+)?residencia|depto\s+(?:de\s+)?residencia|departamento\s+residencia)\s*:?\s*$", re.IGNORECASE),
+        "departamento_residencia",
         "derecha",
     ),
 
@@ -230,13 +272,13 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:ciudad|municipio)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:ciudad|municipio|ciudad\s*/\s*municipio|municipio\s*/\s*ciudad)\s*$", re.IGNORECASE),
         "ciudad",
         "derecha",
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*departamento\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:departamento|depto)\s*$", re.IGNORECASE),
         "departamento",
         "derecha",
     ),
@@ -248,7 +290,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:ciudad\s*/\s*departamento|ciudad[\s-]+depto|municipio\s*/\s*departamento)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:ciudad\s*/\s*departamento|ciudad[\s-]+depto|municipio\s*/\s*departamento|departamento\s*/\s*ciudad|departamento\s*/\s*municipio)\s*$", re.IGNORECASE),
         "ciudad_departamento",
         "derecha",
     ),

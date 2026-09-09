@@ -51,6 +51,10 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`ContactoComercialSection`** | Spatial IR section classified with `PertinenciaSeccion.CONTACTO_COMERCIAL`, representing a single-block contact area for the commercial advisor or diligence operator. | "Sección general", "Referencias" |
 | **`BareLabelRemapping`** | Deterministic resolution of ambiguous bare labels (`Nombre`, `Cargo`, `Teléfono`, `Correo`) to `responsable_*` strictly when residing within a `ContactoComercialSection`. | "Inferencia abierta", "Fuzzy mapping" |
 | **`CommercialGridSafePassivity`** | Unconditional exclusion (`OMITIR_TERCEROS`) of multi-row third-party commercial reference grids (`"referencias comerciales"`), ensuring the internal commercial advisor is never injected into external client reference slots. | "Llenado de referencias" |
+| **`GeographicResolutionRule`** | Semantic discrimination rule distinguishing identical territorial levels (`ciudad`/`municipio`) from multi-level combinations (`ciudad`/`departamento`), injecting single-level names without duplicate departments. | "Concatenación ciega" |
+| **`RepresentativeNameDecomposition`** | Canonical 4-part split (`primer_nombre`, `segundo_nombre`, `primer_apellido`, `segundo_apellido`) for forms requiring individual name components, with automatic derivation and UI manual override. | "Split rústico de nombres" |
+| **`RepresentativeGeographicDomain`** | Segregated personal geographic scope (`lugar_nacimiento`, `ciudad_residencia`, `departamento_residencia`) strictly isolated from enterprise headquarters location. | "Cruce de domicilios" |
+| **`PrioritySectionHeader`** | Section title precedence policy where corporate/financial major section markers (`TOKENS_TITULO_SECCION_PRIORITARIO`) override parenthetical qualifiers or options. | "Descarte por paréntesis" |
 
 ---
 

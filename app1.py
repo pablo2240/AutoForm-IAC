@@ -773,67 +773,152 @@ with st.sidebar:
                 args=(f"pe_{slug_perfil}_rep_nom", "representante_legal"),
                 disabled=not es_admin_usuario,
             )
-            rep_nombres = st.text_input(
-                "Nombres",
-                value=str(datos_empresa.get("representante_nombres") or ""),
-                key=f"pe_{slug_perfil}_r_nom",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_r_nom", "representante_nombres"),
-                disabled=not es_admin_usuario,
-            )
-            rep_apellidos = st.text_input(
-                "Apellidos",
-                value=str(datos_empresa.get("representante_apellidos") or ""),
-                key=f"pe_{slug_perfil}_r_ape",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_r_ape", "representante_apellidos"),
-                disabled=not es_admin_usuario,
-            )
+
+            col_nom1, col_nom2 = st.columns(2)
+            with col_nom1:
+                primer_nombre = st.text_input(
+                    "Primer Nombre",
+                    value=str(datos_empresa.get("primer_nombre") or ""),
+                    key=f"pe_{slug_perfil}_p_nom",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_p_nom", "primer_nombre"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_nom2:
+                segundo_nombre = st.text_input(
+                    "Segundo Nombre",
+                    value=str(datos_empresa.get("segundo_nombre") or ""),
+                    key=f"pe_{slug_perfil}_s_nom",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_s_nom", "segundo_nombre"),
+                    disabled=not es_admin_usuario,
+                )
+
+            col_ape1, col_ape2 = st.columns(2)
+            with col_ape1:
+                primer_apellido = st.text_input(
+                    "Primer Apellido",
+                    value=str(datos_empresa.get("primer_apellido") or ""),
+                    key=f"pe_{slug_perfil}_p_ape",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_p_ape", "primer_apellido"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_ape2:
+                segundo_apellido = st.text_input(
+                    "Segundo Apellido",
+                    value=str(datos_empresa.get("segundo_apellido") or ""),
+                    key=f"pe_{slug_perfil}_s_ape",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_s_ape", "segundo_apellido"),
+                    disabled=not es_admin_usuario,
+                )
+
+            col_nombres_juntos, col_apellidos_juntos = st.columns(2)
+            with col_nombres_juntos:
+                rep_nombres = st.text_input(
+                    "Nombres (Juntos)",
+                    value=str(datos_empresa.get("representante_nombres") or ""),
+                    key=f"pe_{slug_perfil}_r_nom",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_r_nom", "representante_nombres"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_apellidos_juntos:
+                rep_apellidos = st.text_input(
+                    "Apellidos (Juntos)",
+                    value=str(datos_empresa.get("representante_apellidos") or ""),
+                    key=f"pe_{slug_perfil}_r_ape",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_r_ape", "representante_apellidos"),
+                    disabled=not es_admin_usuario,
+                )
             
-            tipo_documento = st.text_input(
-                "Tipo de Documento / Tipo ID",
-                value=str(datos_empresa.get("tipo_documento") or "C.C."),
-                key=f"pe_{slug_perfil}_tdoc",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_tdoc", "tipo_documento"),
-                disabled=not es_admin_usuario,
-            )
-            
-            cedula = st.text_input(
-                "Número de Documento (Cédula)",
-                value=str(datos_empresa.get("cedula") or ""),
-                key=f"pe_{slug_perfil}_ced",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_ced", "cedula"),
-                disabled=not es_admin_usuario,
-            )
-            lugar_expedicion = st.text_input(
-                "Lugar de Expedición (Ciudad)",
-                value=str(datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or ""),
-                help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Medellín, Envigado",
-                key=f"pe_{slug_perfil}_exp",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_exp", "lugar_expedicion"),
-                disabled=not es_admin_usuario,
-            )
+            col_doc1, col_doc2 = st.columns(2)
+            with col_doc1:
+                tipo_documento = st.text_input(
+                    "Tipo de Documento / Tipo ID",
+                    value=str(datos_empresa.get("tipo_documento") or "C.C."),
+                    key=f"pe_{slug_perfil}_tdoc",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_tdoc", "tipo_documento"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_doc2:
+                cedula = st.text_input(
+                    "Número de Documento (Cédula)",
+                    value=str(datos_empresa.get("cedula") or ""),
+                    key=f"pe_{slug_perfil}_ced",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_ced", "cedula"),
+                    disabled=not es_admin_usuario,
+                )
+
+            col_exp, col_nac = st.columns(2)
+            with col_exp:
+                lugar_expedicion = st.text_input(
+                    "Lugar de Expedición (Ciudad)",
+                    value=str(datos_empresa.get("lugar_expedicion") or datos_empresa.get("expedicion") or ""),
+                    help="Ciudad o Municipio donde fue expedido el documento del representante. Ej: Envigado",
+                    key=f"pe_{slug_perfil}_exp",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_exp", "lugar_expedicion"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_nac:
+                lugar_nacimiento = st.text_input(
+                    "Lugar de Nacimiento (Ciudad)",
+                    value=str(datos_empresa.get("lugar_nacimiento") or "Popayán"),
+                    help="Ciudad o Municipio de nacimiento del representante legal. Ej: Popayán",
+                    key=f"pe_{slug_perfil}_nac",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_nac", "lugar_nacimiento"),
+                    disabled=not es_admin_usuario,
+                )
+
+            st.markdown("##### 📍 Residencia / Domicilio Personal")
+            col_res_c, col_res_d = st.columns(2)
+            with col_res_c:
+                ciudad_residencia = st.text_input(
+                    "Ciudad de Residencia",
+                    value=str(datos_empresa.get("ciudad_residencia") or "Medellín"),
+                    help="Ciudad o Municipio de residencia personal del representante. Ej: Medellín",
+                    key=f"pe_{slug_perfil}_cres",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_cres", "ciudad_residencia"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_res_d:
+                departamento_residencia = st.text_input(
+                    "Departamento de Residencia",
+                    value=str(datos_empresa.get("departamento_residencia") or "Antioquia"),
+                    help="Departamento de residencia personal del representante. Ej: Antioquia",
+                    key=f"pe_{slug_perfil}_dres",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_dres", "departamento_residencia"),
+                    disabled=not es_admin_usuario,
+                )
 
             st.markdown("##### 📱 Contacto Directo")
-            celular = st.text_input(
-                "Celular / Móvil",
-                value=str(datos_empresa.get("celular") or ""),
-                key=f"pe_{slug_perfil}_cel",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_cel", "celular"),
-                disabled=not es_admin_usuario,
-            )
-            correo = st.text_input(
-                "Correo Electrónico",
-                value=str(datos_empresa.get("correo") or ""),
-                key=f"pe_{slug_perfil}_cor",
-                on_change=_al_cambiar_campo,
-                args=(f"pe_{slug_perfil}_cor", "correo"),
-                disabled=not es_admin_usuario,
-            )
+            col_cont1, col_cont2 = st.columns(2)
+            with col_cont1:
+                celular = st.text_input(
+                    "Celular / Móvil",
+                    value=str(datos_empresa.get("celular") or ""),
+                    key=f"pe_{slug_perfil}_cel",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_cel", "celular"),
+                    disabled=not es_admin_usuario,
+                )
+            with col_cont2:
+                correo = st.text_input(
+                    "Correo Electrónico",
+                    value=str(datos_empresa.get("correo") or ""),
+                    key=f"pe_{slug_perfil}_cor",
+                    on_change=_al_cambiar_campo,
+                    args=(f"pe_{slug_perfil}_cor", "correo"),
+                    disabled=not es_admin_usuario,
+                )
 
         with tab_fin:
             st.markdown("##### 🏦 Entidad Bancaria")
@@ -952,10 +1037,17 @@ with st.sidebar:
                     "representante_legal": representante_legal,
                     "representante_nombres": rep_nombres,
                     "representante_apellidos": rep_apellidos,
+                    "primer_nombre": primer_nombre,
+                    "segundo_nombre": segundo_nombre,
+                    "primer_apellido": primer_apellido,
+                    "segundo_apellido": segundo_apellido,
                     "tipo_documento": tipo_documento,
                     "cedula": cedula,
                     "lugar_expedicion": lugar_expedicion,
                     "expedicion": lugar_expedicion,
+                    "lugar_nacimiento": lugar_nacimiento,
+                    "ciudad_residencia": ciudad_residencia,
+                    "departamento_residencia": departamento_residencia,
                     "celular": celular,
                     "correo": correo,
                     "banco": banco,

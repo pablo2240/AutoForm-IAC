@@ -67,6 +67,7 @@ _PATRON_OPCIONES_SELECCION = re.compile(
 from core.domain_constants import (
     PATRON_CONTACTO_COMERCIAL,
     ROTULOS_GENERICOS_BLOQUEADOS,
+    TOKENS_TITULO_SECCION_PRIORITARIO,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
 )
@@ -121,6 +122,13 @@ def es_titulo_seccion(texto: str) -> bool:
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
         return False
 
+    t_norm = _normalizar_texto(t_clean)
+
+    # 0. Títulos prioritarios de sección (Q4: Información Financiera/Fiscal, etc.)
+    # Gana categóricamente sin importar menciones a '(Aplica Persona Natural y Jurídica)'
+    if any(tok in t_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO):
+        return True
+
     # Si empieza con número + punto (ej. "3. REPRESENTANTE LEGAL (aplica para...)" vs "1. NIT")
     m_num = re.match(r"^\s*(?:\d+[\.]|[I|V|X]+\.?)\s+(.+)$", t_clean)
     if m_num:
@@ -133,12 +141,12 @@ def es_titulo_seccion(texto: str) -> bool:
             return False
         return True
 
-    # 1. Empieza con encabezado de sección explícito
-    if re.search(r"^\s*(?:\d+[\.]|[I|V|X]+\.?)\s*(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)", t_clean, re.IGNORECASE):
-        return True
+    # 1. Empieza con encabezado de sección explícito (con o sin número)
+    if re.search(r"^\s*(?:\d+[\.]|[I|V|X]+\.?\s*)?(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)\b", t_clean, re.IGNORECASE):
+        if not (len(t_clean.split()) <= 2 and _TERMINOS_CAMPO_CORTO.search(t_clean)):
+            return True
 
     # 2. Mayúsculas sostenidas típicas de títulos
-    t_norm = _normalizar_texto(t_clean)
     titulos_tipicos_norm = [
         r"^tipo\s+(?:de\s+)?(?:solicitud|persona|proveedor|cliente|empresa|vinculacion|actualizacion|sociedad|contribuyente)$",
         r"^contraparte$",
@@ -164,6 +172,11 @@ def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[s
     txt = str(rotulo or "").strip()
     if not txt:
         return ClasificacionElemento.NO_APLICA
+
+    # 0. Título prioritario de sección (Q4: Información Financiera/Fiscal, etc.)
+    txt_norm = _normalizar_texto(txt)
+    if any(tok in txt_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO):
+        return ClasificacionElemento.TITULO_SECCION
 
     # 1. Control documental
     if _PATRON_CONTROL_DOCUMENTAL.search(txt):

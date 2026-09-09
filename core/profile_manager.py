@@ -69,7 +69,12 @@ def sincronizar_db_con_archivos() -> None:
                 datos_db_principal = database.obtener_perfil_db("principal")
                 if datos_db_principal:
                     plano_db = aplanar_perfil(datos_db_principal)
-                    debe_sincronizar = (mtime_archivo > db_mtime + 2.0) or (not plano_db.get("total_activos"))
+                    debe_sincronizar = (
+                        (mtime_archivo > db_mtime + 2.0)
+                        or (not plano_db.get("total_activos"))
+                        or (not plano_db.get("lugar_nacimiento"))
+                        or (not plano_db.get("primer_nombre"))
+                    )
                     if debe_sincronizar:
                         with PROFILE_DEFAULT_PATH.open("r", encoding="utf-8-sig") as f:
                             datos_raw = json.load(f)
@@ -208,17 +213,36 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
         if not rep_ape:
             plano["representante_apellidos"] = " ".join(partes[-2:]) if len(partes) >= 2 else ""
 
+    # Desglose canónico de los 4 componentes de nombre (Q2)
+    from core.domain_constants import (
+        desglosar_nombre_completo,
+        resolver_rotulo_geografico,
+        REPRESENTANTE_GEOGRAFIA,
+    )
+    desglose_rep = desglosar_nombre_completo(rep_full)
+    for campo_desglose, val_desglose in desglose_rep.items():
+        if not plano.get(campo_desglose):
+            plano[campo_desglose] = val_desglose
+
+    # Geografía canónica del Representante Legal (Q3)
+    if not plano.get("lugar_nacimiento"):
+        plano["lugar_nacimiento"] = REPRESENTANTE_GEOGRAFIA.get("lugar_nacimiento", "Popayán")
+    if not plano.get("ciudad_residencia"):
+        plano["ciudad_residencia"] = REPRESENTANTE_GEOGRAFIA.get("ciudad_residencia", "Medellín")
+    if not plano.get("departamento_residencia"):
+        plano["departamento_residencia"] = REPRESENTANTE_GEOGRAFIA.get("departamento_residencia", "Antioquia")
+
     # Compatibilidad bidireccional lugar_expedicion <-> expedicion
     if "lugar_expedicion" in plano and plano["lugar_expedicion"]:
         plano["expedicion"] = plano["lugar_expedicion"]
     elif "expedicion" in plano and plano["expedicion"]:
         plano["lugar_expedicion"] = plano["expedicion"]
 
-    # Generación compuesta ciudad_departamento ("Ciudad/Departamento", ej. "Medellin/Antioquia")
+    # Generación compuesta ciudad_departamento ("Ciudad/Departamento", ej. "Medellín / Antioquia") (Q1)
     c_val = str(plano.get("ciudad", "")).strip()
     d_val = str(plano.get("departamento", "")).strip()
     if c_val and d_val:
-        plano["ciudad_departamento"] = f"{c_val}/{d_val}"
+        plano["ciudad_departamento"] = f"{c_val} / {d_val}"
     elif c_val:
         plano["ciudad_departamento"] = c_val
     elif d_val:
@@ -272,14 +296,23 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
                 "representante_legal": str(plano.get("representante_legal", "")),
                 "representante_nombres": str(plano.get("representante_nombres", "")),
                 "representante_apellidos": str(plano.get("representante_apellidos", "")),
+                "primer_nombre": str(plano.get("primer_nombre", "")),
+                "segundo_nombre": str(plano.get("segundo_nombre", "")),
+                "primer_apellido": str(plano.get("primer_apellido", "")),
+                "segundo_apellido": str(plano.get("segundo_apellido", "")),
                 "tipo_documento": str(plano.get("tipo_documento", "C.C.")),
                 "cedula": str(plano.get("cedula", "")),
                 "lugar_expedicion": str(plano.get("lugar_expedicion") or plano.get("expedicion", "")),
+                "lugar_nacimiento": str(plano.get("lugar_nacimiento", "Popayán")),
             },
             "contacto": {
                 "correo": str(plano.get("correo_representante") or plano.get("correo", "")),
                 "telefono": str(plano.get("telefono_representante") or plano.get("telefono", "")),
                 "celular": str(plano.get("celular") or plano.get("celular_representante", "")),
+            },
+            "ubicacion": {
+                "ciudad_residencia": str(plano.get("ciudad_residencia", "Medellín")),
+                "departamento_residencia": str(plano.get("departamento_residencia", "Antioquia")),
             }
         },
         "financiero": {
@@ -307,7 +340,10 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
     claves_procesadas = {
         "razon_social", "nit", "tipo_sociedad", "direccion", "ciudad", "departamento", "pais",
         "telefono", "pagina_web", "representante_legal", "representante_nombres", "representante_apellidos",
-        "tipo_documento", "cedula", "lugar_expedicion", "expedicion", "correo", "correo_representante",
+        "primer_nombre", "segundo_nombre", "primer_apellido", "segundo_apellido",
+        "tipo_documento", "cedula", "lugar_expedicion", "expedicion", "lugar_nacimiento",
+        "ciudad_residencia", "departamento_residencia",
+        "correo", "correo_representante",
         "telefono_representante", "celular", "celular_representante", "banco", "sucursal",
         "numero_cuenta", "tipo_cuenta", "total_activos", "activos", "total_pasivos", "pasivos",
         "total_patrimonio", "patrimonio", "total_ingresos_mensuales", "ingresos_mensuales",

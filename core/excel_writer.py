@@ -134,8 +134,26 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
         c = str(plano.get("ciudad", "")).strip()
         d = str(plano.get("departamento", "")).strip()
         if c and d:
-            return f"{c}/{d}"
+            return f"{c} / {d}"
         return c or d
+
+    if campo in ("primer_nombre", "segundo_nombre", "primer_apellido", "segundo_apellido"):
+        val = plano.get(campo)
+        if val and str(val).strip():
+            return val
+        rep_full = str(plano.get("representante_legal", "")).strip()
+        from core.domain_constants import desglosar_nombre_completo
+        desglose = desglosar_nombre_completo(rep_full)
+        return desglose.get(campo, "")
+
+    if campo == "lugar_nacimiento":
+        return plano.get("lugar_nacimiento") or "Popayán"
+
+    if campo == "ciudad_residencia":
+        return plano.get("ciudad_residencia") or "Medellín"
+
+    if campo == "departamento_residencia":
+        return plano.get("departamento_residencia") or "Antioquia"
 
     if campo == "representante_nombres":
         val = plano.get("representante_nombres")
