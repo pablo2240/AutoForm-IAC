@@ -91,6 +91,10 @@ from core.domain_constants import (
     TOKENS_BALANCE_SECCION,
     TOKENS_REP_LEGAL_SECCION,
     TOKENS_CONTACTO_SECCION,
+    TOKENS_CONTACTO_COMERCIAL,
+    TOKENS_REFERENCIAS_EXCLUIDAS,
+    BARE_LABELS_CONTACTO_COMERCIAL,
+    CONTACTO_COMERCIAL_REMAP,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
 )
@@ -98,11 +102,14 @@ from core.domain_constants import (
 # Secciones semánticamente bancarias / financieras
 _TOKENS_SECCION_BANCARIA = TOKENS_FINANCIEROS_SECCION
 _TOKENS_FINANCIEROS_AMPLIOS = TOKENS_FINANCIEROS_SECCION
-_TOKENS_CONTACTO_COMERCIAL = TOKENS_CONTACTO_SECCION
+_TOKENS_CONTACTO_COMERCIAL = TOKENS_CONTACTO_COMERCIAL
+_TOKENS_REFERENCIAS_EXCLUIDAS = TOKENS_REFERENCIAS_EXCLUIDAS
 _ROTULOS_GENERICOS_BLOQUEADOS = ROTULOS_GENERICOS_BLOQUEADOS
 _CAMPOS_BANCARIOS = CAMPOS_BANCARIOS
 _CAMPOS_REP_LEGAL = CAMPOS_REP_LEGAL
 _CAMPOS_RESPONSABLE_COMERCIAL = CAMPOS_RESPONSABLE_COMERCIAL
+_BARE_LABELS_CONTACTO_COMERCIAL = BARE_LABELS_CONTACTO_COMERCIAL
+_CONTACTO_COMERCIAL_REMAP = CONTACTO_COMERCIAL_REMAP
 
 # Tokens que identifican secciones de terceros u uso interno
 _TOKENS_SECCION_OMITIR = {
@@ -435,13 +442,6 @@ def validar_item_mapeo(
     resultado["motivo"] = ""
     resultado["nivel_confianza"] = NivelConfianza.PARCIAL
 
-    # ── Caso vacío: sin campo propuesto → REVISION ──────────────────────────
-    if not campo_original:
-        resultado["estado"] = EstadoMapeo.REVISION
-        resultado["motivo"] = "El mapeo no tiene campo asignado."
-        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-        return resultado
-
     # ── R0: Descarte de Títulos de Sección, Instrucciones y Opciones ────────
     try:
         from pipeline.stages.stage_2_classifier import es_titulo_seccion, _PATRON_OPCIONES_SELECCION
@@ -471,50 +471,103 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
-    # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007): Contacto comercial ──
-    es_contacto = (
-        any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial", "responsable", "diligenciado por", "diligenciado", "verificacion", "verificación"))
-        or (any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL) and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL))
+    # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007 / ADR-0009): Contacto comercial ──
+    pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
+    es_sec_contacto = (
+        pertinencia_item == "CONTACTO_COMERCIAL"
+        or (
+            any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL)
+            and not any(t in seccion_norm for t in _TOKENS_REFERENCIAS_EXCLUIDAS)
+            and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL)
+        )
     )
+    es_rotulo_contacto = (
+        any(t in rotulo_norm for t in ("contacto comercial", "asesor comercial", "responsable del diligenciamiento", "diligenciado por", "funcionario que diligencia", "ejecutivo de cuenta", "atencion comercial", "atención comercial"))
+        or (
+            any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial", "responsable", "diligenciado", "verificacion", "verificación"))
+            and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL)
+        )
+    )
+    es_contacto = es_sec_contacto or es_rotulo_contacto
+
     if es_contacto:
         tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
-        if campo_original in _CAMPOS_RESPONSABLE_COMERCIAL and tiene_datos_op:
-            pass  # Permitido: el campo pertenece al dominio del responsable y el operador tiene datos
-        elif tiene_datos_op:
-            # Context-First Autocorrección (ADR-0007): redirigir rótulos comerciales al operador
-            if any(t in rotulo_norm for t in ("email", "correo")) and datos_planos.get("responsable_correo"):
-                campo_original = "responsable_correo"
-                resultado["campo_final"] = "responsable_correo"
-                resultado["motivo"] = "Context-First (ADR-0007): Asignado a correo del responsable comercial."
-            elif any(t in rotulo_norm for t in ("tel", "celular", "movil", "fijo")) and (datos_planos.get("responsable_telefono") or datos_planos.get("responsable_celular")):
-                c_dest = "responsable_telefono" if datos_planos.get("responsable_telefono") else "responsable_celular"
+        if not tiene_datos_op:
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = "Safe Passivity (ADR-0009): Bloque o campo de contacto comercial sin operador activo configurado."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
+        # Con operador activo presente:
+        rotulo_limpio = limpiar_rotulo(rotulo_norm)
+        if es_sec_contacto and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:
+            c_dest = _BARE_LABELS_CONTACTO_COMERCIAL[rotulo_limpio]
+            if datos_planos.get(c_dest):
                 campo_original = c_dest
                 resultado["campo_final"] = c_dest
-                resultado["motivo"] = "Context-First (ADR-0007): Asignado a teléfono/celular del responsable comercial."
-            elif any(t in rotulo_norm for t in ("cargo", "posicion", "rol")) and datos_planos.get("responsable_cargo"):
-                campo_original = "responsable_cargo"
-                resultado["campo_final"] = "responsable_cargo"
-                resultado["motivo"] = "Context-First (ADR-0007): Asignado a cargo del responsable comercial."
-            elif any(t in rotulo_norm for t in ("cedula", "documento", "id")) and datos_planos.get("responsable_cedula"):
-                campo_original = "responsable_cedula"
-                resultado["campo_final"] = "responsable_cedula"
-                resultado["motivo"] = "Context-First (ADR-0007): Asignado a documento del responsable comercial."
-            elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación")) and datos_planos.get("responsable_nombre"):
-                campo_original = "responsable_nombre"
-                resultado["campo_final"] = "responsable_nombre"
-                resultado["motivo"] = "Context-First (ADR-0007): Asignado a nombre del responsable comercial."
+                resultado["motivo"] = f"Context-First (ADR-0009): Rótulo bare '{rotulo}' mapeado determinísticamente a '{c_dest}'."
             else:
                 resultado["estado"] = EstadoMapeo.DESCARTADO
                 resultado["campo_final"] = ""
-                resultado["motivo"] = "Safe Passivity (ADR-0007): Campo comercial sin datos en operador activo."
+                resultado["motivo"] = f"Safe Passivity (ADR-0009): Campo comercial '{c_dest}' no configurado en el operador activo."
                 resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
                 return resultado
+        elif campo_original in _CONTACTO_COMERCIAL_REMAP:
+            c_dest = _CONTACTO_COMERCIAL_REMAP[campo_original]
+            if datos_planos.get(c_dest):
+                campo_original = c_dest
+                resultado["campo_final"] = c_dest
+                resultado["motivo"] = f"Auto-corrección HSP (ADR-0009): Campo propuesto re-mapeado a '{c_dest}' en bloque comercial."
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = f"Safe Passivity (ADR-0009): Campo comercial re-mapeado '{c_dest}' sin datos en operador activo."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
+        elif campo_original in _CAMPOS_RESPONSABLE_COMERCIAL:
+            if datos_planos.get(campo_original):
+                resultado["campo_final"] = campo_original
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = f"Safe Passivity (ADR-0009): Campo comercial '{campo_original}' sin datos en operador activo."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
+        elif any(t in rotulo_norm for t in ("email", "correo")) and datos_planos.get("responsable_correo"):
+            campo_original = "responsable_correo"
+            resultado["campo_final"] = "responsable_correo"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a correo del responsable comercial."
+        elif any(t in rotulo_norm for t in ("tel", "celular", "movil", "fijo")) and (datos_planos.get("responsable_telefono") or datos_planos.get("responsable_celular")):
+            c_dest = "responsable_telefono" if datos_planos.get("responsable_telefono") else "responsable_celular"
+            campo_original = c_dest
+            resultado["campo_final"] = c_dest
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a teléfono/celular del responsable comercial."
+        elif any(t in rotulo_norm for t in ("cargo", "posicion", "rol")) and datos_planos.get("responsable_cargo"):
+            campo_original = "responsable_cargo"
+            resultado["campo_final"] = "responsable_cargo"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a cargo del responsable comercial."
+        elif any(t in rotulo_norm for t in ("cedula", "documento", "id")) and datos_planos.get("responsable_cedula"):
+            campo_original = "responsable_cedula"
+            resultado["campo_final"] = "responsable_cedula"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a documento del responsable comercial."
+        elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación")) and datos_planos.get("responsable_nombre"):
+            campo_original = "responsable_nombre"
+            resultado["campo_final"] = "responsable_nombre"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a nombre del responsable comercial."
         else:
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
-            resultado["motivo"] = "Safe Passivity (ADR-0004): Campo de contacto comercial reservado para diligenciamiento manual."
+            resultado["motivo"] = f"Safe Passivity (ADR-0009): Campo '{campo_original}' en bloque comercial no admitido o sin valor en operador activo."
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
+
+    # ── Caso vacío: sin campo propuesto tras resolución contextual → REVISION ──
+    if not campo_original:
+        resultado["estado"] = EstadoMapeo.REVISION
+        resultado["motivo"] = "El mapeo no tiene campo asignado."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
 
     rotulo_limpio = limpiar_rotulo(rotulo_norm)
     if rotulo_limpio in _ROTULOS_GENERICOS_BLOQUEADOS or (campo_original in ("numero_cuenta", "tipo_cuenta", "correo", "celular") and rotulo_limpio in ("cliente", "vinculacion", "otros", "otro", "pep")):
@@ -593,29 +646,30 @@ def validar_item_mapeo(
             return resultado
 
     # ── Autocorrecciones estructurales y semánticas previas (R4, R5, R5b) ────
-    campo_ajustado_r4, motivo_r4 = _regla_no_asignar_tipo_documento_a_compuesto(
-        campo_original, rotulo_norm
-    )
-    if motivo_r4:
-        campo_original = campo_ajustado_r4
-        resultado["campo_final"] = campo_ajustado_r4
-        resultado["motivo"] = motivo_r4
+    if campo_original not in _CAMPOS_RESPONSABLE_COMERCIAL:
+        campo_ajustado_r4, motivo_r4 = _regla_no_asignar_tipo_documento_a_compuesto(
+            campo_original, rotulo_norm
+        )
+        if motivo_r4:
+            campo_original = campo_ajustado_r4
+            resultado["campo_final"] = campo_ajustado_r4
+            resultado["motivo"] = motivo_r4
 
-    campo_ajustado_r5, motivo_r5 = _regla_telefono_en_seccion_rep_legal(
-        campo_original, seccion_norm, rotulo_norm
-    )
-    if motivo_r5:
-        campo_original = campo_ajustado_r5
-        resultado["campo_final"] = campo_ajustado_r5
-        resultado["motivo"] = motivo_r5
+        campo_ajustado_r5, motivo_r5 = _regla_telefono_en_seccion_rep_legal(
+            campo_original, seccion_norm, rotulo_norm
+        )
+        if motivo_r5:
+            campo_original = campo_ajustado_r5
+            resultado["campo_final"] = campo_ajustado_r5
+            resultado["motivo"] = motivo_r5
 
-    campo_ajustado_r5b, motivo_r5b = _regla_autocorrecciones_semanticas_adicionales(
-        campo_original, rotulo_norm, seccion_norm
-    )
-    if motivo_r5b:
-        campo_original = campo_ajustado_r5b
-        resultado["campo_final"] = campo_ajustado_r5b
-        resultado["motivo"] = motivo_r5b
+        campo_ajustado_r5b, motivo_r5b = _regla_autocorrecciones_semanticas_adicionales(
+            campo_original, rotulo_norm, seccion_norm
+        )
+        if motivo_r5b:
+            campo_original = campo_ajustado_r5b
+            resultado["campo_final"] = campo_ajustado_r5b
+            resultado["motivo"] = motivo_r5b
 
     # ── R2: Campo existe en perfil ──────────────────────────────────────────
     ok_existe, msg_existe = _regla_campo_existe(campo_original, datos_planos)
@@ -684,6 +738,7 @@ def validar_plan_mapeo(
 
     # Construir índice de secciones omitidas desde el IR (short-circuit)
     secciones_omitidas: Set[str] = set()
+    tiene_operador = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
     if documento_ir is not None:
         try:
             from core.spatial_ir import PertinenciaSeccion
@@ -692,7 +747,7 @@ def validar_plan_mapeo(
                     PertinenciaSeccion.OMITIR_TERCEROS,
                     PertinenciaSeccion.OMITIR_USO_INTERNO,
                     PertinenciaSeccion.OMITIR_LEGAL,
-                ):
+                ) or (sec.pertinencia == PertinenciaSeccion.CONTACTO_COMERCIAL and not tiene_operador):
                     secciones_omitidas.add(_normalizar(sec.titulo))
         except (ImportError, AttributeError):
             pass  # Si el IR no está disponible, seguimos sin short-circuit
@@ -706,16 +761,21 @@ def validar_plan_mapeo(
         seccion_item = _normalizar(
             str(item.get("seccion") or item.get("seccion_padre") or "")
         )
-        if secciones_omitidas and any(
-            seccion_item.startswith(omit) or omit in seccion_item
-            for omit in secciones_omitidas
+        pert_item = str(item.get("seccion_pertinencia") or item.get("pertinencia") or "").upper()
+        if (
+            pert_item in ("OMITIR_TERCEROS", "OMITIR_USO_INTERNO", "OMITIR_LEGAL")
+            or (pert_item == "CONTACTO_COMERCIAL" and not tiene_operador)
+            or (secciones_omitidas and any(
+                seccion_item.startswith(omit) or omit in seccion_item
+                for omit in secciones_omitidas
+            ))
         ):
             resultado = dict(item)
             resultado["campo_propuesto"] = str(item.get("campo") or "")
             resultado["campo_final"] = ""
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["motivo"] = (
-                f"La sección '{seccion_item}' está marcada como no aplicable (OMITIR). "
+                f"La sección '{seccion_item}' está marcada como no aplicable (OMITIR/Safe Passivity). "
                 f"Sus elementos se omiten sin procesamiento individual."
             )
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
@@ -746,6 +806,9 @@ def validar_plan_mapeo(
                 "activos", "pasivos", "patrimonio",
                 "ingresos_mensuales", "egresos_mensuales",
                 "ingresos_anuales", "egresos_anuales",
+                "responsable_nombre", "responsable_cargo",
+                "responsable_telefono", "responsable_celular",
+                "responsable_correo", "responsable_cedula",
             )
             if campo_activo in campos_unicos_seccion:
                 if campo_activo in asignados_por_seccion.get(sec_key, set()):

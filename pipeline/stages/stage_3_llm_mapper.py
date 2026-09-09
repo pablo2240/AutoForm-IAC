@@ -137,6 +137,11 @@ def _construir_lotes_secciones_desde_ir(
     id_counter = 0
     tipos_viables = {TipoElemento.FIELD, TipoElemento.UNKNOWN}
 
+    tiene_operador = bool(
+        ctx.datos_empresa.get("responsable_nombre")
+        or ctx.datos_empresa.get("responsable_correo")
+    )
+
     for seccion in ctx.documento_ir.secciones:
         # Short-circuit: secciones marcadas OMITIR_* se saltan completamente
         if seccion.pertinencia in (
@@ -144,6 +149,10 @@ def _construir_lotes_secciones_desde_ir(
             PertinenciaSeccion.OMITIR_USO_INTERNO,
             PertinenciaSeccion.OMITIR_LEGAL,
         ):
+            continue
+
+        # ADR-0009: Secciones CONTACTO_COMERCIAL solo se procesan si hay un OperadorActivo (Safe Passivity)
+        if seccion.pertinencia == PertinenciaSeccion.CONTACTO_COMERCIAL and not tiene_operador:
             continue
 
         campos_seccion: List[Dict[str, Any]] = []

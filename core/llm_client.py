@@ -129,14 +129,15 @@ Recibes un objeto JSON con:
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
   * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
 
-- Si la sección o el rótulo hace referencia a CONTACTO COMERCIAL / ASESOR / RESPONSABLE DEL DILIGENCIAMIENTO:
-  * Rótulos de Nombre del Contacto, Asesor, Asesor Comercial, Responsable del Diligenciamiento, Diligenciado por, Contacto Comercial, Funcionario que Diligencia -> "responsable_nombre"
-  * Rótulos de Cargo, Posición, Rol del responsable/contacto comercial -> "responsable_cargo"
-  * Rótulos de Cédula, Identificación, Documento del responsable comercial -> "responsable_cedula"
-  * Rótulos de Teléfono, Celular, Teléfono Móvil del responsable comercial -> "responsable_telefono"
-  * Rótulos de Correo, Email, Correo Electrónico del responsable comercial -> "responsable_correo"
-  * REGLA DE DOMAIN ISOLATION DE RESPONSABLE: NUNCA asignes campos de "responsable_*" a casillas de la empresa, ni del Representante Legal, ni de Junta Directiva, ni de PEPs, ni de Firmantes Legales.
-  * REGLA INVERSA: NUNCA asignes datos del Representante Legal ("representante_legal", "cedula", etc.) ni de la Empresa a casillas de Contacto Comercial o Diligenciado Por.
+- Si la sección o el rótulo hace referencia a CONTACTO COMERCIAL / INFORMACIÓN DE CONTACTO / PERSONAL DE CONTACTO / ASESOR / RESPONSABLE DEL DILIGENCIAMIENTO (ADR-0009):
+  * CUALQUIER rótulo de Nombre ("Nombre", "Nombre Completo", "Nombres y Apellidos", "Contacto", "Persona de Contacto") dentro de este bloque -> OBLIGATORIO "responsable_nombre" (NUNCA "representante_legal" ni "razon_social").
+  * CUALQUIER rótulo de Cargo ("Cargo", "Posición", "Rol") dentro de este bloque -> OBLIGATORIO "responsable_cargo".
+  * CUALQUIER rótulo de Documento ("Cédula", "Identificación", "Documento") dentro de este bloque -> OBLIGATORIO "responsable_cedula".
+  * CUALQUIER rótulo de Teléfono ("Teléfono", "Celular", "Móvil", "Tel/Cel") dentro de este bloque -> OBLIGATORIO "responsable_telefono".
+  * CUALQUIER rótulo de Correo ("Correo", "Email", "Correo Electrónico") dentro de este bloque -> OBLIGATORIO "responsable_correo" (NUNCA "correo" del representante ni de la empresa).
+  * REGLA DE DOMAIN ISOLATION DE RESPONSABLE (ADR-0009): NUNCA asignes campos de "responsable_*" a casillas de la empresa, ni del Representante Legal, ni de Junta Directiva, ni de PEPs, ni de Firmantes Legales.
+  * REGLA INVERSA ESTRICTA: NUNCA asignes datos del Representante Legal ("representante_legal", "cedula", etc.) ni de la Empresa general a casillas de Contacto Comercial o Diligenciado Por.
+  * REGLA DE REFERENCIAS COMERCIALES EXTERNAS: Si la sección se titula "Referencias Comerciales" y consiste en tablas o grillas de clientes/proveedores terceros con casillas de "Empresa / Razón Social", DESCARTA (Safe Passivity), NUNCA asignes al asesor como su propia referencia comercial.
 
 - Si la sección o el rótulo hace referencia a ÓRGANOS DE ADMINISTRACIÓN / JUNTA DIRECTIVA:
   * En compliance corporativo colombiano, la Junta Directiva registra a los administradores principales (representados por la persona natural directiva/apoderado).

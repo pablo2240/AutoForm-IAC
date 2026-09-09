@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Set
+from typing import Set, Dict
 
 
 class DomainCategory(str, Enum):
@@ -98,10 +98,91 @@ TOKENS_REP_LEGAL_SECCION: Set[str] = {
     "junta", "directiv", "administra", "organo"
 }
 
-TOKENS_CONTACTO_SECCION: Set[str] = {
-    "contacto", "asesor", "consultor", "ejecutivo", "comercial", "operativo",
-    "responsable", "diligenciado", "diligenciamiento", "verificacion", "verificación", "cuenta"
+# ADR-0009: Catálogo canónico de tokens para detección de bloques comerciales y de contacto
+TOKENS_CONTACTO_COMERCIAL: Set[str] = {
+    "contacto",
+    "personal de contacto",
+    "informacion de contacto",
+    "información de contacto",
+    "datos de contacto",
+    "contacto comercial",
+    "asesor comercial",
+    "asesor",
+    "responsable del diligenciamiento",
+    "diligenciado por",
+    "funcionario que diligencia",
+    "ejecutivo de cuenta",
+    "atencion comercial",
+    "atención comercial",
+    "contacto de verificación",
+    "contacto de verificacion",
 }
+
+TOKENS_REFERENCIAS_EXCLUIDAS: Set[str] = {
+    "referencias comerciales",
+    "referencia comercial",
+    "referencias de clientes",
+    "referencias de proveedores",
+}
+
+TOKENS_CONTACTO_SECCION: Set[str] = TOKENS_CONTACTO_COMERCIAL.union({
+    "consultor", "operativo", "responsable", "diligenciamiento", "cuenta"
+})
+
+# ADR-0009: Rótulos bare dentro de secciones de contacto comercial
+BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
+    "nombre": "responsable_nombre",
+    "nombre completo": "responsable_nombre",
+    "nombres y apellidos": "responsable_nombre",
+    "contacto": "responsable_nombre",
+    "persona de contacto": "responsable_nombre",
+    "asesor": "responsable_nombre",
+    "asesor comercial": "responsable_nombre",
+    "cargo": "responsable_cargo",
+    "posicion": "responsable_cargo",
+    "posición": "responsable_cargo",
+    "posicion o rol": "responsable_cargo",
+    "posición o rol": "responsable_cargo",
+    "rol": "responsable_cargo",
+    "telefono": "responsable_telefono",
+    "teléfono": "responsable_telefono",
+    "celular": "responsable_telefono",
+    "movil": "responsable_telefono",
+    "móvil": "responsable_telefono",
+    "tel": "responsable_telefono",
+    "cel": "responsable_telefono",
+    "correo": "responsable_correo",
+    "correo electronico": "responsable_correo",
+    "correo electrónico": "responsable_correo",
+    "email": "responsable_correo",
+    "e-mail": "responsable_correo",
+    "cedula": "responsable_cedula",
+    "cédula": "responsable_cedula",
+    "identificacion": "responsable_cedula",
+    "identificación": "responsable_cedula",
+    "documento": "responsable_cedula",
+    "no. documento": "responsable_cedula",
+    "numero de documento": "responsable_cedula",
+    "número de documento": "responsable_cedula",
+}
+
+# ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
+CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
+    "representante_legal": "responsable_nombre",
+    "representante_nombres": "responsable_nombre",
+    "representante_apellidos": "responsable_nombre",
+    "cargo": "responsable_cargo",
+    "cedula": "responsable_cedula",
+    "lugar_expedicion": "",
+    "expedicion": "",
+    "correo": "responsable_correo",
+    "correo_representante": "responsable_correo",
+    "celular": "responsable_telefono",
+    "celular_representante": "responsable_telefono",
+    "telefono": "responsable_telefono",
+    "telefono_representante": "responsable_telefono",
+}
+
 
 
 def limpiar_rotulo(rotulo: str) -> str:

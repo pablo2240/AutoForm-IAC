@@ -271,34 +271,34 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         "derecha",
     ),
 
-    # ── Dominio 5: Contacto Comercial / Responsable del Diligenciamiento (ADR-0007) ──
+    # ── Dominio 5: Contacto Comercial / Responsable del Diligenciamiento (ADR-0007 / ADR-0009) ──
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario)|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario)|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto|nombre\s+completo|nombres?\s+y\s+apellidos?|nombre)\s*$", re.IGNORECASE),
         "responsable_nombre",
         "derecha",
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:cargo|posici[oó]n|rol)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:cargo|posici[oó]n|rol)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_cargo",
         "derecha",
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:c[eé]dula|c\.?c\.?|identificaci[oó]n|documento)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:c[eé]dula|c\.?c\.?|identificaci[oó]n|documento|no\.?\s*doc(?:umento)?)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_cedula",
         "derecha",
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:tel[eé]fono|celular|m[oó]vil|tel[\s/]*cel)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:tel[eé]fono|celular|m[oó]vil|tel[\s/]*cel|tel)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_telefono",
         "derecha",
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:email|correo|correo\s+electr[oó]nico)(?:\s*(?:del?\s*)?(?:contacto|asesor|responsable))?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:email|e-mail|correo|correo\s+electr[oó]nico)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_correo",
         "derecha",
     ),

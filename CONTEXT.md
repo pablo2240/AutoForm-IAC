@@ -48,6 +48,9 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`Usuario` (User Account)** | Registered corporate person (`id`, `nombre`, `cargo`, `cedula`, `telefono`, `correo`, `password_hash`, `es_admin`, `activo`) authenticated via PBKDF2-HMAC-SHA256, mapped directly to `OperadorActivo` upon session creation. | "Cuenta de empresa", "Tenant" |
 | **`Gatekeeper` (Auth Shield)** | Full-screen authentication shield in Streamlit blocking all sidebar navigation, form viewing, and corporate profile access until successful login/registration. | "Login modal", "Popup" |
 | **`RolUsuario` (User Role)** | Binary permission flag: `es_admin = 1` enables corporate profile configuration and operator management; `es_admin = 0` provides shared read-only profile access and form diligence capabilities. | "Nivel de acceso", "Permisos" |
+| **`ContactoComercialSection`** | Spatial IR section classified with `PertinenciaSeccion.CONTACTO_COMERCIAL`, representing a single-block contact area for the commercial advisor or diligence operator. | "Sección general", "Referencias" |
+| **`BareLabelRemapping`** | Deterministic resolution of ambiguous bare labels (`Nombre`, `Cargo`, `Teléfono`, `Correo`) to `responsable_*` strictly when residing within a `ContactoComercialSection`. | "Inferencia abierta", "Fuzzy mapping" |
+| **`CommercialGridSafePassivity`** | Unconditional exclusion (`OMITIR_TERCEROS`) of multi-row third-party commercial reference grids (`"referencias comerciales"`), ensuring the internal commercial advisor is never injected into external client reference slots. | "Llenado de referencias" |
 
 ---
 
@@ -61,3 +64,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0006: Financial Balance Fields, Raw Numeric Injection & Strict Financial Domain Isolation`](docs/adr/0006-financial-balance-fields-and-domain-isolation.md)
 * [`ADR-0007: Operator Catalog, Runtime Fusion & Commercial Contact Domain Isolation`](docs/adr/0007-operator-catalog-and-commercial-contact-domain.md)
 * [`ADR-0008: User Authentication, Gatekeeper Shield & Role-Based Access Control`](docs/adr/0008-user-authentication-gatekeeper-and-role-based-access.md)
+* [`ADR-0009: Commercial Contact Section Detection, Grids Safe Passivity and Deterministic HSP Remapping`](docs/adr/0009-commercial-contact-detection-and-hsp-remapping.md)

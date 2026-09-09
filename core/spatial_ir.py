@@ -21,7 +21,12 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
-from core.domain_constants import es_seccion_o_campo_pep, PATRON_PEP_BENEFICIARIOS
+from core.domain_constants import (
+    es_seccion_o_campo_pep,
+    PATRON_PEP_BENEFICIARIOS,
+    TOKENS_CONTACTO_COMERCIAL,
+    TOKENS_REFERENCIAS_EXCLUIDAS,
+)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -48,6 +53,7 @@ class PertinenciaSeccion(str, Enum):
     OMITIR_USO_INTERNO = "OMITIR_USO_INTERNO"
     OMITIR_LEGAL = "OMITIR_LEGAL"
     MIXTA = "MIXTA"
+    CONTACTO_COMERCIAL = "CONTACTO_COMERCIAL"
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -439,6 +445,54 @@ def _coord_excel(fila: int, columna: int) -> str:
         return f"R{fila}C{columna}"
 
 
+def clasificar_seccion_contacto(
+    titulo_sec: str,
+    filas: Optional[List[FilaIR]] = None,
+) -> Tuple[PertinenciaSeccion, str]:
+    """Clasifica si una sección corresponde a contacto comercial o a referencias externas de terceros (ADR-0009)."""
+    titulo = _normalizar(titulo_sec)
+
+    es_referencias = any(t in titulo for t in TOKENS_REFERENCIAS_EXCLUIDAS)
+    es_contacto = any(t in titulo for t in TOKENS_CONTACTO_COMERCIAL)
+
+    if es_referencias and not es_contacto:
+        return (
+            PertinenciaSeccion.OMITIR_TERCEROS,
+            "Grilla de referencias comerciales de terceros / clientes externos (Safe Passivity ADR-0009)",
+        )
+
+    if es_contacto and not es_referencias:
+        return (
+            PertinenciaSeccion.CONTACTO_COMERCIAL,
+            "Bloque de contacto comercial / asesor de cuenta (ADR-0009)",
+        )
+
+    if es_referencias and es_contacto:
+        # Título ambiguo ("Contacto y Referencias") -> desambiguar por estructura
+        filas_lista = filas or []
+        textos_elementos = [
+            _normalizar(e.texto)
+            for f in filas_lista
+            for e in f.elementos
+            if e.texto
+        ]
+        tiene_grilla_terceros = (
+            len(filas_lista) >= 2
+            and any("razon social" in t or "razón social" in t or "empresa" in t for t in textos_elementos)
+        )
+        if tiene_grilla_terceros:
+            return (
+                PertinenciaSeccion.OMITIR_TERCEROS,
+                "Grilla repetitiva de referencias de terceros con empresas externas (Safe Passivity ADR-0009)",
+            )
+        return (
+            PertinenciaSeccion.CONTACTO_COMERCIAL,
+            "Bloque de contacto comercial con mención de referencias (ADR-0009)",
+        )
+
+    return PertinenciaSeccion.PROCESAR, "Sección procesable"
+
+
 def construir_ir(
     elementos_raw: List[Dict[str, Any]],
     nombre_archivo: str = "documento.xlsx",
@@ -616,12 +670,14 @@ def construir_ir(
             elif _PATRON_USO_EXCLUSIVO.search(titulo_sec):
                 pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
                 motivo_sec = "Área de uso exclusivo de la entidad receptora / auditoría"
-            elif any(t in titulo_sec_norm for t in ("referencias comerciales", "contacto comercial")):
-                pert_sec = PertinenciaSeccion.OMITIR_TERCEROS
-                motivo_sec = "Sección de referencias o contacto comercial (Safe Passivity ADR-0004)"
             else:
-                pert_sec = PertinenciaSeccion.PROCESAR
-                motivo_sec = "Sección procesable"
+                pert_c, motivo_c = clasificar_seccion_contacto(titulo_sec, filas_ordenadas)
+                if pert_c != PertinenciaSeccion.PROCESAR:
+                    pert_sec = pert_c
+                    motivo_sec = motivo_c
+                else:
+                    pert_sec = PertinenciaSeccion.PROCESAR
+                    motivo_sec = "Sección procesable"
 
             seccion = SeccionIR(
                 id_seccion=sec_id,
