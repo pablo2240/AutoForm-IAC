@@ -178,7 +178,16 @@ def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[s
         return ClasificacionElemento.FIRMA_ESPACIO
 
     # 4. Opciones de selección directa (SI, NO, Ahorros, Corriente, etc.)
-    if _PATRON_OPCIONES_SELECCION.match(txt):
+    # EXCEPCIÓN: Si tiene una línea de captura/escritura real contigua (subrayado/anchoLinea >= 2), es un campo de entrada
+    tiene_linea_escritura = bool(
+        propiedades_celda and (
+            int(propiedades_celda.get("anchoLinea", 1) or 1) >= 2
+            or bool(propiedades_celda.get("derechaConBordeInferior", False))
+            or bool(propiedades_celda.get("derechaConBordeTodo", False))
+            or str(propiedades_celda.get("tipoEspacioEscritura", "")).lower() == "subrayado"
+        )
+    )
+    if _PATRON_OPCIONES_SELECCION.match(txt) and not tiene_linea_escritura:
         return ClasificacionElemento.OPCION_SELECCION
 
     # 5. Texto legal extenso o autorizaciones (SAGRILAFT, Habeas Data, etc.)

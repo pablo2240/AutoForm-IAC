@@ -115,6 +115,7 @@ Recibes un objeto JSON con:
 - Si la sección o el rótulo hace referencia a la EMPRESA / PROPONENTE / SOLICITANTE / PERSONA JURÍDICA:
   * Rótulos que soliciten nombre de la empresa, denominación social, solicitante, "Nombre Comercial", "Razón Social / Nombre Comercial" -> "razon_social"
   * Rótulos de NIT, RUT, "NIT / TAX ID", "TAX ID", Identificación Tributaria, o listas de tipos como "CC/CE/PAS/NIT", "CC/NIT", "NIT/CC" -> "nit" (la empresa es persona jurídica y su número de identificación tributaria es el NIT).
+  * Rótulos de "C.C.", "Cédula", "C.C.:" (cuando coexistan junto al NIT en la identificación de la empresa) -> "cedula" (cédula del representante legal).
   * Rótulos de Domicilio, Sede Principal, Dirección -> "direccion"
   * Rótulos de Municipio, Ciudad de domicilio -> "ciudad"
   * Rótulos combinados de "Ciudad / Departamento", "Ciudad/Depto", "Municipio / Departamento" -> "ciudad_departamento"

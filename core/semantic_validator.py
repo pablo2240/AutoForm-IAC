@@ -457,7 +457,19 @@ def validar_item_mapeo(
     # ── R0: Descarte de Títulos de Sección, Instrucciones y Opciones ────────
     try:
         from pipeline.stages.stage_2_classifier import es_titulo_seccion, _PATRON_OPCIONES_SELECCION
-        if es_titulo_seccion(rotulo) or _PATRON_OPCIONES_SELECCION.match(rotulo):
+        es_opcion = bool(_PATRON_OPCIONES_SELECCION.match(rotulo))
+        # EXCEPCIÓN: Si el rótulo es 'C.C.', 'NIT', 'RUT', etc., pero tiene línea de escritura contigua (anchoLinea >= 2 o subrayado)
+        # y un campo propuesto válido (ej. cedula o nit), es un campo de captura real y NO una opción descartable.
+        tiene_linea = bool(
+            int(plan_item.get("anchoLinea", 1) or 1) >= 2
+            or int(plan_item.get("celdasAMergear", 1) or 1) >= 2
+            or bool(plan_item.get("requiereMerge", False))
+            or str(plan_item.get("tipoEspacioEscritura", "")).lower() == "subrayado"
+        )
+        if es_opcion and tiene_linea and campo_original in ("cedula", "nit", "tipo_documento"):
+            es_opcion = False
+
+        if es_titulo_seccion(rotulo) or es_opcion:
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"El rótulo '{rotulo}' es un título o encabezado decorativo y no un campo de entrada."
@@ -648,7 +660,7 @@ def validar_item_mapeo(
     if campo_original in _CAMPOS_REP_LEGAL:
         es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "firma", "apoderado", "gerente", "junta", "directiv", "administra", "organo"))
         es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
-        if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c.c", "exped")))):
+        if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c c", "cc", "c.c", "exped")))):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección ('{seccion}')."

@@ -218,6 +218,12 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
+        re.compile(r"^\s*(?:c\.?c\.?|c[eé]dula|c\.?c\.?\s*:?)\s*$", re.IGNORECASE),
+        "cedula",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_EMPRESA,
         re.compile(r"^\s*(?:direcci[oó]n(?:\s+principal|\s+domicilio\s+principal)?|domicilio(?:\s+principal)?|sede\s+principal)\s*$", re.IGNORECASE),
         "direccion",
         "derecha",
