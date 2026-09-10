@@ -618,6 +618,8 @@ def ejecutar_stage_3_mapper(
                 "hoja": str(elem_orig.get("hoja", "Hoja1")),
                 "fila": int(elem_orig.get("fila", 1) or 1),
                 "columna": int(elem_orig.get("columna", 1) or 1),
+                "inicioLineaCol": int(elem_orig.get("inicioLineaCol", 0) or 0),
+                "finLineaCol": int(elem_orig.get("finLineaCol", 0) or 0),
                 "valor": c_info["rotulo"],
                 "ubicacion": ubic,
                 "campo": campo_empresa,

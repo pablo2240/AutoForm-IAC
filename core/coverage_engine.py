@@ -611,6 +611,8 @@ def ejecutar_pase_cobertura_exhaustiva(
                 "hoja": h,
                 "fila": f,
                 "columna": c,
+                "inicioLineaCol": int(elem_raw.get("inicioLineaCol", 0) or 0),
+                "finLineaCol": int(elem_raw.get("finLineaCol", 0) or 0),
                 "valor": txt,
                 "ubicacion": ubicacion,
                 "campo": campo_sug,

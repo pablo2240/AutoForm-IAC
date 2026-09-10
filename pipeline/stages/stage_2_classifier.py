@@ -363,6 +363,8 @@ def clasificar_elementos_formulario(
                     "fila": fila,
                     "columna": int(elem.get("columna", 0) or 0),
                     "tipoEspacioEscritura": ubicacion_sugerida,
+                    "inicioLineaCol": int(elem.get("inicioLineaCol", 0) or 0),
+                    "finLineaCol": int(elem.get("finLineaCol", 0) or 0),
                     "anchoLinea": int(elem.get("anchoLinea", 1) or 1),
                 })
 

@@ -151,6 +151,7 @@ def _calcular_rango_linea_captura(
     fila: int,
     col_inicio: int,
     mapa_merges: Dict[Tuple[int, int], Any],
+    col_rotulo: int = 0,
 ) -> Tuple[int, int, int]:
     """Escanea dinámicamente hacia la derecha omitiendo celdas espaciadoras sin borde
     para ubicar el inicio exacto (c_inicio) y el fin (c_fin) de una línea de captura continua,
@@ -161,10 +162,12 @@ def _calcular_rango_linea_captura(
     """
     max_col = hoja.max_column or 1
     col_actual = col_inicio
+    firma_rotulo = _obtener_firma_relleno(hoja.cell(row=fila, column=col_rotulo)) if col_rotulo > 0 else None
     
-    # 1. Saltar celdas espaciadoras vacías sin borde ni relleno si la línea empieza más a la derecha
+    # 1. Saltar celdas espaciadoras vacías sin borde ni relleno (o con el mismo relleno decorativo del rótulo)
+    # si la línea de captura real empieza más a la derecha tras celdas de padding
     espacios_saltados = 0
-    while col_actual <= max_col and espacios_saltados < 4:
+    while col_actual <= max_col and espacios_saltados < 15:
         if not _celda_vacia(hoja, fila, col_actual):
             break
         
@@ -172,7 +175,8 @@ def _calcular_rango_linea_captura(
         rango = mapa_merges.get((fila, col_actual))
         firma_color = _obtener_firma_relleno(hoja.cell(row=fila, column=col_actual))
         
-        if bordes["bottom"] or rango is not None or firma_color is not None:
+        tiene_color_input = (firma_color is not None and (firma_rotulo is None or firma_color != firma_rotulo))
+        if bordes["bottom"] or rango is not None or tiene_color_input:
             break
             
         col_actual += 1
@@ -610,7 +614,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
 
                 # ── PARSER-02: Rango dinámico y ancho real de la línea de captura ────
                 c_inicio_linea, c_fin_linea, ancho_linea = _calcular_rango_linea_captura(
-                    hoja, fila, derecha_columna, mapa_merges
+                    hoja, fila, derecha_columna, mapa_merges, col_rotulo=columna
                 )
 
                 # ── PARSER-04: Ancho del rango combinado del vecino derecho ───
