@@ -117,6 +117,32 @@ def _calcular_tipo_espacio(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+def _obtener_firma_relleno(celda: Any) -> Optional[str]:
+    """Retorna una clave única para identificar el estilo y color de fondo de una celda.
+    Retorna None si la celda no tiene relleno explícito (fill_type es None o 'none').
+    """
+    if not celda or not hasattr(celda, "fill") or celda.fill is None:
+        return None
+    fill = celda.fill
+    fill_type = getattr(fill, "fill_type", None)
+    if not fill_type or fill_type in ("none", None):
+        return None
+    fg = getattr(fill, "fgColor", None)
+    if fg is None:
+        return f"fill_type:{fill_type}"
+    color_type = getattr(fg, "type", None)
+    if color_type == "rgb":
+        return f"rgb:{getattr(fg, 'rgb', '')}"
+    elif color_type == "theme":
+        return f"theme:{getattr(fg, 'theme', None)}:{round(getattr(fg, 'tint', 0.0) or 0.0, 4)}"
+    elif color_type == "indexed":
+        return f"indexed:{getattr(fg, 'indexed', '')}"
+    elif color_type == "auto":
+        return "auto"
+    return f"{color_type}:{getattr(fg, 'value', '')}"
+
+
+# ──────────────────────────────────────────────────────────────────────────────
 # PARSER-02: Detección de líneas de captura divididas entre celdas consecutivas
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -127,7 +153,8 @@ def _calcular_rango_linea_captura(
     mapa_merges: Dict[Tuple[int, int], Any],
 ) -> Tuple[int, int, int]:
     """Escanea dinámicamente hacia la derecha omitiendo celdas espaciadoras sin borde
-    para ubicar el inicio exacto (c_inicio) y el fin (c_fin) de una línea de captura continua.
+    para ubicar el inicio exacto (c_inicio) y el fin (c_fin) de una línea de captura continua,
+    reconociendo tanto bordes de subrayado como continuidad en estilo/color de fondo (fill).
 
     Returns:
         Tuple[col_inicio_real, col_fin_real, ancho_linea]
@@ -135,7 +162,7 @@ def _calcular_rango_linea_captura(
     max_col = hoja.max_column or 1
     col_actual = col_inicio
     
-    # 1. Saltar celdas espaciadoras vacías sin borde si la línea empieza más a la derecha
+    # 1. Saltar celdas espaciadoras vacías sin borde ni relleno si la línea empieza más a la derecha
     espacios_saltados = 0
     while col_actual <= max_col and espacios_saltados < 4:
         if not _celda_vacia(hoja, fila, col_actual):
@@ -143,8 +170,9 @@ def _calcular_rango_linea_captura(
         
         bordes = _analizar_bordes_celda(hoja, fila, col_actual)
         rango = mapa_merges.get((fila, col_actual))
+        firma_color = _obtener_firma_relleno(hoja.cell(row=fila, column=col_actual))
         
-        if bordes["bottom"] or rango is not None:
+        if bordes["bottom"] or rango is not None or firma_color is not None:
             break
             
         col_actual += 1
@@ -157,6 +185,8 @@ def _calcular_rango_linea_captura(
     c_fin_real = col_actual
     ancho = 0
 
+    firma_color_inicio = _obtener_firma_relleno(hoja.cell(row=fila, column=c_inicio_real))
+
     while col_actual <= max_col:
         if not _celda_vacia(hoja, fila, col_actual):
             break
@@ -166,11 +196,22 @@ def _calcular_rango_linea_captura(
             c_fin_real = rango.max_col
             ancho += (rango.max_col - col_actual + 1)
             break
+
+        # Si la celda inmediatamente anterior tenía borde derecho de cierre de caja, detener
+        if col_actual > c_inicio_real:
+            b_prev = _analizar_bordes_celda(hoja, fila, col_actual - 1)
+            if b_prev["right"]:
+                break
             
         bordes = _analizar_bordes_celda(hoja, fila, col_actual)
-        if bordes["bottom"]:
+        firma_color_act = _obtener_firma_relleno(hoja.cell(row=fila, column=col_actual))
+        es_mismo_color = (firma_color_inicio is not None and firma_color_act == firma_color_inicio)
+
+        if bordes["bottom"] or es_mismo_color:
             c_fin_real = col_actual
             ancho += 1
+            if bordes["right"]:
+                break
             col_actual += 1
         else:
             break

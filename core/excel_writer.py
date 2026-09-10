@@ -71,17 +71,106 @@ def _tiene_borde_relevante(celda: Any) -> bool:
     return False
 
 
+def _obtener_firma_relleno(celda: Any) -> Optional[str]:
+    """Retorna una clave única para identificar el estilo y color de fondo de una celda.
+    Retorna None si la celda no tiene relleno explícito (fill_type es None o 'none').
+    """
+    if not celda or not hasattr(celda, "fill") or celda.fill is None:
+        return None
+    fill = celda.fill
+    fill_type = getattr(fill, "fill_type", None)
+    if not fill_type or fill_type in ("none", None):
+        return None
+    fg = getattr(fill, "fgColor", None)
+    if fg is None:
+        return f"fill_type:{fill_type}"
+    color_type = getattr(fg, "type", None)
+    if color_type == "rgb":
+        return f"rgb:{getattr(fg, 'rgb', '')}"
+    elif color_type == "theme":
+        return f"theme:{getattr(fg, 'theme', None)}:{round(getattr(fg, 'tint', 0.0) or 0.0, 4)}"
+    elif color_type == "indexed":
+        return f"indexed:{getattr(fg, 'indexed', '')}"
+    elif color_type == "auto":
+        return "auto"
+    return f"{color_type}:{getattr(fg, 'value', '')}"
+
+
+def _detectar_franja_color_contigua(
+    ws: Worksheet,
+    fila: int,
+    col_inicio: int,
+    max_col: int,
+) -> Tuple[int, int, int]:
+    """Detecta la franja completa de celdas contiguas vacías a la derecha en la misma fila
+    que compartan el mismo estilo o color de fondo (fill / background_color) que celda(fila, col_inicio).
+
+    Returns:
+        Tuple[col_inicio, col_fin, span] donde span = col_fin - col_inicio + 1.
+        Si la celda no tiene relleno o no hay continuidad, retorna (col_inicio, col_inicio, 1).
+    """
+    celda_init = ws.cell(row=fila, column=col_inicio)
+    firma_init = _obtener_firma_relleno(celda_init)
+    if not firma_init:
+        return (col_inicio, col_inicio, 1)
+
+    col_fin = col_inicio
+    for c in range(col_inicio + 1, max_col + 1):
+        # 1. Si la celda inmediatamente anterior tenía un borde derecho explícito,
+        # significa que delimitaba el fin de la caja de captura.
+        cell_prev = ws.cell(row=fila, column=c - 1)
+        b_prev = cell_prev.border
+        if b_prev and b_prev.right and b_prev.right.style and b_prev.right.style != "none":
+            break
+
+        cell_cur = ws.cell(row=fila, column=c)
+        # 2. Si la celda actual tiene contenido de texto, números o fórmula, detener inmediatamente
+        if cell_cur.value is not None and str(cell_cur.value).strip() != "":
+            break
+
+        # 3. Si la celda actual pertenece a un merge preexistente no horizontal o con contenido, detener
+        r_cur = _celda_en_merge(ws, fila, c)
+        if r_cur is not None:
+            if r_cur.min_row != fila or r_cur.max_row != fila:
+                break
+            top_val = ws.cell(row=r_cur.min_row, column=r_cur.min_col).value
+            if top_val is not None and str(top_val).strip() != "":
+                break
+
+        # 4. Verificar que comparta exactamente la misma firma de estilo de relleno
+        firma_cur = _obtener_firma_relleno(cell_cur)
+        if firma_cur != firma_init:
+            break
+
+        # Si es un rango combinado vacío del mismo color, abarcar hasta su max_col
+        if r_cur is not None:
+            col_fin = max(col_fin, r_cur.max_col)
+        else:
+            col_fin = c
+
+        # 5. Si la celda actual tiene borde derecho explícito, incluye esta celda y concluye la franja
+        b_cur = cell_cur.border
+        if b_cur and b_cur.right and b_cur.right.style and b_cur.right.style != "none":
+            break
+
+    span = col_fin - col_inicio + 1
+    return (col_inicio, col_fin, span)
+
+
 def _unificar_rango_contiguo_inconsistente(
     ws: Worksheet,
     fila_destino: int,
     columna_destino: int,
     max_col: int,
     ancho_previsto: int = 1,
+    es_misma_fila: bool = True,
 ) -> Optional[Tuple[int, int, int, int]]:
     """Inspecciona el estado de las celdas contiguas en la misma fila a partir de (fila_destino, columna_destino).
-    Detecta si una o más celdas sueltas vacías quedaron por fuera de un bloque combinado existente
-    (o viceversa), o si hay bloques combinados vacíos adyacentes pertenecientes al mismo campo.
-    Si se detecta inconsistencia, descombina los bloques parciales y aplica un merge consolidado
+    1. Detecta si existe una franja continua de celdas que comparten el mismo estilo o color de fondo
+       (fill / background_color, ej. C25:L25) y la unifica mediante merge consolidado.
+    2. Detecta si una o más celdas sueltas vacías quedaron por fuera de un bloque combinado existente
+       (o viceversa), o si hay bloques combinados vacíos adyacentes pertenecientes al mismo campo.
+    Si se detecta inconsistencia o franja de color, descombina los bloques parciales y aplica un merge consolidado
     abarcando desde columna_destino hasta el final del bloque contiguo.
 
     Retorna una tupla (fila_destino, col_inicio, fila_destino, col_fin) si se unificó o modificó el rango,
@@ -91,6 +180,40 @@ def _unificar_rango_contiguo_inconsistente(
     if val_init is not None and str(val_init).strip() != "":
         return None
 
+    # ── 1. Detección de continuidad de fondo de color (ej. C25:L25) ──
+    col_ini_color, col_fin_color, span_color = _detectar_franja_color_contigua(
+        ws, fila_destino, columna_destino, max_col
+    )
+    if span_color > 1:
+        merges_detectados = []
+        for c in range(col_ini_color, col_fin_color + 1):
+            r = _celda_en_merge(ws, fila_destino, c)
+            if r is not None and r not in merges_detectados:
+                merges_detectados.append(r)
+
+        if len(merges_detectados) == 1 and merges_detectados[0].min_col == col_ini_color and merges_detectados[0].max_col == col_fin_color:
+            return (fila_destino, col_ini_color, fila_destino, col_fin_color)
+
+        for m in list(dict.fromkeys(merges_detectados)):
+            try:
+                ws.unmerge_cells(start_row=fila_destino, start_column=m.min_col, end_row=fila_destino, end_column=m.max_col)
+            except Exception as exc:
+                print(f"[AutoForm Writer Fix] Aviso al descombinar en franja de color {m}: {exc}")
+
+        try:
+            ws.merge_cells(start_row=fila_destino, start_column=col_ini_color, end_row=fila_destino, end_column=col_fin_color)
+            print(f"[AutoForm Writer Color Band] Franja continua de color unificada con éxito: Fila {fila_destino}, Cols {col_ini_color}..{col_fin_color} (span={span_color})")
+            return (fila_destino, col_ini_color, fila_destino, col_fin_color)
+        except Exception as exc:
+            print(f"[AutoForm Writer Fix] Error al combinar franja continua de color {col_ini_color}..{col_fin_color}: {exc}")
+            return None
+
+    # ── 2. Detección de celdas combinadas inconsistentes preexistentes (sin color de fondo) ──
+    # Solo reparar celdas combinadas sin color en la misma fila del rótulo (campos horizontales).
+    # En filas de datos bajo cabeceras de tabla (fila_destino != fila_origen), las columnas contiguas
+    # representan campos diferentes de la tabla y no deben unificarse.
+    if not es_misma_fila:
+        return None
     r_start = _celda_en_merge(ws, fila_destino, columna_destino)
     if r_start is not None:
         if r_start.min_row != fila_destino or r_start.max_row != fila_destino:
@@ -846,11 +969,15 @@ def rellenar_formulario_excel(
                 max_cols_libres += 1
             cant_cols_merge = max_cols_libres
 
-        # ── Reparación de celdas combinadas inconsistentes en línea de captura ──
+        # ── Reparación de celdas combinadas inconsistentes en línea de captura y franjas de color ──
         rango_unificado = None
-        if ubicacion == "derecha" and fila_destino == fila_origen:
+        es_misma_celda_init = (fila_destino == fila_origen and columna_destino == columna_origen)
+        if not es_misma_celda_init:
+            es_misma_fila = (fila_destino == fila_origen)
             rango_unificado = _unificar_rango_contiguo_inconsistente(
-                ws, fila_destino, columna_destino, max_col, ancho_previsto=cant_cols_merge
+                ws, fila_destino, columna_destino, max_col,
+                ancho_previsto=cant_cols_merge,
+                es_misma_fila=es_misma_fila,
             )
             if rango_unificado is not None:
                 _, col_ini_u, _, col_fin_u = rango_unificado
@@ -950,17 +1077,16 @@ def rellenar_formulario_excel(
         if rango_combinado is not None:
             _, ini_col, _, fin_col = rango_combinado
             for col in range(ini_col, fin_col + 1):
-                c = _obtener_celda_escribible(ws, fila_destino, col)
-                if type(c).__name__ != "MergedCell":
-                    if c.alignment:
-                        c.alignment = copy(c.alignment)
-                    else:
-                        c.alignment = Alignment(vertical="center")
-                    if relleno:
-                        c.fill = copy(relleno)
-                    if fuente:
-                        c.font = copy(fuente)
-                    if borde_preservado:
+                c = ws.cell(row=fila_destino, column=col)
+                if c.alignment:
+                    c.alignment = copy(c.alignment)
+                else:
+                    c.alignment = Alignment(vertical="center")
+                if relleno:
+                    c.fill = copy(relleno)
+                if fuente:
+                    c.font = copy(fuente)
+                if borde_preservado:
                         c.border = Border(
                             top=copy(borde_preservado.top) if borde_preservado.top else None,
                             bottom=copy(borde_preservado.bottom) if borde_preservado.bottom else None,
