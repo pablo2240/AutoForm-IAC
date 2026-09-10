@@ -181,6 +181,8 @@ Recibes un objeto JSON con:
   * Rótulos como "Nombre de la Entidad Financiera", "Entidad Bancaria Nacional", "Entidad bancaria para el pago" o "Banco" corresponden SIEMPRE a "banco".
   * Si en una sección financiera o bancaria se consulta "Moneda" o "Divisa" -> asigna "moneda".
   * Si en una sección financiera o bancaria se consulta "Ciudad" o "Sucursal" -> asigna "sucursal" (o "ciudad"). Si se consulta "País" -> asigna "pais".
+  * Si en una sección financiera o tabla de referencias bancarias se consulta "Dirección / Ciudad", "Dirección/Ciudad", "Dirección de la sucursal" o "Dirección" -> asigna "direccion" (o "sucursal").
+  * Si en una sección financiera o tabla de referencias bancarias se consulta "Teléfono / Fax", "Teléfono/Fax", "Teléfono" o "Fax" -> asigna "telefono".
 
 ### ETAPA 2: BARRERAS SEMÁNTICAS NEGATIVAS (ANTI-CONFUSIÓN ESTRICTO)
 - NUNCA asignes datos a TÍTULOS DE SECCIÓN, CAPÍTULOS O ENCABEZADOS DE GRUPO:

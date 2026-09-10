@@ -187,6 +187,18 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         "moneda",
         "derecha",
     ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:direcci[oó]n[\s/]+ciudad|ciudad[\s/]+direcci[oó]n|direcci[oó]n(?:\s+(?:de\s+la\s+)?sucursal)?|domicilio(?:\s+bancario)?)\s*:?\s*$", re.IGNORECASE),
+        "direccion",
+        "abajo",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:tel[eé]fono[\s/]+fax|fax[\s/]+tel[eé]fono|tel[eé]fono|fax|tel[eé]fono\s+fijo)\s*:?\s*$", re.IGNORECASE),
+        "telefono",
+        "abajo",
+    ),
     # ── Dominio 2b: Cifras de Balance y Estados Financieros (ADR-0006) ──
     (
         PAT_SECCION_FINANCIERO,

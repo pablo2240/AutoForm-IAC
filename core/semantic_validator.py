@@ -448,6 +448,12 @@ def _regla_autocorrecciones_semanticas_adicionales(
         elif re.search(r"^\s*(?:ciudad|municipio)\s*:?\s*$", rotulo_normalizado):
             if campo != "ciudad":
                 return "ciudad", "Rótulo 'Ciudad' en contexto financiero → asignado a 'ciudad'."
+        elif re.search(r"^\s*(?:direcci[oó]n[\s/]+ciudad|ciudad[\s/]+direcci[oó]n|direcci[oó]n(?:\s+(?:de\s+la\s+)?sucursal)?)\s*:?\s*$", rotulo_normalizado):
+            if campo not in ("direccion", "sucursal", "ciudad"):
+                return "direccion", "Rótulo 'Dirección/Ciudad' en contexto bancario → asignado a 'direccion'."
+        elif re.search(r"^\s*(?:tel[eé]fono[\s/]+fax|fax[\s/]+tel[eé]fono)\s*:?\s*$", rotulo_normalizado):
+            if campo != "telefono":
+                return "telefono", "Rótulo 'Teléfono/Fax' en contexto bancario → asignado a 'telefono'."
 
     # 10. Contacto Comercial: Encargado de Ventas / Nombre Encargado de Ventas -> responsable_nombre
     if any(sin in rotulo_normalizado for sin in (
@@ -716,7 +722,11 @@ def validar_item_mapeo(
     if campo_original in _CAMPOS_BANCARIOS:
         es_rot_cert_bancaria = bool(re.search(r"cert(?:ificaci[oó]n)?\s*bancari|certificada|nit\s*\(.*?cert.*?\)", rotulo_norm))
         es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS) or es_rot_cert_bancaria
-        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal", "financiera", "entidad", "moneda", "divisa")) or es_rot_cert_bancaria
+        es_rot_fin = (
+            any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal", "financiera", "entidad", "moneda", "divisa"))
+            or (campo_original in ("sucursal", "ciudad", "pais", "direccion") and any(t in rotulo_norm for t in ("ciudad", "municipio", "sucursal", "direccion", "domicilio", "pais")))
+            or es_rot_cert_bancaria
+        )
         if not (es_sec_fin and es_rot_fin):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
