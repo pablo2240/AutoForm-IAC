@@ -140,6 +140,22 @@ TOKENS_REFERENCIAS_EXCLUIDAS: Set[str] = {
     "referencias de proveedores",
 }
 
+# ADR-0010: Tokens de secciones de uso exclusivo o diligenciamiento interno del cliente
+TOKENS_USO_INTERNO_EXCLUSIVO: Set[str] = {
+    "espacio diligenciado por",
+    "espacio diligenciado",
+    "para ser diligenciado por",
+    "diligenciado por la empresa",
+    "diligenciado por el cliente",
+    "uso exclusivo",
+    "uso interno",
+    "espacio exclusivo",
+    "espacio reservado",
+    "reservado para la empresa",
+    "para uso de la entidad",
+    "espacio para diligenciamiento",
+}
+
 TOKENS_CONTACTO_SECCION: Set[str] = TOKENS_CONTACTO_COMERCIAL.union({
     "consultor", "operativo", "responsable", "diligenciamiento", "cuenta"
 })

@@ -164,7 +164,14 @@ _PATRON_CAMPOS_FIRMA = re.compile(
 
 
 _PATRON_SECCION_USO_EXCLUSIVO = re.compile(
-    r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|espacio\s+reservado|reservado\s+para\s+la\s+empresa|verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones",
+    r"espacio\s+(?:(?:para\s+ser\s+)?diligenciado|reservado|exclusivo)(?:\s+por)?|"
+    r"diligenciado\s+por\s+(?:la\s+)?(?:empresa|entidad|cliente|[a-z0-9\s]+sas|[a-z0-9\s]+s\.a\.s)|"
+    r"para\s+(?:ser\s+)?diligenciado\s+por|"
+    r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|"
+    r"espacio\s+reservado|reservado\s+para\s+la\s+empresa|"
+    r"verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones|"
+    r"para\s+uso\s+de\s+la\s+entidad|auditor[ií]a\s+interna|"
+    r"observaciones\s+del\s+l[ií]der",
     re.IGNORECASE
 )
 
@@ -176,6 +183,8 @@ def _obtener_rangos_uso_exclusivo(mapa: List[Dict[str, Any]]) -> Set[Tuple[str, 
     Estas secciones son para diligenciamiento interno por parte de auditores o líderes
     de proceso de la empresa receptora y NUNCA deben rellenarse con datos del proveedor.
     """
+    from core.spatial_ir import _es_titulo_seccion_externa_proveedor
+
     celdas_exclusivas: Set[Tuple[str, int]] = set()
 
     cabeceras_exclusivas = []
@@ -188,14 +197,14 @@ def _obtener_rangos_uso_exclusivo(mapa: List[Dict[str, Any]]) -> Set[Tuple[str, 
         return celdas_exclusivas
 
     for hoja_exc, fila_exc in cabeceras_exclusivas:
-        fila_fin = fila_exc + 15
+        fila_fin = fila_exc + 30
         for elem in mapa:
             if str(elem.get("hoja", "")) != hoja_exc:
                 continue
             f = int(elem.get("fila", 0))
             if f > fila_exc:
                 txt = str(elem.get("valor", "")).strip()
-                if _es_titulo_seccion(txt) and not _PATRON_SECCION_USO_EXCLUSIVO.search(txt):
+                if _es_titulo_seccion_externa_proveedor(txt):
                     fila_fin = min(fila_fin, f - 1)
                     break
 

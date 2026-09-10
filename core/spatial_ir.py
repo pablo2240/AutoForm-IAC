@@ -27,6 +27,7 @@ from core.domain_constants import (
     TOKENS_CONTACTO_COMERCIAL,
     TOKENS_REFERENCIAS_EXCLUIDAS,
     TOKENS_TITULO_SECCION_PRIORITARIO,
+    TOKENS_USO_INTERNO_EXCLUSIVO,
 )
 
 
@@ -235,6 +236,9 @@ _PATRON_CONTROL_DOCUMENTAL = re.compile(
 )
 
 _PATRON_USO_EXCLUSIVO = re.compile(
+    r"espacio\s+(?:(?:para\s+ser\s+)?diligenciado|reservado|exclusivo)(?:\s+por)?|"
+    r"diligenciado\s+por\s+(?:la\s+)?(?:empresa|entidad|cliente|[a-z0-9\s]+sas|[a-z0-9\s]+s\.a\.s)|"
+    r"para\s+(?:ser\s+)?diligenciado\s+por|"
     r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|"
     r"espacio\s+reservado|reservado\s+para\s+la\s+empresa|"
     r"verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones|"
@@ -470,8 +474,13 @@ def clasificar_seccion_contacto(
     titulo_sec: str,
     filas: Optional[List[FilaIR]] = None,
 ) -> Tuple[PertinenciaSeccion, str]:
-    """Clasifica si una sección corresponde a contacto comercial o a referencias externas de terceros (ADR-0009)."""
     titulo = _normalizar(titulo_sec)
+    # PRIORIDAD 1: Si es área de uso exclusivo / interno del cliente, NO es contacto comercial
+    if any(t in titulo for t in TOKENS_USO_INTERNO_EXCLUSIVO) or _PATRON_USO_EXCLUSIVO.search(titulo_sec):
+        return (
+            PertinenciaSeccion.OMITIR_USO_INTERNO,
+            "Área de uso exclusivo o diligenciamiento interno del cliente / auditoría (Safe Passivity)",
+        )
 
     es_referencias = any(t in titulo for t in TOKENS_REFERENCIAS_EXCLUIDAS)
     es_contacto = any(t in titulo for t in TOKENS_CONTACTO_COMERCIAL)
@@ -512,6 +521,23 @@ def clasificar_seccion_contacto(
         )
 
     return PertinenciaSeccion.PROCESAR, "Sección procesable"
+
+
+def _es_titulo_seccion_externa_proveedor(texto: str) -> bool:
+    """Retorna True si un título corresponde explícitamente a una sección externa del proveedor/oferente
+    que marcaría el fin de un bloque de uso interno.
+    """
+    t = _normalizar(texto)
+    patrones = [
+        r"datos\s+(?:de\s+la\s+empresa|del\s+proveedor|del\s+oferente|del\s+proponente|del\s+acreedor|basicos|generales)",
+        r"datos\s+del\s+representante",
+        r"informacion\s+(?:general|basica|del\s+proveedor|de\s+la\s+empresa)",
+        r"declaracion\s+de\s+(?:origen|bienes|fondos)",
+        r"firma\s+del\s+representante",
+        r"firma\s+autorizada",
+        r"documentos?\s+requeridos?",
+    ]
+    return any(re.search(p, t) for p in patrones)
 
 
 def construir_ir(
@@ -555,6 +581,7 @@ def construir_ir(
     sec_counter = 0
 
     for hoja_nombre, elems_hoja in por_hoja.items():
+        en_bloque_uso_interno = False
 
         # ── Paso 2: Ordenar por posición espacial ──
         elems_sorted = sorted(
@@ -685,14 +712,22 @@ def construir_ir(
             # Ordenar filas por número
             filas_ordenadas = [filas_mapa[k] for k in sorted(filas_mapa.keys())]
 
-            # Asignar pertinencia según reglas de negocio (ADR-0004 / ADR-0005)
+            # Asignar pertinencia según reglas de negocio (ADR-0004 / ADR-0005 / ADR-0010)
             titulo_sec_norm = _normalizar(titulo_sec)
+
+            if en_bloque_uso_interno and _es_titulo_seccion_externa_proveedor(titulo_sec):
+                en_bloque_uso_interno = False
+
             if es_seccion_o_campo_pep(titulo_sec):
                 pert_sec = PertinenciaSeccion.OMITIR_LEGAL
                 motivo_sec = "Sección o bloque de PEP / Beneficiarios Finales (Safe Passivity ADR-0005)"
-            elif _PATRON_USO_EXCLUSIVO.search(titulo_sec):
+            elif _PATRON_USO_EXCLUSIVO.search(titulo_sec) or any(t in titulo_sec_norm for t in TOKENS_USO_INTERNO_EXCLUSIVO):
                 pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
-                motivo_sec = "Área de uso exclusivo de la entidad receptora / auditoría"
+                motivo_sec = "Área de uso exclusivo de la entidad receptora / diligenciamiento interno"
+                en_bloque_uso_interno = True
+            elif en_bloque_uso_interno:
+                pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
+                motivo_sec = f"Sub-bloque interno dentro de área reservada para la empresa ({titulo_sec})"
             else:
                 pert_c, motivo_c = clasificar_seccion_contacto(titulo_sec, filas_ordenadas)
                 if pert_c != PertinenciaSeccion.PROCESAR:

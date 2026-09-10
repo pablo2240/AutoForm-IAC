@@ -60,6 +60,108 @@ def _calcular_max_columna_real(ws: Worksheet) -> int:
     return max(max_c, 1)
 
 
+def _tiene_borde_relevante(celda: Any) -> bool:
+    """Retorna True si la celda tiene algún borde visible configurado."""
+    if not celda or not celda.border:
+        return False
+    b = celda.border
+    for s in (b.left, b.right, b.top, b.bottom):
+        if s and s.style and s.style != "none":
+            return True
+    return False
+
+
+def _unificar_rango_contiguo_inconsistente(
+    ws: Worksheet,
+    fila_destino: int,
+    columna_destino: int,
+    max_col: int,
+    ancho_previsto: int = 1,
+) -> Optional[Tuple[int, int, int, int]]:
+    """Inspecciona el estado de las celdas contiguas en la misma fila a partir de (fila_destino, columna_destino).
+    Detecta si una o más celdas sueltas vacías quedaron por fuera de un bloque combinado existente
+    (o viceversa), o si hay bloques combinados vacíos adyacentes pertenecientes al mismo campo.
+    Si se detecta inconsistencia, descombina los bloques parciales y aplica un merge consolidado
+    abarcando desde columna_destino hasta el final del bloque contiguo.
+
+    Retorna una tupla (fila_destino, col_inicio, fila_destino, col_fin) si se unificó o modificó el rango,
+    o None si no hubo cambios.
+    """
+    val_init = ws.cell(row=fila_destino, column=columna_destino).value
+    if val_init is not None and str(val_init).strip() != "":
+        return None
+
+    r_start = _celda_en_merge(ws, fila_destino, columna_destino)
+    if r_start is not None:
+        if r_start.min_row != fila_destino or r_start.max_row != fila_destino:
+            return None
+        col_inicio = r_start.min_col
+        col_fin = r_start.max_col
+        merges_detectados = [r_start]
+    else:
+        col_inicio = columna_destino
+        col_fin = columna_destino
+        merges_detectados = []
+
+    limite_exploracion = min(max_col, col_inicio + max(ancho_previsto, 15))
+    while col_fin + 1 <= limite_exploracion:
+        c_next = col_fin + 1
+        val_next = ws.cell(row=fila_destino, column=c_next).value
+        if val_next is not None and str(val_next).strip() != "":
+            break
+
+        r_next = _celda_en_merge(ws, fila_destino, c_next)
+        if r_next is not None:
+            if r_next.min_row != fila_destino or r_next.max_row != fila_destino:
+                break
+            top_val = ws.cell(row=r_next.min_row, column=r_next.min_col).value
+            if top_val is not None and str(top_val).strip() != "":
+                break
+            merges_detectados.append(r_next)
+            col_fin = r_next.max_col
+        else:
+            hay_merge_adelante = False
+            for c_fwd in range(c_next + 1, min(limite_exploracion + 1, max_col + 1)):
+                v_fwd = ws.cell(row=fila_destino, column=c_fwd).value
+                if v_fwd is not None and str(v_fwd).strip() != "":
+                    break
+                r_fwd = _celda_en_merge(ws, fila_destino, c_fwd)
+                if r_fwd is not None and r_fwd.min_row == fila_destino == r_fwd.max_row:
+                    top_fwd = ws.cell(row=r_fwd.min_row, column=r_fwd.min_col).value
+                    if top_fwd is None or str(top_fwd).strip() == "":
+                        hay_merge_adelante = True
+                        break
+
+            if hay_merge_adelante:
+                col_fin = c_next
+            elif len(merges_detectados) > 0 and (
+                c_next <= col_inicio + ancho_previsto - 1 or _tiene_borde_relevante(ws.cell(row=fila_destino, column=c_next))
+            ):
+                col_fin = c_next
+            else:
+                break
+
+    if len(merges_detectados) > 0 and col_fin > col_inicio:
+        if len(merges_detectados) == 1 and col_inicio == merges_detectados[0].min_col and col_fin == merges_detectados[0].max_col:
+            return None
+
+        for m in list(dict.fromkeys(merges_detectados)):
+            try:
+                ws.unmerge_cells(start_row=fila_destino, start_column=m.min_col, end_row=fila_destino, end_column=m.max_col)
+            except Exception as exc:
+                print(f"[AutoForm Writer Fix] Aviso al descombinar {m}: {exc}")
+
+        try:
+            ws.merge_cells(start_row=fila_destino, start_column=col_inicio, end_row=fila_destino, end_column=col_fin)
+            print(f"[AutoForm Writer Fix] Rango combinado inconsistente unificado con éxito: Fila {fila_destino}, Cols {col_inicio}..{col_fin}")
+            return (fila_destino, col_inicio, fila_destino, col_fin)
+        except Exception as exc:
+            print(f"[AutoForm Writer Fix] Error al combinar rango unificado {col_inicio}..{col_fin}: {exc}")
+            return None
+
+    return None
+
+
 def _buscar_campo_anidado(obj: Any, campo: str) -> Any:
 
     if isinstance(obj, dict):
@@ -731,6 +833,17 @@ def rellenar_formulario_excel(
                 max_cols_libres += 1
             cant_cols_merge = max_cols_libres
 
+        # ── Reparación de celdas combinadas inconsistentes en línea de captura ──
+        rango_unificado = None
+        if ubicacion == "derecha" and fila_destino == fila_origen:
+            rango_unificado = _unificar_rango_contiguo_inconsistente(
+                ws, fila_destino, columna_destino, max_col, ancho_previsto=cant_cols_merge
+            )
+            if rango_unificado is not None:
+                _, col_ini_u, _, col_fin_u = rango_unificado
+                columna_destino = col_ini_u
+                cant_cols_merge = col_fin_u - col_ini_u + 1
+
         # ── Obtener el valor del campo ────────────────────────────────────
         campo = str(item.get("campo", ""))
         valor = _obtener_valor_datos(datos_empresa, campo)
@@ -789,7 +902,9 @@ def rellenar_formulario_excel(
 
         # ── 3. Aplicar merge SEGURO solo si se escribió y las celdas contiguas están totalmente vacías ──
         rango_combinado: Optional[Tuple[int, int, int, int]] = None
-        if escrito and cant_cols_merge > 1 and ubicacion == "derecha" and fila_destino == fila_origen and not es_misma:
+        if rango_unificado is not None:
+            rango_combinado = rango_unificado
+        elif escrito and cant_cols_merge > 1 and ubicacion == "derecha" and fila_destino == fila_origen and not es_misma:
             rango_preexistente = _celda_en_merge(ws, fila_destino, columna_destino)
             if rango_preexistente is None:
                 max_libres = 1

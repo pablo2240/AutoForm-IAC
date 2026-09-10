@@ -852,8 +852,9 @@ def validar_plan_mapeo(
     # Aplanar perfil una sola vez (performance en lotes)
     datos_planos = _aplanar_datos_empresa(datos_empresa)
 
-    # Construir índice de secciones omitidas desde el IR (short-circuit)
+    # Construir índice de secciones y filas omitidas desde el IR (short-circuit)
     secciones_omitidas: Set[str] = set()
+    filas_omitidas: Set[Tuple[str, int]] = set()
     tiene_operador = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
     if documento_ir is not None:
         try:
@@ -865,6 +866,8 @@ def validar_plan_mapeo(
                     PertinenciaSeccion.OMITIR_LEGAL,
                 ) or (sec.pertinencia == PertinenciaSeccion.CONTACTO_COMERCIAL and not tiene_operador):
                     secciones_omitidas.add(_normalizar(sec.titulo))
+                    for f in sec.filas:
+                        filas_omitidas.add((sec.hoja, f.numero_fila))
         except (ImportError, AttributeError):
             pass  # Si el IR no está disponible, seguimos sin short-circuit
 
@@ -873,14 +876,18 @@ def validar_plan_mapeo(
     asignados_por_seccion: Dict[str, Set[str]] = {}
 
     for item in plan_mapeo:
-        # ── Short-circuit: sección marcada OMITIR_* en el IR ─────────────────
+        # ── Short-circuit: sección o fila marcada OMITIR_* en el IR ──────────
         seccion_item = _normalizar(
             str(item.get("seccion") or item.get("seccion_padre") or "")
         )
+        hoja_item = str(item.get("hoja") or "")
+        fila_item = int(item.get("fila") or 0)
+        es_fila_omitida = (hoja_item, fila_item) in filas_omitidas
         pert_item = str(item.get("seccion_pertinencia") or item.get("pertinencia") or "").upper()
         if (
             pert_item in ("OMITIR_TERCEROS", "OMITIR_USO_INTERNO", "OMITIR_LEGAL")
             or (pert_item == "CONTACTO_COMERCIAL" and not tiene_operador)
+            or es_fila_omitida
             or (secciones_omitidas and any(
                 seccion_item.startswith(omit) or omit in seccion_item
                 for omit in secciones_omitidas
