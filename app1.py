@@ -956,6 +956,15 @@ with st.sidebar:
                 args=(f"pe_{slug_perfil}_tip_cta", "tipo_cuenta"),
                 disabled=not es_admin_usuario,
             )
+            moneda = st.text_input(
+                "Moneda / Divisa",
+                value=str(datos_empresa.get("moneda") or "Pesos"),
+                help="Moneda predeterminada para operaciones financieras (ej: Pesos, COP, USD)",
+                key=f"pe_{slug_perfil}_moneda",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_moneda", "moneda"),
+                disabled=not es_admin_usuario,
+            )
 
             st.markdown("##### 📊 Balance y Cifras Financieras")
             total_activos = st.text_input(
@@ -1054,6 +1063,7 @@ with st.sidebar:
                     "sucursal": sucursal,
                     "numero_cuenta": numero_cuenta,
                     "tipo_cuenta": tipo_cuenta,
+                    "moneda": moneda,
                     "total_activos": total_activos,
                     "total_pasivos": total_pasivos,
                     "total_patrimonio": total_patrimonio,

@@ -53,7 +53,7 @@ PATRON_CONTACTO_COMERCIAL = re.compile(
 
 # ── Conjuntos de campos protegidos por categoría ──────────────────────────────
 CAMPOS_BANCARIOS: Set[str] = {
-    "banco", "numero_cuenta", "tipo_cuenta", "sucursal"
+    "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "moneda"
 }
 
 # ADR-0006: Cifras de Balance y Estados Financieros Empresariales
@@ -61,6 +61,7 @@ CAMPOS_FINANCIEROS_BALANCE: Set[str] = {
     "total_activos", "total_pasivos", "total_patrimonio",
     "total_ingresos_mensuales", "total_egresos_mensuales",
     "total_ingresos_anuales", "total_egresos_anuales",
+    "moneda",
     # Aliases cortos
     "activos", "pasivos", "patrimonio",
     "ingresos_mensuales", "egresos_mensuales",
@@ -90,7 +91,7 @@ CAMPOS_EMPRESA: Set[str] = {
 
 # ── Tokens de sección para clasificación de dominio ────────────────────────────
 TOKENS_FINANCIEROS_SECCION: Set[str] = {
-    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos", "pago", "transferencia", "contab", "giro", "tesoreria"
+    "banco", "bancaria", "bancario", "financiera", "financiero", "cuenta", "pagos", "pago", "transferencia", "contab", "giro", "tesoreria", "entidad", "moneda", "divisa"
 }
 
 # ADR-0006: Tokens de sección estrictos para Cifras de Balance

@@ -204,7 +204,8 @@ _PATRON_OPCIONES = re.compile(
     r"masculino|femenino|m|f|persona\s+natural|persona\s+jur[ií]dica|"
     r"urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|"
     r"principal|sucursal|privada|p[uú]blica|mixta|simplificado|"
-    r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica)\s*$",
+    r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica|"
+    r"contado|credito|cr[eé]dito)\s*$",
     re.IGNORECASE,
 )
 
@@ -283,6 +284,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
 
     # Campos directos con indicadores inline nunca son títulos de sección
     if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
+        return False
+
+    # Opciones de selección o respuestas nunca son títulos de sección
+    if _PATRON_OPCIONES.search(t_clean):
         return False
 
     t_norm = _normalizar(t_clean)
@@ -627,7 +632,9 @@ def construir_ir(
                 der_vacia = bool(elem.get("derechaVacia", False))
                 ab_vacia = bool(elem.get("abajoVacia", False))
                 es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta)\s*$", texto, re.IGNORECASE))
-                if ab_vacia and (not der_vacia or es_cabecera_tabla):
+                if re.search(r"_{2,}|\.{3,}", texto):
+                    dir_esc = "misma"
+                elif ab_vacia and (not der_vacia or es_cabecera_tabla):
                     dir_esc = "abajo"
                 else:
                     dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()

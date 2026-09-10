@@ -266,6 +266,9 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
         elif v_ali and not v_can:
             plano[canonico] = v_ali
 
+    # Normalización de moneda financiera (por defecto "Pesos")
+    plano["moneda"] = str(plano.get("moneda") or "Pesos").strip()
+
     return plano
 
 
@@ -316,6 +319,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             }
         },
         "financiero": {
+            "moneda": str(plano.get("moneda") or "Pesos"),
             "banco": {
                 "banco": str(plano.get("banco", "")),
                 "sucursal": str(plano.get("sucursal", "")),
@@ -323,8 +327,10 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             "cuenta": {
                 "numero_cuenta": str(plano.get("numero_cuenta", "")),
                 "tipo_cuenta": str(plano.get("tipo_cuenta", "AHORROS")),
+                "moneda": str(plano.get("moneda") or "Pesos"),
             },
             "balance": {
+                "moneda": str(plano.get("moneda") or "Pesos"),
                 "total_activos": str(plano.get("total_activos") or plano.get("activos") or ""),
                 "total_pasivos": str(plano.get("total_pasivos") or plano.get("pasivos") or ""),
                 "total_patrimonio": str(plano.get("total_patrimonio") or plano.get("patrimonio") or ""),
@@ -345,7 +351,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
         "ciudad_residencia", "departamento_residencia",
         "correo", "correo_representante",
         "telefono_representante", "celular", "celular_representante", "banco", "sucursal",
-        "numero_cuenta", "tipo_cuenta", "total_activos", "activos", "total_pasivos", "pasivos",
+        "numero_cuenta", "tipo_cuenta", "moneda", "total_activos", "activos", "total_pasivos", "pasivos",
         "total_patrimonio", "patrimonio", "total_ingresos_mensuales", "ingresos_mensuales",
         "total_egresos_mensuales", "egresos_mensuales", "total_ingresos_anuales", "ingresos_anuales",
         "total_egresos_anuales", "egresos_anuales", "ciudad_departamento"

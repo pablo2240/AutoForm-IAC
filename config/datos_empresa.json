@@ -41,15 +41,18 @@
     }
   },
   "financiero": {
+    "moneda": "Pesos",
     "banco": {
       "banco": "BANCOLOMBIA",
       "sucursal": "Medellin"
     },
     "cuenta": {
       "numero_cuenta": "00300833888",
-      "tipo_cuenta": "AHORROS"
+      "tipo_cuenta": "AHORROS",
+      "moneda": "Pesos"
     },
     "balance": {
+      "moneda": "Pesos",
       "total_activos": "16151175009",
       "total_pasivos": "8831977528",
       "total_patrimonio": "7319197482",

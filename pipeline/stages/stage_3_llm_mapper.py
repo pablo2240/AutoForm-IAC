@@ -318,9 +318,12 @@ def _ejecutar_diff_loop_seccion(
     if ids_pendientes:
         try:
             from core.fastembed_matcher import buscar_rescate_vectorial
+            from core.profile_manager import aplanar_perfil
+            perfil_plano = aplanar_perfil(datos_empresa)
             candidatos_disponibles = [
-                k for k in datos_empresa.keys()
-                if k not in campos_asignados and datos_empresa.get(k)
+                k for k, v in perfil_plano.items()
+                if k not in campos_asignados and v and str(v).strip()
+                and k not in ("empresa", "representante_legal", "financiero")
             ]
             # Domain Isolation: Enjaulado estricto por categoría de sección
             if not es_sec_financiera:
@@ -603,9 +606,13 @@ def ejecutar_stage_3_mapper(
             elem_orig = c_info["_elem_orig"]
 
             ancho_l = int(elem_orig.get("anchoLinea", 1) or 1)
-            ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
-            if ubic not in ("derecha", "abajo", "misma"):
-                ubic = "derecha"
+            rotulo_orig = str(c_info.get("rotulo", ""))
+            if re.search(r"_{2,}|\.{3,}", rotulo_orig):
+                ubic = "misma"
+            else:
+                ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
+                if ubic not in ("derecha", "abajo", "misma"):
+                    ubic = "derecha"
 
             plan_item = {
                 "hoja": str(elem_orig.get("hoja", "Hoja1")),

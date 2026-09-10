@@ -34,7 +34,7 @@ PAT_SECCION_REP_LEGAL = re.compile(
     re.IGNORECASE,
 )
 PAT_SECCION_FINANCIERO = re.compile(
-    r"\b(?:financier[ao]|bancari[ao]|cuenta|banco|pagos?|transferencia)\b",
+    r"\b(?:financier[ao]s?|bancari[ao]s?|cuenta|banco|pagos?|transferencia)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_JUNTA_COMP = re.compile(
@@ -147,26 +147,44 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 2: Información Financiera y Bancaria ──
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:banco|entidad\s+bancaria|nombre\s+(?:del\s+)?banco|instituci[oó]n|entidad\s+financiera)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:banco|entidad\s+bancaria|nombre\s+(?:del\s+)?banco|instituci[oó]n|entidad\s+financiera|nombre\s+de\s+la\s+entidad\s+financiera|entidad\s+bancaria\s+nacional|entidad\s+bancaria\s+para\s+el\s+pago)\s*:?\s*$", re.IGNORECASE),
         "banco",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:n[uú]mero\s+de\s+cuenta|no\.?\s*cuenta|cuenta\s+no\.?|n[uú]mero\s+cuenta|cuenta)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:n[uú]mero\s+de\s+cuenta|no\.?\s*cuenta|cuenta\s+no\.?|n[uú]mero\s+cuenta|cuenta|n[°º]?\s*(?:de\s+)?cuenta)\s*:?\s*$", re.IGNORECASE),
         "numero_cuenta",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:tipo\s+(?:de\s+)?cuenta)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:tipo\s+(?:de\s+)?cuenta)\s*:?\s*$", re.IGNORECASE),
         "tipo_cuenta",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*sucursal(?:\s+bancaria)?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*sucursal(?:\s+bancaria)?\s*:?\s*$", re.IGNORECASE),
         "sucursal",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:ciudad|municipio)\s*:?\s*$", re.IGNORECASE),
+        "ciudad",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*pa[ií]s\s*:?\s*$", re.IGNORECASE),
+        "pais",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:moneda|tipo\s+(?:de\s+)?moneda|divisa)\s*:?\s*$", re.IGNORECASE),
+        "moneda",
         "derecha",
     ),
     # ── Dominio 2b: Cifras de Balance y Estados Financieros (ADR-0006) ──
@@ -545,7 +563,9 @@ def ejecutar_pase_cobertura_exhaustiva(
             der_vacia = bool(elem_raw.get("derechaVacia", False))
             ab_vacia = bool(elem_raw.get("abajoVacia", False))
 
-            if dir_fallback == "abajo" or (not der_vacia and ab_vacia) or pat_sec == PAT_SECCION_JUNTA_COMP:
+            if re.search(r"_{2,}|\.{3,}", txt):
+                ubicacion = "misma"
+            elif dir_fallback == "abajo" or (not der_vacia and ab_vacia) or pat_sec == PAT_SECCION_JUNTA_COMP:
                 ubicacion = "abajo"
             else:
                 ubicacion = dir_espacial if dir_espacial in ("derecha", "abajo", "misma") else dir_fallback

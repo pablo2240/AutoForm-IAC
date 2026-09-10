@@ -424,6 +424,31 @@ def _regla_autocorrecciones_semanticas_adicionales(
         elif campo not in ("cedula", "nit", "numero_cuenta"):
             return "cedula", "Rótulo 'Identificación / Número' → asignado a 'cedula'."
 
+    # 7. Sinónimos de Entidad Financiera / Bancaria -> banco (BANCOLOMBIA)
+    if any(sin in rotulo_normalizado for sin in (
+        "nombre de la entidad financiera",
+        "entidad bancaria nacional",
+        "entidad bancaria para el pago",
+        "entidad financiera",
+        "entidad bancaria",
+    )):
+        if campo != "banco":
+            return "banco", "Rótulo de entidad financiera/bancaria → asignado determinísticamente a 'banco'."
+
+    # 8. Moneda / Divisa -> moneda (Pesos)
+    if any(sin in rotulo_normalizado for sin in ("moneda", "divisa", "tipo de moneda")):
+        if campo != "moneda":
+            return "moneda", "Rótulo de moneda/divisa → asignado a 'moneda'."
+
+    # 9. Ciudad / País en contexto financiero/bancario
+    if any(t in seccion_normalizada for t in _TOKENS_SECCION_BANCARIA):
+        if re.search(r"^\s*pa[ií]s\s*:?\s*$", rotulo_normalizado):
+            if campo != "pais":
+                return "pais", "Rótulo 'País' en contexto financiero → asignado a 'pais'."
+        elif re.search(r"^\s*(?:ciudad|municipio)\s*:?\s*$", rotulo_normalizado):
+            if campo != "ciudad":
+                return "ciudad", "Rótulo 'Ciudad' en contexto financiero → asignado a 'ciudad'."
+
     return campo, ""
 
 
@@ -650,7 +675,7 @@ def validar_item_mapeo(
     # Que el rótulo diga "cuenta" no autoriza inyección bancaria fuera de sección financiera.
     if campo_original in _CAMPOS_BANCARIOS:
         es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS)
-        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal"))
+        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal", "financiera", "entidad", "moneda", "divisa"))
         if not (es_sec_fin and es_rot_fin):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
@@ -685,6 +710,9 @@ def validar_item_mapeo(
             rotulo_valido = ("anual" in rotulo_norm or "año" in rotulo_norm or "ejercicio" in rotulo_norm)
         elif campo_original in ("total_egresos_anuales", "egresos_anuales") and es_rot_egresos:
             rotulo_valido = ("anual" in rotulo_norm or "año" in rotulo_norm or "ejercicio" in rotulo_norm)
+        elif campo_original == "moneda" and any(t in rotulo_norm for t in ("moneda", "divisa")):
+            rotulo_valido = True
+            es_sec_bal = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS)
 
         if not (es_sec_bal and rotulo_valido):
             resultado["estado"] = EstadoMapeo.DESCARTADO

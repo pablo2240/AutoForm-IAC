@@ -88,8 +88,8 @@ Los datos maestros de la empresa se organizan en 4 dominios taxonómicos jerárq
    - `contacto`: `correo`, `telefono`, `celular` (Teléfono móvil / Celular del representante).
    - `ubicacion`: `ciudad_residencia` (Ciudad/Municipio de residencia o domicilio personal del representante, ej. "Medellín"), `departamento_residencia` (Departamento de residencia del representante, ej. "Antioquia").
 3. `financiero`:
-   - `banco`: `banco` (Nombre de la entidad financiera), `sucursal`.
-   - `cuenta`: `numero_cuenta` (Número de cuenta bancaria), `tipo_cuenta` (Ahorros / Corriente).
+   - `banco`: `banco` (Nombre de la entidad financiera, Entidad Bancaria Nacional o Entidad bancaria para el pago), `sucursal`.
+   - `cuenta`: `numero_cuenta` (Número de cuenta bancaria), `tipo_cuenta` (Ahorros / Corriente), `moneda` (Moneda o divisa de la operación, ej. "Pesos").
    - `balance`: `total_activos`, `total_pasivos`, `total_patrimonio`, `total_ingresos_mensuales`, `total_egresos_mensuales`, `total_ingresos_anuales`, `total_egresos_anuales`.
 4. `responsable` (Operador / Asesor Comercial / Diligenciado Por):
    - `identidad`: `responsable_nombre` (Nombre completo del asesor/contacto comercial/operador), `responsable_cargo` (Cargo del asesor), `responsable_cedula` (Documento de identidad del asesor).
@@ -177,7 +177,10 @@ Recibes un objeto JSON con:
   * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "Documento", "Identificación", "No. Identificación" y viene en el contexto o fila del REPRESENTANTE LEGAL / PERSONA NATURAL / GUILLERMO (tras el nombre de la persona) -> asigna "cedula".
   * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "ID" y viene en la sección o tabla de JUNTA DIRECTIVA / ÓRGANOS DE ADMINISTRACIÓN (junto a TIPO ID o NOMBRES) -> asigna "cedula".
   * Si el rótulo dice "Número", "No.", "N°", "No:", "Num.", "Identificación", "No. Identificación", "Identificación Tributaria" y viene en el contexto o fila de la EMPRESA / RAZÓN SOCIAL / PERSONA JURÍDICA (tras el nombre de la empresa) -> asigna "nit".
-  * Si el rótulo dice "Número", "No.", "No. de Cuenta" y está en la sección de INFORMACIÓN BANCARIA / CUENTA -> asigna "numero_cuenta".
+  * Si el rótulo dice "Número", "No.", "No. de Cuenta", "N° de Cuenta" y está en la sección de INFORMACIÓN BANCARIA / CUENTA -> asigna "numero_cuenta".
+  * Rótulos como "Nombre de la Entidad Financiera", "Entidad Bancaria Nacional", "Entidad bancaria para el pago" o "Banco" corresponden SIEMPRE a "banco".
+  * Si en una sección financiera o bancaria se consulta "Moneda" o "Divisa" -> asigna "moneda".
+  * Si en una sección financiera o bancaria se consulta "Ciudad" o "Sucursal" -> asigna "sucursal" (o "ciudad"). Si se consulta "País" -> asigna "pais".
 
 ### ETAPA 2: BARRERAS SEMÁNTICAS NEGATIVAS (ANTI-CONFUSIÓN ESTRICTO)
 - NUNCA asignes datos a TÍTULOS DE SECCIÓN, CAPÍTULOS O ENCABEZADOS DE GRUPO:
@@ -185,7 +188,7 @@ Recibes un objeto JSON con:
   * Los títulos de sección son meros separadores estructurales del documento, NO casillas de llenado. OMITE COMPLETAMENTE SU ID (no lo incluyas en el JSON).
 - NUNCA cruces dominios:
   * AISLAMIENTO DE DOMINIO DE BALANCE FINANCIERO: Las cifras de balance (total_activos, total_pasivos, total_patrimonio, ingresos, egresos) deben asignarse ÚNICAMENTE en secciones contables o financieras del balance general. NUNCA las asignes fuera de este contexto ni en casillas de ventas no operacionales o campos comerciales.
-  * NO asignes "razon_social" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
+  * NO asignes "razon_social" ni "financiero" a "Nombre de la Entidad Financiera" o "Entidad Bancaria" (corresponde exclusivamente a "banco").
   * NO asignes "cedula" ni "nit" a "Actividad Económica", "Código CIIU" o "Sector Económico" (omite el id).
   * REGLA DE RÓTULOS COMPUESTOS (CC/CE/PAS/NIT vs Tipo): Si el rótulo pide el número combinado como "CC/CE/PAS/NIT" o "NIT/TAX ID", asigna "nit". Si el rótulo pide explícitamente el tipo ("Tipo de Identificación (CC-Pasaporte-CE)"), asigna "tipo_documento".
   * NO asignes "cedula" a rótulos de NIT de la empresa.

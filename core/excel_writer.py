@@ -328,6 +328,8 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
     if txt_actual and val_str:
         if txt_actual.lower() == val_str.lower():
             return True
+        if es_misma_celda and val_str.lower() in txt_actual.lower() and not re.search(patron_placeholder, txt_actual):
+            return True
         if isinstance(valor, (int, float)):
             try:
                 num_actual = _convertir_a_numero_crudo(txt_actual)
@@ -366,7 +368,10 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
     # 1. Si contiene líneas/guiones inline combinados con texto (ej: "NIT: ________" o "Yo, ________"):
     if re.search(patron_placeholder, txt_actual):
         try:
-            celda.value = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
+            txt_nuevo = re.sub(r':\s*(?:_{2,}|\.{3,})', f': {valor}', txt_actual, count=1)
+            if txt_nuevo == txt_actual:
+                txt_nuevo = re.sub(patron_placeholder, str(valor), txt_actual, count=1)
+            celda.value = txt_nuevo
             return True
         except AttributeError:
             return False
@@ -587,18 +592,32 @@ def rellenar_formulario_excel(
         ubicacion      = str(item.get("ubicacion", "")).lower()
         rango_origen   = _celda_en_merge(ws, fila_origen, columna_origen)
 
-        # ── SEGURIDAD: Celdas con fondo sombreado (gris/color) NUNCA se escriben en 'misma' ──
-        if ubicacion == "misma":
-            try:
-                from core.excel_parser import _extraer_color_fondo
-                celda_orig = ws.cell(row=fila_origen, column=columna_origen)
-                color_orig = _extraer_color_fondo(celda_orig)
-                val_orig_txt = str(celda_orig.value or "").strip()
-                # Si tiene fondo sombreado y no contiene guiones inline explícitos (____), redirigir a 'derecha'
-                if color_orig and not re.search(r"_{2,}|\.{3,}", val_orig_txt):
-                    ubicacion = "derecha"
-            except Exception:
-                pass
+        # ── SEGURIDAD: Celdas con guiones inline explícitos SIEMPRE son 'misma' (ADR-0004) ──
+        val_orig_txt = str(ws.cell(row=fila_origen, column=columna_origen).value or "").strip()
+        rotulo_item = str(item.get("valor", "") or item.get("rotulo", "")).strip()
+        tiene_guiones_orig = bool(re.search(r"_{2,}|\.{3,}", val_orig_txt) or re.search(r"_{2,}|\.{3,}", rotulo_item))
+
+        if tiene_guiones_orig:
+            ubicacion = "misma"
+        elif ubicacion == "misma":
+            # Idempotencia: si ya contiene el valor inyectado previamente tras los dos puntos o al final
+            valor_campo = str(datos_planos.get(campo_chk, "")).strip()
+            ya_inyectado_misma = bool(
+                valor_campo and (
+                    f": {valor_campo}".lower() in val_orig_txt.lower()
+                    or val_orig_txt.lower().endswith(valor_campo.lower())
+                )
+            )
+            if not ya_inyectado_misma:
+                try:
+                    from core.excel_parser import _extraer_color_fondo
+                    celda_orig = ws.cell(row=fila_origen, column=columna_origen)
+                    color_orig = _extraer_color_fondo(celda_orig)
+                    # Si tiene fondo sombreado y no contiene guiones inline explícitos (____), redirigir a 'derecha'
+                    if color_orig:
+                        ubicacion = "derecha"
+                except Exception:
+                    pass
 
         # ── Calcular coordenadas de destino ───────────────────────────────
         if ubicacion == "misma":
