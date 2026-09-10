@@ -290,6 +290,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if _PATRON_OPCIONES.search(t_clean):
         return False
 
+    # Direcciones físicas o vías nunca son títulos de sección (ej. 'Cra 63 B Nº 32 E 25')
+    if re.search(r"^\s*(?:cra|carrera|cll|calle|diagonal|dg|transversal|tv|av|avenida|km|kil[oó]metro|autonorte|autopista|mz|manzana)\b", t_clean, re.IGNORECASE):
+        return False
+
     t_norm = _normalizar(t_clean)
     # Títulos prioritarios de sección (Q4: Información Financiera/Fiscal, etc.)
     if any(tok in t_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO):

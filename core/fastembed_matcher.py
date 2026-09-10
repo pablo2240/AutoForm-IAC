@@ -46,7 +46,7 @@ DESCRIPCIONES_TAXONOMIA: Dict[str, str] = {
     "numero_cuenta": "Número de cuenta bancaria, número de cuenta de ahorros o corriente",
     "tipo_cuenta": "Tipo de cuenta bancaria, ahorros, corriente",
     "sucursal": "Sucursal bancaria, oficina bancaria",
-    "responsable_nombre": "Nombre del asesor comercial, ejecutivo de cuenta, contacto comercial, funcionario que diligencia o responsable",
+    "responsable_nombre": "Nombre del asesor comercial, ejecutivo de cuenta, contacto comercial, funcionario que diligencia, encargado de ventas o responsable",
     "responsable_cargo": "Cargo del asesor comercial, posición o rol del contacto comercial o responsable del diligenciamiento",
     "responsable_cedula": "Cédula de ciudadanía o documento de identidad del asesor comercial o responsable del diligenciamiento",
     "responsable_telefono": "Teléfono celular o móvil del asesor comercial o responsable de diligenciamiento",

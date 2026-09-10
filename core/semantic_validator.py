@@ -449,6 +449,16 @@ def _regla_autocorrecciones_semanticas_adicionales(
             if campo != "ciudad":
                 return "ciudad", "Rótulo 'Ciudad' en contexto financiero → asignado a 'ciudad'."
 
+    # 10. Contacto Comercial: Encargado de Ventas / Nombre Encargado de Ventas -> responsable_nombre
+    if any(sin in rotulo_normalizado for sin in (
+        "nombre encargado de ventas",
+        "encargado de ventas",
+        "contacto de ventas",
+        "asesor de ventas",
+    )):
+        if campo != "responsable_nombre":
+            return "responsable_nombre", "Rótulo de encargado/contacto de ventas → asignado a 'responsable_nombre'."
+
     return campo, ""
 
 
@@ -558,19 +568,29 @@ def validar_item_mapeo(
 
     # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007 / ADR-0009): Contacto comercial ──
     pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
+    es_sec_rep_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in seccion_norm)
     es_sec_contacto = (
         pertinencia_item == "CONTACTO_COMERCIAL"
         or (
             any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL)
             and not any(t in seccion_norm for t in _TOKENS_REFERENCIAS_EXCLUIDAS)
-            and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL)
+            and not es_sec_rep_legal
         )
     )
     es_rotulo_contacto = (
-        any(t in rotulo_norm for t in ("contacto comercial", "asesor comercial", "responsable del diligenciamiento", "diligenciado por", "funcionario que diligencia", "ejecutivo de cuenta", "atencion comercial", "atención comercial"))
+        any(t in rotulo_norm for t in (
+            "contacto comercial", "asesor comercial", "responsable del diligenciamiento",
+            "diligenciado por", "funcionario que diligencia", "ejecutivo de cuenta",
+            "atencion comercial", "atención comercial", "encargado de ventas",
+            "nombre encargado de ventas", "contacto de ventas", "asesor de ventas",
+        ))
         or (
-            any(t in rotulo_norm for t in ("contacto", "asesor", "consultor", "ejecutivo comercial", "responsable", "diligenciado", "verificacion", "verificación"))
-            and not any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL)
+            any(t in rotulo_norm for t in (
+                "contacto", "asesor", "consultor", "ejecutivo comercial",
+                "responsable", "diligenciado", "verificacion", "verificación",
+                "encargado de ventas", "ventas",
+            ))
+            and not es_sec_rep_legal
         )
     )
     es_contacto = es_sec_contacto or es_rotulo_contacto
@@ -586,7 +606,7 @@ def validar_item_mapeo(
 
         # Con operador activo presente:
         rotulo_limpio = limpiar_rotulo(rotulo_norm)
-        if es_sec_contacto and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:
+        if (es_sec_contacto or es_rotulo_contacto) and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:
             c_dest = _BARE_LABELS_CONTACTO_COMERCIAL[rotulo_limpio]
             if datos_planos.get(c_dest):
                 campo_original = c_dest
@@ -644,7 +664,7 @@ def validar_item_mapeo(
             campo_original = "responsable_ciudad"
             resultado["campo_final"] = "responsable_ciudad"
             resultado["motivo"] = "Context-First (ADR-0009): Asignado a ciudad del responsable comercial."
-        elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación")) and datos_planos.get("responsable_nombre"):
+        elif any(t in rotulo_norm for t in ("nombre", "contacto", "asesor", "responsable", "verificacion", "verificación", "encargado de ventas", "ventas")) and datos_planos.get("responsable_nombre"):
             campo_original = "responsable_nombre"
             resultado["campo_final"] = "responsable_nombre"
             resultado["motivo"] = "Context-First (ADR-0009): Asignado a nombre del responsable comercial."

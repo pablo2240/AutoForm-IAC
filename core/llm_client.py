@@ -141,7 +141,7 @@ Recibes un objeto JSON con:
   * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
 
 - Si la sección o el rótulo hace referencia a CONTACTO COMERCIAL / INFORMACIÓN DE CONTACTO / PERSONAL DE CONTACTO / ASESOR / RESPONSABLE DEL DILIGENCIAMIENTO (ADR-0009):
-  * CUALQUIER rótulo de Nombre ("Nombre", "Nombre Completo", "Nombres y Apellidos", "Contacto", "Persona de Contacto") dentro de este bloque -> OBLIGATORIO "responsable_nombre" (NUNCA "representante_legal" ni "razon_social").
+  * CUALQUIER rótulo de Nombre ("Nombre", "Nombre Completo", "Nombres y Apellidos", "Contacto", "Persona de Contacto", "Nombre Encargado de Ventas", "Encargado de Ventas") dentro de este bloque -> OBLIGATORIO "responsable_nombre" (NUNCA "representante_legal" ni "razon_social").
   * CUALQUIER rótulo de Cargo ("Cargo", "Posición", "Rol") dentro de este bloque -> OBLIGATORIO "responsable_cargo".
   * CUALQUIER rótulo de Documento ("Cédula", "Identificación", "Documento") dentro de este bloque -> OBLIGATORIO "responsable_cedula".
   * CUALQUIER rótulo de Teléfono ("Teléfono", "Celular", "Móvil", "Tel/Cel") dentro de este bloque -> OBLIGATORIO "responsable_telefono".

@@ -42,7 +42,7 @@ PAT_SECCION_JUNTA_COMP = re.compile(
     re.IGNORECASE,
 )
 PAT_SECCION_CONTACTO_COMERCIAL = re.compile(
-    r"\b(?:contacto|asesor|comercial|ejecutivo|operativo|responsable|diligenciado|verificacion|verificación)\b",
+    r"\b(?:contacto|asesor|comercial|ejecutivo|operativo|responsable|diligenciado|verificacion|verificación|ventas|cartera|ubicaci[oó]n\s+y\s+contacto)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_EMPRESA = re.compile(
@@ -340,9 +340,15 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 5: Contacto Comercial / Responsable del Diligenciamiento (ADR-0007 / ADR-0009) ──
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario)|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto|nombre\s+completo|nombres?\s+y\s+apellidos?|nombre)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario|encargado\s+de\s+ventas)|nombre\s+encargado\s+de\s+ventas|encargado\s+de\s+ventas|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto|nombre\s+completo|nombres?\s+y\s+apellidos?|nombre)\s*$", re.IGNORECASE),
         "responsable_nombre",
         "derecha",
+    ),
+    (
+        re.compile(r".*", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?encargado\s+de\s+ventas|encargado\s+de\s+ventas)\s*:?\s*$", re.IGNORECASE),
+        "responsable_nombre",
+        "abajo",
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,

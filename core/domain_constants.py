@@ -47,7 +47,7 @@ PATRON_LIMPIEZA_ROTULO = re.compile(r"[:：_\.\s]+$")
 
 # ── Patrón de contacto comercial / asesor para Safe Passivity ──────────────────
 PATRON_CONTACTO_COMERCIAL = re.compile(
-    r"\b(?:contacto|asesor(?:\s+comercial)?|consultor(?:\s+plm|\s+comercial)?|ejecutivo\s+comercial)\b",
+    r"\b(?:contacto|asesor(?:\s+comercial)?|consultor(?:\s+plm|\s+comercial)?|ejecutivo\s+comercial|encargado\s+de\s+ventas|ventas)\b",
     re.IGNORECASE
 )
 
@@ -129,6 +129,8 @@ TOKENS_CONTACTO_COMERCIAL: Set[str] = {
     "informacion operativa",
     "información operativa",
     "contacto operativo",
+    "encargado de ventas",
+    "ventas",
 }
 
 TOKENS_REFERENCIAS_EXCLUIDAS: Set[str] = {
@@ -151,6 +153,10 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "persona de contacto": "responsable_nombre",
     "asesor": "responsable_nombre",
     "asesor comercial": "responsable_nombre",
+    "nombre encargado de ventas": "responsable_nombre",
+    "encargado de ventas": "responsable_nombre",
+    "nombre del encargado de ventas": "responsable_nombre",
+    "asesor de ventas": "responsable_nombre",
     "cargo": "responsable_cargo",
     "posicion": "responsable_cargo",
     "posición": "responsable_cargo",
