@@ -202,7 +202,7 @@ def _normalizar(txt: str) -> str:
 
 _PATRON_OPCIONES = re.compile(
     r"^\s*(?:si|no|s|n|x|ahorros|corriente|ahorro|corrientes|"
-    r"masculino|femenino|m|f|persona\s+natural|persona\s+jur[ií]dica|"
+    r"masculino|femenino|m|f|"
     r"urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|"
     r"principal|sucursal|privada|p[uú]blica|mixta|simplificado|"
     r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica|"
@@ -269,11 +269,12 @@ _TERMINOS_CABECERA = re.compile(
 
 _TERMINOS_CAMPO_CORTO = re.compile(
     r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombres?|apellidos?|"
-    r"tel[eé]fono|celular|direcci[oó]n|correo|email|ciudad|municipio|"
+    r"tel[eé]fono|celular|direcci[oó]n|correo|email|e-mail|ciudad|municipio|"
     r"departamento|pa[ií]s|cargo|banco|cuenta|p[aá]gina|web|objeto|"
     r"actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
+    r"lugar\s+(?:de\s+)?expedici[oó]n|"
     r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento|"
-    r"empresa|contacto)\b",
+    r"empresa|contacto|activos?|pasivos?|patrimonio|ingresos?|egresos?|gastos?|ventas?)\b",
     re.IGNORECASE,
 )
 
@@ -286,8 +287,14 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if not t_clean:
         return False
 
-    # Campos directos con indicadores inline nunca son títulos de sección
-    if t_clean.endswith(":") or re.search(r"_{2,}|\.{3,}", t_clean):
+    # Preguntas, fórmulas de Excel o celdas con indicador inline nunca son títulos de sección
+    if (
+        t_clean.startswith("¿")
+        or t_clean.endswith("?")
+        or t_clean.startswith("=")
+        or t_clean.endswith(":")
+        or re.search(r"_{2,}|\.{3,}", t_clean)
+    ):
         return False
 
     # Opciones de selección o respuestas nunca son títulos de sección
@@ -308,9 +315,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if t_lower in ("huella", "huella dactilar", "sello", "sello de la empresa", "sello y firma", "firma y huella"):
         return False
 
-    # Bloques, preguntas mayores o encabezados de PEP / Beneficiarios Finales (ADR-0005)
+    # Bloques, preguntas mayores o encabezados de PEP / Beneficiarios Finales (ADR-0005) - Nunca si es pregunta (?)
     if PATRON_PEP_BENEFICIARIOS.search(t_clean):
-        return True
+        if len(t_clean) <= 60 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+            return True
 
     # Numeración explícita: "3. REPRESENTANTE LEGAL" o "4.2 COMPOSICIÓN"
     m_num = re.match(r"^\s*(?:\d+(?:\.\d+)*[\.]?|[I|V|X]+\.?)\s+(.+)$", t_clean)
@@ -336,6 +344,7 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     # Títulos típicos normalizados
     t_norm = _normalizar(t_clean)
     titulos_norm = [
+        r"^persona\s+(?:natural|jur[ií]dica)(?:\s*\(.*?\))?$",
         r"^representante\s+(?:legal|juridico)(?:\s*\(.*?\))?$",
         r"^datos\s+(?:de\s+la\s+empresa|generales|del\s+proponente|del\s+oferente|del\s+proveedor|de\s+la\s+sociedad)(?:\s*\(.*?\))?$",
         r"^datos\s+del\s+representante\s+(?:legal|juridico)?(?:\s*\(.*?\))?$",
@@ -492,6 +501,11 @@ def clasificar_seccion_contacto(
         )
 
     if es_contacto and not es_referencias:
+        if any(u in titulo for u in ("ubicacion", "ubicación", "domicilio", "sede", "oficina")):
+            return (
+                PertinenciaSeccion.MIXTA,
+                "Sección mixta de ubicación corporativa y contacto comercial (ADR-0009)",
+            )
         return (
             PertinenciaSeccion.CONTACTO_COMERCIAL,
             "Bloque de contacto comercial / asesor de cuenta (ADR-0009)",

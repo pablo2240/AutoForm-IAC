@@ -57,7 +57,7 @@ _PATRON_INSTRUCCIONES_ANEXOS = re.compile(
 )
 
 _PATRON_OPCIONES_SELECCION = re.compile(
-    r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|persona\s+natural|persona\s+jur[ií]dica|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
+    r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
     r"vinculaci[oó]n|tipo\s+de\s+vinculaci[oó]n|"
     r"nit|n\.?i\.?t\.?|cc|c\.?c\.?|ce|c\.?e\.?|ti|t\.?i\.?|pas|pasaporte|pep|ppt|rc|r\.?c\.?|rut|"
     r"\[\s*\]|\(\s*\)|\[\s*x\s*\]|\(\s*x\s*\)|☐|☑|☒|✓|✗)\s*$",
@@ -284,8 +284,8 @@ def clasificar_elementos_formulario(
                 if not es_seccion_o_campo_pep(seccion_actual):
                     rango_pep_activo = False
 
-            # Detectar si un texto, pregunta o instrucción activa un rango PEP (ej. R28)
-            if es_seccion_o_campo_pep(rotulo):
+            # Detectar si un título de sección explícito activa un rango PEP (ej. Sección PEP)
+            if tipo_clasif == ClasificacionElemento.TITULO_SECCION and es_seccion_o_campo_pep(rotulo):
                 rango_pep_activo = True
                 fila_inicio_pep = fila
 
@@ -314,7 +314,7 @@ def clasificar_elementos_formulario(
                     tipo_clasif = ClasificacionElemento.NO_APLICA
 
             # Safe Passivity (ADR-0005): Secciones o campos de PEPs y Beneficiarios Finales se descartan
-            if (rango_pep_activo and fila <= fila_inicio_pep + 8) or es_seccion_o_campo_pep(seccion_actual, rotulo):
+            if es_seccion_o_campo_pep(seccion_actual, rotulo):
                 tipo_clasif = ClasificacionElemento.NO_APLICA
 
             # ADR-0004: Determinación de dirección física (Ray-casting a subrayado obligatorio)
@@ -324,9 +324,12 @@ def clasificar_elementos_formulario(
             tiene_guiones_inline = bool(re.search(r"_{2,}|\.{3,}", rotulo))
             derecha_disponible = (
                 derecha_vacia
-                or bool(elem.get("derechaEsMerge", False))
-                or bool(elem.get("derechaConBordeInferior", False))
-                or int(elem.get("anchoLinea", 1) or 1) > 1
+                and (
+                    bool(elem.get("derechaEsMerge", False))
+                    or bool(elem.get("derechaConBordeInferior", False))
+                    or int(elem.get("anchoLinea", 1) or 1) > 1
+                    or True
+                )
             )
 
             if tiene_guiones_inline:

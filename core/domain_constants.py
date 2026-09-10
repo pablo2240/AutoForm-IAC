@@ -43,7 +43,7 @@ ROTULOS_GENERICOS_BLOQUEADOS: Set[str] = {
 }
 
 # ── Patrón de limpieza de caracteres terminales y espacios ─────────────────────
-PATRON_LIMPIEZA_ROTULO = re.compile(r"[:：_\.\s]+$")
+PATRON_LIMPIEZA_ROTULO = re.compile(r"[:：_\.\s\$]+$")
 
 # ── Patrón de contacto comercial / asesor para Safe Passivity ──────────────────
 PATRON_CONTACTO_COMERCIAL = re.compile(
@@ -53,7 +53,8 @@ PATRON_CONTACTO_COMERCIAL = re.compile(
 
 # ── Conjuntos de campos protegidos por categoría ──────────────────────────────
 CAMPOS_BANCARIOS: Set[str] = {
-    "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "moneda"
+    "banco", "numero_cuenta", "tipo_cuenta", "sucursal", "moneda",
+    "nit_cert_bancaria", "nit_bancario", "nit_certificacion",
 }
 
 # ADR-0006: Cifras de Balance y Estados Financieros Empresariales
@@ -66,6 +67,7 @@ CAMPOS_FINANCIEROS_BALANCE: Set[str] = {
     "activos", "pasivos", "patrimonio",
     "ingresos_mensuales", "egresos_mensuales",
     "ingresos_anuales", "egresos_anuales",
+    "otros_ingresos",
 }
 
 CAMPOS_REP_LEGAL: Set[str] = {
@@ -79,14 +81,15 @@ CAMPOS_REP_LEGAL: Set[str] = {
 CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
     "responsable_nombre", "responsable_cargo", "responsable_cedula",
     "responsable_telefono", "responsable_celular", "responsable_correo",
-    "responsable_direccion", "responsable_ciudad",
+    "responsable_direccion", "responsable_ciudad", "responsable_departamento",
     # Aliases
     "contacto_nombre", "contacto_cargo", "contacto_telefono", "contacto_correo",
-    "contacto_direccion", "contacto_ciudad",
+    "contacto_direccion", "contacto_ciudad", "contacto_departamento",
 }
 
 CAMPOS_EMPRESA: Set[str] = {
-    "razon_social", "nit", "direccion", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
+    "razon_social", "nit", "nit_cert_bancaria", "nit_bancario", "nit_titular",
+    "direccion", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
 }
 
 # ── Tokens de sección para clasificación de dominio ────────────────────────────
@@ -204,6 +207,8 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "domicilio": "responsable_direccion",
     "ciudad": "responsable_ciudad",
     "municipio": "responsable_ciudad",
+    "departamento": "responsable_departamento",
+    "depto": "responsable_departamento",
 }
 
 # ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
@@ -223,6 +228,7 @@ CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
     "telefono_representante": "responsable_telefono",
     "direccion": "responsable_direccion",
     "ciudad": "responsable_ciudad",
+    "departamento": "responsable_departamento",
 }
 
 
@@ -252,6 +258,22 @@ def es_seccion_o_campo_pep(seccion: str = "", rotulo: str = "", contexto: str = 
 NIVELES_TERRITORIALES: Set[str] = {"ciudad", "municipio"}
 NIVEL_DEPARTAMENTAL: Set[str] = {"departamento", "depto"}
 
+CIUDAD_A_DEPARTAMENTO: Dict[str, str] = {
+    "bogota": "Cundinamarca",
+    "bogotá": "Cundinamarca",
+    "bogota d.c.": "Cundinamarca",
+    "bogotá d.c.": "Cundinamarca",
+    "medellin": "Antioquia",
+    "medellín": "Antioquia",
+    "envigado": "Antioquia",
+    "cali": "Valle del Cauca",
+    "barranquilla": "Atlántico",
+    "popayan": "Cauca",
+    "popayán": "Cauca",
+    "cartagena": "Bolívar",
+    "bucaramanga": "Santander",
+}
+
 
 def resolver_rotulo_geografico(rotulo_norm: str, valor_ciudad: str = "Medellín", valor_depto: str = "Antioquia") -> str:
     """Resuelve el valor geográfico estricto según la distinción territorial del rótulo (Q1).
@@ -259,6 +281,7 @@ def resolver_rotulo_geografico(rotulo_norm: str, valor_ciudad: str = "Medellín"
     - Si el rótulo combina dos niveles territoriales distintos (municipal + departamental): "Medellín / Antioquia".
     - Si el rótulo es puramente municipal ("ciudad", "municipio", "ciudad/municipio"): "Medellín".
     - Si el rótulo es puramente departamental ("departamento", "depto"): "Antioquia".
+    - Asocia de forma canónica Bogotá con el departamento Cundinamarca.
     """
     rot_limpio = rotulo_norm.lower().strip()
     partes = [p.strip() for p in rot_limpio.split("/") if p.strip()]
@@ -267,7 +290,11 @@ def resolver_rotulo_geografico(rotulo_norm: str, valor_ciudad: str = "Medellín"
     tiene_departamental = any(p in NIVEL_DEPARTAMENTAL for p in partes) or any(d in rot_limpio for d in NIVEL_DEPARTAMENTAL)
 
     c = (valor_ciudad or "Medellín").strip()
-    d = (valor_depto or "Antioquia").strip()
+    c_norm = c.lower()
+    depto_sugerido = CIUDAD_A_DEPARTAMENTO.get(c_norm, valor_depto or "Antioquia")
+    d = (valor_depto if (valor_depto and valor_depto.lower() not in ("antioquia", "cundinamarca") or c_norm in ("medellin", "medellín")) else depto_sugerido).strip()
+    if any(b in c_norm for b in ("bogota", "bogotá")):
+        d = "Cundinamarca"
 
     if tiene_municipal and tiene_departamental:
         return f"{c} / {d}" if (c and d) else (c or d)

@@ -46,7 +46,7 @@ PAT_SECCION_CONTACTO_COMERCIAL = re.compile(
     re.IGNORECASE,
 )
 PAT_SECCION_EMPRESA = re.compile(
-    r"\b(?:empresa|proponente|solicitante|proveedor|cliente|identificaci[oó]n|general|b[aá]sica|datos\s+generales)\b",
+    r"\b(?:empresa|proponente|solicitante|proveedor|cliente|identificaci[oó]n|general|b[aá]sica|datos\s+generales|persona\s+jur[ií]dica)\b",
     re.IGNORECASE,
 )
 
@@ -109,7 +109,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:email|correo|correo\s+electr[oó]nico)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:email|e-mail|correo|correo\s+electr[oó]nico)\s*$", re.IGNORECASE),
         "correo",
         "derecha",
     ),
@@ -190,43 +190,49 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 2b: Cifras de Balance y Estados Financieros (ADR-0006) ──
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+activos?|activos?\s+totales|activos?)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+activos?|activos?\s+totales|activos?)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_activos",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+pasivos?|pasivos?\s+totales|pasivos?)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+pasivos?|pasivos?\s+totales|pasivos?)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_pasivos",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+patrimonio|patrimonio(?:\s+neto|\s+l[ií]quido|\s+total)?|capital\s+social)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+patrimonio|patrimonio(?:\s+neto|\s+l[ií]quido|\s+total)?|capital\s+social)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_patrimonio",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+ingresos\s+mensuales|ingresos\s+mensuales|ingresos\s+operacionales\s+mensuales|ingresos\s+promedio\s+mensual(?:es)?)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+ingresos\s+mensuales|ingresos\s+mensuales|ingresos\s+operacionales\s+mensuales|ingresos\s+promedio\s+mensual(?:es)?)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_ingresos_mensuales",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+egresos\s+mensuales|egresos\s+mensuales|gastos\s+mensuales|total\s+gastos\s+mensuales)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+egresos\s+mensuales|egresos\s+mensuales|gastos\s+mensuales|total\s+gastos\s+mensuales)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_egresos_mensuales",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+ingresos\s+anuales|ingresos\s+anuales|ventas\s+anuales)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:otros\s+ingresos?)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
+        "otros_ingresos",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_FINANCIERO,
+        re.compile(r"^\s*(?:total\s+ingresos\s+anuales|ingresos\s+anuales|ventas\s+anuales)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_ingresos_anuales",
         "derecha",
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:total\s+egresos\s+anuales|egresos\s+anuales|gastos\s+anuales)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:total\s+egresos\s+anuales|egresos\s+anuales|gastos\s+anuales)(?:\s*[\$:]|\s+pesos|\s+cop)?\s*$", re.IGNORECASE),
         "total_egresos_anuales",
         "derecha",
     ),
@@ -272,7 +278,13 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:nit(?:\s+o\s+cc)?|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|nit\s+o\s+identificaci[oó]n\s+tributaria)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*nit(?:\s*\(.*?(?:bancari|cert).*?\)|(?:\s+(?:de\s+la\s+)?certificaci[oó]n(?:\s+bancaria)?))\s*$", re.IGNORECASE),
+        "numero_cuenta",
+        "abajo",
+    ),
+    (
+        PAT_SECCION_EMPRESA,
+        re.compile(r"^\s*(?:nit(?:\s*\(.*?\))?|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|nit\s+o\s+identificaci[oó]n\s+tributaria)\s*$", re.IGNORECASE),
         "nit",
         "derecha",
     ),
@@ -386,6 +398,12 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         "responsable_ciudad",
         "derecha",
     ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:departamento|depto)(?:\s+de\s+contacto|\s+comercial)?\s*$", re.IGNORECASE),
+        "responsable_departamento",
+        "derecha",
+    ),
 ]
 
 
@@ -442,16 +460,14 @@ def ejecutar_pase_cobertura_exhaustiva(
             for fila in sec.filas:
                 for elem in fila.elementos:
                     if es_seccion_o_campo_pep("", elem.texto):
-                        for off in range(0, 8):
-                            filas_bloqueadas_pep.add((sec.hoja, fila.numero_fila + off))
+                        filas_bloqueadas_pep.add((sec.hoja, fila.numero_fila))
     elif elementos_raw:
         for elem in elementos_raw:
             txt_e = str(elem.get("valor") or elem.get("rotulo") or "")
             if es_seccion_o_campo_pep("", txt_e):
                 h_e = str(elem.get("hoja", "Hoja1"))
                 f_e = int(elem.get("fila", 0))
-                for off in range(0, 8):
-                    filas_bloqueadas_pep.add((h_e, f_e + off))
+                filas_bloqueadas_pep.add((h_e, f_e))
 
     # Recopilar candidatos no mapeados desde el IR o desde elementos_raw
     candidatos: List[Dict[str, Any]] = []
@@ -546,7 +562,7 @@ def ejecutar_pase_cobertura_exhaustiva(
             if not aplica_sec:
                 continue
 
-            if not pat_rot.search(txt):
+            if not (pat_rot.search(txt) or pat_rot.search(txt_limpio)):
                 continue
 
             # Unicidad de Sección (ADR-0005): Si el campo ya fue asignado en esta sección, no duplicar

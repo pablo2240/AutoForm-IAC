@@ -572,7 +572,8 @@ def validar_item_mapeo(
     es_sec_contacto = (
         pertinencia_item == "CONTACTO_COMERCIAL"
         or (
-            any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL)
+            pertinencia_item != "MIXTA"
+            and any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL)
             and not any(t in seccion_norm for t in _TOKENS_REFERENCIAS_EXCLUIDAS)
             and not es_sec_rep_legal
         )
@@ -593,7 +594,20 @@ def validar_item_mapeo(
             and not es_sec_rep_legal
         )
     )
-    es_contacto = es_sec_contacto or es_rotulo_contacto
+    es_rotulo_sede_principal = any(t in rotulo_norm for t in (
+        "oficina principal", "sede principal", "domicilio principal",
+        "direccion principal", "dirección principal"
+    ))
+    es_fila_sede = bool(plan_item.get("es_fila_sede_principal")) or es_rotulo_sede_principal
+    es_fila_cont = bool(plan_item.get("es_fila_contacto"))
+
+    if es_fila_sede:
+        es_sec_contacto = False
+        es_rotulo_contacto = False
+    elif es_fila_cont:
+        es_rotulo_contacto = True
+
+    es_contacto = (es_sec_contacto or es_rotulo_contacto) and not es_fila_sede
 
     if es_contacto:
         tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
@@ -690,12 +704,19 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # Regla de excepción (Usuario): Rótulos tipo 'NIT (Cert Bancaria)' o 'NIT Certificación' corresponden al número de cuenta
+    if re.search(r"\bnit\s*(?:\(.*?(?:bancari|cert).*?\)|(?:de\s+la\s+)?certificaci[oó]n(?:\s+bancaria)?)", rotulo_norm):
+        campo_original = "numero_cuenta"
+        resultado["campo_final"] = "numero_cuenta"
+        resultado["motivo"] = "Excepción Regla de Negocio: Rótulo de certificación bancaria enrutado a 'numero_cuenta'."
+
     # ── Domain Isolation (ADR-0004): Aislamiento estricto por categoría ──
     # CERRAR PUERTA TRASERA: La condición debe ser SECCIÓN AND RÓTULO (no OR).
     # Que el rótulo diga "cuenta" no autoriza inyección bancaria fuera de sección financiera.
     if campo_original in _CAMPOS_BANCARIOS:
-        es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS)
-        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal", "financiera", "entidad", "moneda", "divisa"))
+        es_rot_cert_bancaria = bool(re.search(r"cert(?:ificaci[oó]n)?\s*bancari|certificada|nit\s*\(.*?cert.*?\)", rotulo_norm))
+        es_sec_fin = any(t in seccion_norm for t in _TOKENS_FINANCIEROS_AMPLIOS) or es_rot_cert_bancaria
+        es_rot_fin = any(t in rotulo_norm for t in ("cuenta", "banco", "bancaria", "ahorros", "corriente", "sucursal", "financiera", "entidad", "moneda", "divisa")) or es_rot_cert_bancaria
         if not (es_sec_fin and es_rot_fin):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
@@ -726,6 +747,8 @@ def validar_item_mapeo(
         elif campo_original in ("total_egresos_mensuales", "egresos_mensuales") and es_rot_egresos:
             # Safe Passivity (ADR-0006): si pide explícitamente "anual", no asignar cifras mensuales
             rotulo_valido = not ("anual" in rotulo_norm or "año" in rotulo_norm)
+        elif campo_original == "otros_ingresos" and es_rot_ingresos:
+            rotulo_valido = True
         elif campo_original in ("total_ingresos_anuales", "ingresos_anuales") and es_rot_ingresos:
             rotulo_valido = ("anual" in rotulo_norm or "año" in rotulo_norm or "ejercicio" in rotulo_norm)
         elif campo_original in ("total_egresos_anuales", "egresos_anuales") and es_rot_egresos:
@@ -875,6 +898,18 @@ def validar_plan_mapeo(
     # Registro de campos asignados por sección para Unicidad de Sección (ADR-0005)
     asignados_por_seccion: Dict[str, Set[str]] = {}
 
+    # Pre-escaneo a nivel de fila para desambiguar sede principal corporativa vs contacto comercial
+    filas_sede_principal: Set[Tuple[str, int]] = set()
+    filas_contacto_comercial: Set[Tuple[str, int]] = set()
+    for item in plan_mapeo:
+        h = str(item.get("hoja") or "")
+        f = int(item.get("fila") or 0)
+        r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        if any(t in r_txt for t in ("oficina principal", "sede principal", "domicilio principal", "direccion principal", "dirección principal")):
+            filas_sede_principal.add((h, f))
+        elif any(t in r_txt for t in ("encargado de ventas", "contacto comercial", "asesor comercial", "contacto de ventas", "asesor de ventas", "vendedor")):
+            filas_contacto_comercial.add((h, f))
+
     for item in plan_mapeo:
         # ── Short-circuit: sección o fila marcada OMITIR_* en el IR ──────────
         seccion_item = _normalizar(
@@ -882,6 +917,8 @@ def validar_plan_mapeo(
         )
         hoja_item = str(item.get("hoja") or "")
         fila_item = int(item.get("fila") or 0)
+        item["es_fila_sede_principal"] = (hoja_item, fila_item) in filas_sede_principal
+        item["es_fila_contacto"] = (hoja_item, fila_item) in filas_contacto_comercial
         es_fila_omitida = (hoja_item, fila_item) in filas_omitidas
         pert_item = str(item.get("seccion_pertinencia") or item.get("pertinencia") or "").upper()
         if (
@@ -919,7 +956,7 @@ def validar_plan_mapeo(
         if resultado.get("estado") != EstadoMapeo.DESCARTADO and campo_activo:
             sec_key = seccion_item if seccion_item else "SECCION_GENERAL"
             campos_unicos_seccion = (
-                "nit", "razon_social", "direccion", "representante_legal",
+                "nit", "nit_cert_bancaria", "razon_social", "direccion", "representante_legal",
                 "cedula", "tipo_documento", "lugar_expedicion", "tipo_sociedad",
                 "telefono", "correo", "ciudad", "departamento", "pais",
                 "banco", "numero_cuenta", "tipo_cuenta",
@@ -929,10 +966,12 @@ def validar_plan_mapeo(
                 "activos", "pasivos", "patrimonio",
                 "ingresos_mensuales", "egresos_mensuales",
                 "ingresos_anuales", "egresos_anuales",
+                "otros_ingresos",
                 "responsable_nombre", "responsable_cargo",
                 "responsable_telefono", "responsable_celular",
                 "responsable_correo", "responsable_cedula",
                 "responsable_direccion", "responsable_ciudad",
+                "responsable_departamento",
             )
             if campo_activo in campos_unicos_seccion:
                 if campo_activo in asignados_por_seccion.get(sec_key, set()):

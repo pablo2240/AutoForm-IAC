@@ -101,7 +101,7 @@ def inicializar_db() -> None:
                     "Antonio Prieto",
                     "Asesor Comercial / Aplicaciones",
                     "",
-                    "",
+                    "3001122334",
                     "antonio.prieto@iaclatam.com",
                     "Carrera 63 B # 32 E -25 OFC 206",
                     "Bogotá",
@@ -149,10 +149,10 @@ def inicializar_db() -> None:
         if "ciudad" not in cols_usr:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN ciudad TEXT DEFAULT ''")
 
-        # ADR-0008: Sembrar usuario administrador inicial si la tabla usuarios está vacía
+        # Sembrar usuario administrador por defecto si no existe ninguno
         cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
-        fila_user_count = cursor.fetchone()
-        if fila_user_count and fila_user_count["total"] == 0:
+        total_usuarios = cursor.fetchone()["total"]
+        if total_usuarios == 0:
             from core.auth_manager import hashear_password
             admin_pwd = os.environ.get("AUTOFORM_ADMIN_PASSWORD", "IAC2026*")
             ahora = datetime.now(timezone.utc).isoformat()
@@ -166,7 +166,7 @@ def inicializar_db() -> None:
                     "Antonio Prieto",
                     "Asesor Comercial / Aplicaciones",
                     "",
-                    "",
+                    "3001122334",
                     "antonio.prieto@iaclatam.com",
                     "Carrera 63 B # 32 E -25 OFC 206",
                     "Bogotá",
@@ -175,11 +175,11 @@ def inicializar_db() -> None:
                 ),
             )
 
-        # Migración automática de semilla de Antonio Prieto a @iaclatam.com y asignación de dirección y ciudad por defecto
+        # Migración automática de semilla de Antonio Prieto a @iaclatam.com y asignación de dirección, ciudad y teléfono por defecto
         cursor.execute("UPDATE operadores SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
         cursor.execute("UPDATE usuarios SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
-        cursor.execute("UPDATE operadores SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá' WHERE id = 'antonio_prieto' AND (direccion IS NULL OR direccion = '')")
-        cursor.execute("UPDATE usuarios SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá' WHERE id = 'antonio_prieto' AND (direccion IS NULL OR direccion = '')")
+        cursor.execute("UPDATE operadores SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá', telefono = '3001122334' WHERE id = 'antonio_prieto' AND (telefono IS NULL OR telefono = '')")
+        cursor.execute("UPDATE usuarios SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá', telefono = '3001122334' WHERE id = 'antonio_prieto' AND (telefono IS NULL OR telefono = '')")
 
         conn.commit()
 

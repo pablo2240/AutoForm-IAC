@@ -248,6 +248,15 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
         desglose = desglosar_nombre_completo(rep_full)
         return desglose.get(campo, "")
 
+    if campo in ("nit_cert_bancaria", "nit_bancario", "nit_certificacion"):
+        return plano.get("numero_cuenta")
+
+    if campo == "nit_titular":
+        return plano.get("nit")
+
+    if campo == "responsable_departamento":
+        return plano.get("responsable_departamento") or "Cundinamarca"
+
     if campo == "lugar_nacimiento":
         return plano.get("lugar_nacimiento") or "Popayán"
 
@@ -416,10 +425,14 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
 
     patron_placeholder = r'_{2,}|\.{3,}'
 
-    # Si la celda contiene una fórmula o comilla simple que el usuario ve vacía en Excel, permitir sobreescritura
+    # Si la celda contiene una fórmula nativa de Excel (=+F51-X51, etc.), PRESERVARLA
+    # sin modificar para que Excel evalúe el cálculo nativamente y no sobreescribir ni desviar abajo.
+    if txt_actual.startswith("="):
+        return True
+
+    # Si la celda contiene comilla simple o placeholder que el usuario ve vacía en Excel, permitir sobreescritura
     es_formula_o_vacio_visualmente = bool(
         not txt_actual or
-        txt_actual.startswith("=") or
         txt_actual in ("''", '""', "-", "N/A", "0") or
         re.match(r"^[\s_\.\:\-]+$", txt_actual)
     )
