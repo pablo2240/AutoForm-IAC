@@ -608,59 +608,41 @@ with st.sidebar:
     ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
     datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
 
-    # 👤 Fase 3: Gestión de Operadores / Diligenciado Por (ADR-0007)
+    # 👤 Fase 3: Operador Fijado a la Cuenta en Sesión (ADR-0007)
     st.markdown("### 👤 **Diligenciado Por (Operador)**")
-    if not es_admin_usuario:
-        operador_activo = {
-            "id": usuario_actual["id"],
-            "nombre": usuario_actual["nombre"],
-            "cargo": usuario_actual.get("cargo", ""),
-            "cedula": usuario_actual.get("cedula", ""),
-            "telefono": usuario_actual.get("telefono", ""),
-            "correo": usuario_actual["correo"],
-            "direccion": usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
-            "ciudad": usuario_actual.get("ciudad", "Bogotá"),
-        }
-        st.markdown(f"""
-            <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">
-                <div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Asesor Comercial Activo</div>
-                <div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual['nombre']}</div>
-                <div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get('cargo') or 'Asesor Comercial'}</div>
-                <div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual['correo']}</div>
-            </div>
-        """, unsafe_allow_html=True)
-    else:
-        operadores_db = profile_manager.listar_operadores()
-        nombres_operadores = [f"👤 {op['nombre']}" + (f" ({op['cargo']})" if op.get("cargo") else "") for op in operadores_db]
-        mapa_operadores = {
-            (f"👤 {op['nombre']}" + (f" ({op['cargo']})" if op.get("cargo") else "")): op
-            for op in operadores_db
-        }
-
-        opcion_sin_operador = "⚪ Ninguno (Safe Passivity / Manual)"
-        opciones_op = [opcion_sin_operador] + nombres_operadores
-
-        op_activo_db = profile_manager.obtener_operador_activo()
-        idx_op_def = 0
-        if op_activo_db:
-            for idx_i, op_item in enumerate(operadores_db):
-                if op_item["id"] == op_activo_db["id"]:
-                    idx_op_def = idx_i + 1
-                    break
-
-        op_seleccionado_etiqueta = st.selectbox(
-            "Seleccionar Asesor / Operador:",
-            options=opciones_op,
-            index=idx_op_def,
-            key="sb_selector_operador_activo",
-            help="El asesor seleccionado será asignado a los campos comerciales y de contacto sin tocar la información jurídica de la empresa.",
+    operador_activo = {
+        "id": usuario_actual["id"],
+        "nombre": usuario_actual["nombre"],
+        "cargo": usuario_actual.get("cargo", ""),
+        "cedula": usuario_actual.get("cedula", ""),
+        "telefono": usuario_actual.get("telefono", ""),
+        "correo": usuario_actual["correo"],
+        "direccion": usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
+        "ciudad": usuario_actual.get("ciudad", "Bogotá"),
+    }
+    try:
+        profile_manager.guardar_operador(
+            operador_id=usuario_actual["id"],
+            nombre=usuario_actual["nombre"],
+            cargo=usuario_actual.get("cargo", ""),
+            cedula=usuario_actual.get("cedula", ""),
+            telefono=usuario_actual.get("telefono", ""),
+            correo=usuario_actual["correo"],
+            direccion=usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
+            ciudad=usuario_actual.get("ciudad", "Bogotá"),
+            es_activo=True,
         )
+    except Exception:
+        pass
 
-        operador_activo = None
-        if op_seleccionado_etiqueta != opcion_sin_operador:
-            operador_activo = mapa_operadores.get(op_seleccionado_etiqueta)
-            if operador_activo and (not op_activo_db or op_activo_db["id"] != operador_activo["id"]):
-                profile_manager.activar_operador(operador_activo["id"])
+    st.markdown(f"""
+        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">
+            <div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Operador de la Cuenta</div>
+            <div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual['nombre']}</div>
+            <div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get('cargo') or 'Asesor Comercial'}</div>
+            <div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual['correo']}</div>
+        </div>
+    """, unsafe_allow_html=True)
 
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
@@ -1079,119 +1061,39 @@ with st.sidebar:
                     datos_empresa = datos_guardar
                     _safe_rerun()
 
-    # 👤 Gestión de Operadores / Diligenciado Por (Posicionado directamente debajo de Editar Empresa)
-    if es_admin_usuario:
-        with st.expander("👤 Gestionar Operadores / Asesores", expanded=False):
-            st.caption("Administra los asesores que diligencian los formularios comerciales:")
+    # 👤 Datos del Operador / Diligenciado Por (Fijado a la cuenta en sesión)
+    with st.expander("👤 Mis Datos de Operador (Diligenciado Por)", expanded=False):
+        st.caption("Actualiza tus datos para el diligenciamiento automático de formularios comerciales:")
+        mi_nom = st.text_input("Nombre Completo", value=usuario_actual.get("nombre", ""), key="mi_op_nom")
+        mi_car = st.text_input("Cargo / Rol", value=usuario_actual.get("cargo", ""), key="mi_op_car")
+        mi_ced = st.text_input("Cédula / Documento", value=usuario_actual.get("cedula", ""), key="mi_op_ced")
+        mi_tel = st.text_input("Teléfono / Celular", value=usuario_actual.get("telefono", ""), key="mi_op_tel")
+        mi_dir = st.text_input("Dirección", value=usuario_actual.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key="mi_op_dir")
+        mi_ciu = st.text_input("Ciudad", value=usuario_actual.get("ciudad") or "Bogotá", key="mi_op_ciu")
+        st.text_input("Correo Corporativo", value=usuario_actual.get("correo", ""), disabled=True, key="mi_op_cor")
 
-            # Si hay un operador seleccionado, permitir editar sus datos
-            if operador_activo:
-                st.markdown(f"##### ✏️ Editar: **{operador_activo['nombre']}**")
-                op_nombre = st.text_input("Nombre Completo", value=operador_activo.get("nombre", ""), key=f"edit_op_nom_{operador_activo['id']}")
-                op_cargo = st.text_input("Cargo / Rol", value=operador_activo.get("cargo", ""), key=f"edit_op_car_{operador_activo['id']}")
-                op_cedula = st.text_input("Cédula / Documento", value=operador_activo.get("cedula", ""), key=f"edit_op_ced_{operador_activo['id']}")
-                op_tel = st.text_input("Teléfono / Celular", value=operador_activo.get("telefono", ""), key=f"edit_op_tel_{operador_activo['id']}")
-                op_correo = st.text_input("Correo Electrónico", value=operador_activo.get("correo", ""), key=f"edit_op_cor_{operador_activo['id']}")
-                op_dir = st.text_input("Dirección", value=operador_activo.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key=f"edit_op_dir_{operador_activo['id']}")
-                op_ciu = st.text_input("Ciudad", value=operador_activo.get("ciudad") or "Bogotá", key=f"edit_op_ciu_{operador_activo['id']}")
-
-                if st.button("💾 Guardar Datos del Operador", key="btn_guardar_op_actual", use_container_width=True):
-                    profile_manager.guardar_operador(
-                        operador_id=operador_activo["id"],
-                        nombre=op_nombre,
-                        cargo=op_cargo,
-                        cedula=op_cedula,
-                        telefono=op_tel,
-                        correo=op_correo,
-                        direccion=op_dir,
-                        ciudad=op_ciu,
-                        es_activo=True,
-                    )
-                    # Sincronizar en la sesión activa si corresponde al usuario conectado
-                    if usuario_actual.get("id") == operador_activo["id"] or usuario_actual.get("correo", "").lower() == op_correo.strip().lower():
-                        st.session_state["usuario_activo"]["nombre"] = op_nombre
-                        st.session_state["usuario_activo"]["cargo"] = op_cargo
-                        st.session_state["usuario_activo"]["cedula"] = op_cedula
-                        st.session_state["usuario_activo"]["telefono"] = op_tel
-                        st.session_state["usuario_activo"]["correo"] = op_correo
-                        st.session_state["usuario_activo"]["direccion"] = op_dir
-                        st.session_state["usuario_activo"]["ciudad"] = op_ciu
-
-                    st.success("✅ Datos del operador actualizados exitosamente en SQLite y sesión.")
-                    _safe_rerun()
-                st.markdown("---")
-
-            st.markdown("##### ➕ Registrar Nuevo Asesor")
-            nuevo_op_nombre = st.text_input("Nombre Completo", placeholder="Ej: Diana Gómez", key="nuevo_op_nom")
-            nuevo_op_cargo = st.text_input("Cargo", placeholder="Ej: Consultora Comercial", key="nuevo_op_car")
-            nuevo_op_ced = st.text_input("Cédula", placeholder="Ej: 1020304050", key="nuevo_op_ced")
-            nuevo_op_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="nuevo_op_tel")
-            nuevo_op_cor = st.text_input("Correo", placeholder="Ej: diana.gomez@iaclatam.com", key="nuevo_op_cor")
-            nuevo_op_dir = st.text_input("Dirección", value="Carrera 63 B # 32 E -25 OFC 206", key="nuevo_op_dir")
-            nuevo_op_ciu = st.text_input("Ciudad", value="Bogotá", key="nuevo_op_ciu")
-
-            if st.button("Crear Asesor", key="btn_crear_nuevo_op", use_container_width=True):
-                if nuevo_op_nombre.strip():
-                    slug_op = profile_manager._slugify(nuevo_op_nombre)
-                    profile_manager.guardar_operador(
-                        operador_id=slug_op,
-                        nombre=nuevo_op_nombre.strip(),
-                        cargo=nuevo_op_cargo.strip(),
-                        cedula=nuevo_op_ced.strip(),
-                        telefono=nuevo_op_tel.strip(),
-                        correo=nuevo_op_cor.strip(),
-                        direccion=nuevo_op_dir.strip(),
-                        ciudad=nuevo_op_ciu.strip(),
-                        es_activo=True,
-                    )
-                    st.success(f"✅ Operador '{nuevo_op_nombre}' registrado y activado.")
-                    _safe_rerun()
-                else:
-                    st.warning("Ingresa al menos el nombre del asesor.")
-    else:
-        with st.expander("👤 Mis Datos de Asesor Comercial", expanded=False):
-            st.caption("Actualiza tus datos para el diligenciamiento automático de formularios:")
-            mi_nom = st.text_input("Nombre Completo", value=usuario_actual.get("nombre", ""), key="mi_op_nom")
-            mi_car = st.text_input("Cargo / Rol", value=usuario_actual.get("cargo", ""), key="mi_op_car")
-            mi_ced = st.text_input("Cédula / Documento", value=usuario_actual.get("cedula", ""), key="mi_op_ced")
-            mi_tel = st.text_input("Teléfono / Celular", value=usuario_actual.get("telefono", ""), key="mi_op_tel")
-            mi_dir = st.text_input("Dirección", value=usuario_actual.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206", key="mi_op_dir")
-            mi_ciu = st.text_input("Ciudad", value=usuario_actual.get("ciudad") or "Bogotá", key="mi_op_ciu")
-            st.text_input("Correo Corporativo", value=usuario_actual.get("correo", ""), disabled=True, key="mi_op_cor")
-
-            if st.button("💾 Guardar Mis Datos", key="btn_guardar_mis_datos", use_container_width=True):
-                profile_manager.guardar_operador(
-                    operador_id=usuario_actual["id"],
-                    nombre=mi_nom,
-                    cargo=mi_car,
-                    cedula=mi_ced,
-                    telefono=mi_tel,
-                    correo=usuario_actual["correo"],
-                    direccion=mi_dir,
-                    ciudad=mi_ciu,
-                    es_activo=True,
-                )
-                st.session_state["usuario_activo"]["nombre"] = mi_nom
-                st.session_state["usuario_activo"]["cargo"] = mi_car
-                st.session_state["usuario_activo"]["cedula"] = mi_ced
-                st.session_state["usuario_activo"]["telefono"] = mi_tel
-                st.session_state["usuario_activo"]["direccion"] = mi_dir
-                st.session_state["usuario_activo"]["ciudad"] = mi_ciu
-                st.success("✅ Tus datos se han actualizado permanentemente en SQLite y sesión.")
-                _safe_rerun()
+        if st.button("💾 Guardar Mis Datos", key="btn_guardar_mis_datos", use_container_width=True):
+            profile_manager.guardar_operador(
+                operador_id=usuario_actual["id"],
+                nombre=mi_nom,
+                cargo=mi_car,
+                cedula=mi_ced,
+                telefono=mi_tel,
+                correo=usuario_actual["correo"],
+                direccion=mi_dir,
+                ciudad=mi_ciu,
+                es_activo=True,
+            )
+            st.session_state["usuario_activo"]["nombre"] = mi_nom
+            st.session_state["usuario_activo"]["cargo"] = mi_car
+            st.session_state["usuario_activo"]["cedula"] = mi_ced
+            st.session_state["usuario_activo"]["telefono"] = mi_tel
+            st.session_state["usuario_activo"]["direccion"] = mi_dir
+            st.session_state["usuario_activo"]["ciudad"] = mi_ciu
+            st.success("✅ Tus datos se han actualizado permanentemente en SQLite y sesión.")
+            _safe_rerun()
 
     if es_admin_usuario:
-        with st.expander("➕ Crear Nuevo Perfil", expanded=False):
-            nuevo_nombre = st.text_input("Nombre del Nuevo Perfil", placeholder="Ej: IAC Sucursal Bogotá")
-            if st.button("Crear Perfil", key="btn_crear_perfil", width="stretch"):
-                if nuevo_nombre.strip():
-                    exito, nueva_ruta, nueva_etiqueta = profile_manager.crear_nuevo_perfil(nuevo_nombre, datos_empresa)
-                    if exito:
-                        st.session_state["perfil_activo_nombre"] = nueva_etiqueta
-                        profile_manager.guardar_perfil_activo_seleccionado(nueva_etiqueta)
-                        st.success(f"✅ Perfil creado: {nueva_etiqueta}")
-                        _safe_rerun()
-
         with st.expander("💾 Respaldar / Cargar Perfil (JSON)", expanded=False):
             st.caption("Exporta tus datos para guardarlos en tu equipo o impórtalos en la nube (Streamlit Cloud):")
             json_descarga = profile_manager.obtener_perfil_para_descarga(ruta_perfil_activo)
@@ -1367,7 +1269,7 @@ with col_ctx1:
         </div>
     """, unsafe_allow_html=True)
 with col_ctx2:
-    op_label = f"👤 {operador_activo['nombre']}" + (f" ({operador_activo['cargo']})" if operador_activo.get("cargo") else "") if operador_activo else "⚪ Sin operador (Safe Passivity / Manual)"
+    op_label = f"👤 {operador_activo['nombre']}" if operador_activo else "⚪ Sin operador (Safe Passivity / Manual)"
     op_color = "#10B981" if operador_activo else "#94A3B8"
     st.markdown(f"""
         <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid {op_color}; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
