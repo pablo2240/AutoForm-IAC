@@ -766,8 +766,11 @@ def validar_item_mapeo(
 
     if campo_original in _CAMPOS_REP_LEGAL:
         es_sec_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) or any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "firma", "apoderado", "gerente", "junta", "directiv", "administra", "organo"))
-        es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente"))
-        if not (es_sec_legal or (es_sec_general and any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "cedula", "c c", "cc", "c.c", "exped")))):
+        es_sec_general = any(t in seccion_norm for t in ("general", "identificacion", "solicitante", "proponente", "juridica", "empresa", "datos basicos"))
+        es_rot_rep = any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "apoderado"))
+        contexto_fila_norm = str(plan_item.get("contexto_fila") or "").lower()
+        es_rot_id_rep = any(t in rotulo_norm for t in ("cedula", "c c", "cc", "c.c", "exped", "nacionalidad")) or (("nit" in rotulo_norm or "identificacion" in rotulo_norm or "cc" in rotulo_norm) and "representante" in contexto_fila_norm)
+        if not (es_sec_legal or (es_sec_general and (es_rot_rep or es_rot_id_rep))):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección ('{seccion}')."
@@ -901,14 +904,26 @@ def validar_plan_mapeo(
     # Pre-escaneo a nivel de fila para desambiguar sede principal corporativa vs contacto comercial
     filas_sede_principal: Set[Tuple[str, int]] = set()
     filas_contacto_comercial: Set[Tuple[str, int]] = set()
+    filas_con_rotulo_contacto: Set[Tuple[str, int]] = set()
     for item in plan_mapeo:
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
         r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
         if any(t in r_txt for t in ("oficina principal", "sede principal", "domicilio principal", "direccion principal", "dirección principal")):
             filas_sede_principal.add((h, f))
-        elif any(t in r_txt for t in ("encargado de ventas", "contacto comercial", "asesor comercial", "contacto de ventas", "asesor de ventas", "vendedor")):
+        elif any(t in r_txt for t in ("encargado de ventas", "contacto comercial", "asesor comercial", "contacto de ventas", "asesor de ventas", "vendedor", "nombre del contacto", "datos del contacto")):
             filas_contacto_comercial.add((h, f))
+            filas_con_rotulo_contacto.add((h, f))
+
+    # Extender a filas contiguas adyacentes del mismo bloque si contienen atributos del contacto (cargo, correo, celular)
+    for item in plan_mapeo:
+        h = str(item.get("hoja") or "")
+        f = int(item.get("fila") or 0)
+        r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        if (h, f) not in filas_sede_principal:
+            if any(abs(f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h):
+                if any(t in r_txt for t in ("cargo", "email", "e-mail", "correo", "telefono", "celular", "fijo")):
+                    filas_contacto_comercial.add((h, f))
 
     for item in plan_mapeo:
         # ── Short-circuit: sección o fila marcada OMITIR_* en el IR ──────────

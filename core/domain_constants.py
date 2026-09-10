@@ -74,7 +74,7 @@ CAMPOS_REP_LEGAL: Set[str] = {
     "representante_legal", "representante_nombres", "representante_apellidos",
     "primer_nombre", "segundo_nombre", "primer_apellido", "segundo_apellido",
     "cedula", "lugar_expedicion", "lugar_nacimiento",
-    "ciudad_residencia", "departamento_residencia",
+    "ciudad_residencia", "departamento_residencia", "nacionalidad",
 }
 
 # ADR-0007: Campos del Responsable del Diligenciamiento / Operador Comercial

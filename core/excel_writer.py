@@ -389,6 +389,9 @@ def _obtener_valor_datos(datos_empresa: Dict[str, Any], campo: str) -> Any:
     if campo == "departamento_residencia":
         return plano.get("departamento_residencia") or "Antioquia"
 
+    if campo == "nacionalidad":
+        return plano.get("nacionalidad") or "Colombiana"
+
     if campo == "representante_nombres":
         val = plano.get("representante_nombres")
         if val and str(val).strip():
