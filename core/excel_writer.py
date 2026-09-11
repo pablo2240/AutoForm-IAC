@@ -257,10 +257,6 @@ def _unificar_rango_contiguo_inconsistente(
 
             if hay_merge_adelante:
                 col_fin = c_next
-            elif len(merges_detectados) > 0 and (
-                c_next <= col_inicio + ancho_previsto - 1 or _tiene_borde_relevante(ws.cell(row=fila_destino, column=c_next))
-            ):
-                col_fin = c_next
             else:
                 break
 

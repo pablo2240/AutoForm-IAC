@@ -40,6 +40,7 @@ ROTULOS_GENERICOS_BLOQUEADOS: Set[str] = {
     "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras",
     "pep", "si", "no", "s", "n", "na", "n/a", "opcion", "opciones", "seleccione",
     "declaracion", "firma", "huella", "fecha", "dia", "mes", "ano", "año",
+    "tipo 1", "tipo 2", "tipo 3", "tipo 4", "tipo 5",
 }
 
 # ── Patrón de limpieza de caracteres terminales y espacios ─────────────────────

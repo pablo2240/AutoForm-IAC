@@ -58,7 +58,7 @@ _PATRON_INSTRUCCIONES_ANEXOS = re.compile(
 
 _PATRON_OPCIONES_SELECCION = re.compile(
     r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
-    r"vinculaci[oó]n|tipo\s+de\s+vinculaci[oó]n|"
+    r"tipo\s+\d+|vinculaci[oó]n|tipo\s+de\s+vinculaci[oó]n|"
     r"nit|n\.?i\.?t\.?|cc|c\.?c\.?|ce|c\.?e\.?|ti|t\.?i\.?|pas|pasaporte|pep|ppt|rc|r\.?c\.?|rut|"
     r"\[\s*\]|\(\s*\)|\[\s*x\s*\]|\(\s*x\s*\)|☐|☑|☒|✓|✗)\s*$",
     re.IGNORECASE

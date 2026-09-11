@@ -344,7 +344,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:email|correo(?:\s+electr[oó]nico)?(?:\s+notificaciones)?(?:\s+institucional)?)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:e-?mail|correo(?:\s+electr[oó]nico)?(?:\s+notificaciones)?(?:\s+institucional)?)\s*$", re.IGNORECASE),
         "correo",
         "derecha",
     ),
