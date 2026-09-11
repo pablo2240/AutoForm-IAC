@@ -572,6 +572,14 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # ── Safe Passivity: Contacto en cliente o entidad tercera ─────────────
+    if re.search(r"\bcontacto\s+(?:en\s+\w+|del?\s+cliente)\b", rotulo_norm):
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = f"Safe Passivity (ADR-0004): Contacto en empresa cliente o tercera '{rotulo}' reservado para llenado manual."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
     # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007 / ADR-0009): Contacto comercial ──
     pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
     es_sec_rep_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in seccion_norm)
@@ -626,7 +634,8 @@ def validar_item_mapeo(
 
         # Con operador activo presente:
         rotulo_limpio = limpiar_rotulo(rotulo_norm)
-        if (es_sec_contacto or es_rotulo_contacto) and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:
+        es_bare_geo_o_corp = rotulo_limpio in ("ciudad", "municipio", "departamento", "depto", "pais", "direccion", "domicilio")
+        if (es_sec_contacto or (es_rotulo_contacto and not es_bare_geo_o_corp)) and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:
             c_dest = _BARE_LABELS_CONTACTO_COMERCIAL[rotulo_limpio]
             if datos_planos.get(c_dest):
                 campo_original = c_dest
@@ -659,7 +668,7 @@ def validar_item_mapeo(
                 resultado["motivo"] = f"Safe Passivity (ADR-0009): Campo comercial '{campo_original}' sin datos en operador activo."
                 resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
                 return resultado
-        elif any(t in rotulo_norm for t in ("email", "correo")) and datos_planos.get("responsable_correo"):
+        elif any(t in rotulo_norm or t in rotulo_norm.replace(" ", "") for t in ("email", "mail", "correo")) and datos_planos.get("responsable_correo"):
             campo_original = "responsable_correo"
             resultado["campo_final"] = "responsable_correo"
             resultado["motivo"] = "Context-First (ADR-0009): Asignado a correo del responsable comercial."
@@ -921,18 +930,31 @@ def validar_plan_mapeo(
         r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
         if any(t in r_txt for t in ("oficina principal", "sede principal", "domicilio principal", "direccion principal", "dirección principal")):
             filas_sede_principal.add((h, f))
-        elif any(t in r_txt for t in ("encargado de ventas", "contacto comercial", "asesor comercial", "contacto de ventas", "asesor de ventas", "vendedor", "nombre del contacto", "datos del contacto")):
+        elif not re.search(r"\bcontacto\s+(?:en\s+\w+|del?\s+cliente)\b", r_txt) and (
+            str(item.get("campo") or "") == "responsable_nombre"
+            or any(t == r_txt or f" {t}" in r_txt or f"{t} " in r_txt for t in ("contacto", "persona de contacto", "asesor", "asesor comercial", "responsable", "vendedor"))
+            or any(t in r_txt for t in ("encargado de ventas", "contacto comercial", "asesor comercial", "contacto de ventas", "asesor de ventas", "vendedor", "nombre del contacto", "datos del contacto"))
+            or PATRON_CONTACTO_COMERCIAL.search(r_txt)
+        ):
             filas_contacto_comercial.add((h, f))
             filas_con_rotulo_contacto.add((h, f))
 
-    # Extender a filas contiguas adyacentes del mismo bloque si contienen atributos del contacto (cargo, correo, celular)
+    # Extender a filas contiguas del mismo bloque si contienen atributos del contacto (cargo, correo, celular)
     for item in plan_mapeo:
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
         r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
         if (h, f) not in filas_sede_principal:
-            if any(abs(f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h):
-                if any(t in r_txt for t in ("cargo", "email", "e-mail", "correo", "telefono", "celular", "fijo")):
+            sec_it = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
+            es_sec_expl_cont = any(t in sec_it for t in _TOKENS_CONTACTO_COMERCIAL)
+            if es_sec_expl_cont:
+                aplica_contiguo = any(abs(f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)
+            else:
+                aplica_contiguo = any(1 <= (f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)
+
+            if aplica_contiguo:
+                r_compacto = r_txt.replace(" ", "")
+                if any(t in r_txt or t in r_compacto for t in ("cargo", "email", "e-mail", "mail", "correo", "celular", "movil", "móvil")):
                     filas_contacto_comercial.add((h, f))
 
     for item in plan_mapeo:
@@ -1011,6 +1033,37 @@ def validar_plan_mapeo(
                     asignados_por_seccion.setdefault(sec_key, set()).add(campo_activo)
 
         plan_validado.append(resultado)
+
+    # ── Regla de Consecutividad Contacto Comercial (ADR-0009) ──────────────────
+    # Si un ítem fue validado como 'responsable_nombre', cualquier campo subsiguiente contiguo
+    # (1 a 2 filas después) que pida correo o celular se asocia a los datos del contacto comercial.
+    filas_nombre_responsable = {
+        (it.get("hoja"), int(it.get("fila") or 0))
+        for it in plan_validado
+        if (it.get("campo") == "responsable_nombre" or it.get("campo_final") == "responsable_nombre")
+        and it.get("estado") != EstadoMapeo.DESCARTADO
+    }
+    if filas_nombre_responsable and (datos_planos.get("responsable_correo") or datos_planos.get("responsable_celular") or datos_planos.get("responsable_telefono")):
+        for it in plan_validado:
+            h_it = it.get("hoja")
+            f_it = int(it.get("fila") or 0)
+            if any(h_it == hc and 1 <= (f_it - fc) <= 2 for hc, fc in filas_nombre_responsable):
+                r_norm = _normalizar(str(it.get("rotulo") or it.get("valor") or ""))
+                r_comp = r_norm.replace(" ", "")
+                c_act = it.get("campo_final") or it.get("campo") or it.get("campo_propuesto")
+                # Email / Correo
+                if (any(t in r_norm or t in r_comp for t in ("email", "mail", "correo")) or c_act in ("correo", "email", "e-mail", "correo_electronico", "responsable_correo")) and datos_planos.get("responsable_correo"):
+                    it["campo"] = "responsable_correo"
+                    it["campo_final"] = "responsable_correo"
+                    it["estado"] = EstadoMapeo.APROBADO
+                    it["motivo"] = "Consecutividad Comercial (ADR-0009): Reasignado a correo del contacto comercial subsiguiente."
+                # Celular / Teléfono comercial (si es explícitamente celular o no es teléfono principal)
+                elif (any(t in r_norm or t in r_comp for t in ("celular", "movil", "móvil")) or c_act in ("celular", "movil", "móvil")) and (datos_planos.get("responsable_telefono") or datos_planos.get("responsable_celular")):
+                    dest_tel = "responsable_telefono" if datos_planos.get("responsable_telefono") else "responsable_celular"
+                    it["campo"] = dest_tel
+                    it["campo_final"] = dest_tel
+                    it["estado"] = EstadoMapeo.APROBADO
+                    it["motivo"] = f"Consecutividad Comercial (ADR-0009): Reasignado a {dest_tel} del contacto comercial subsiguiente."
 
     return plan_validado
 

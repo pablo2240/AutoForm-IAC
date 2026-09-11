@@ -195,6 +195,8 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "correo electrónico": "responsable_correo",
     "email": "responsable_correo",
     "e-mail": "responsable_correo",
+    "e mail": "responsable_correo",
+    "mail": "responsable_correo",
     "cedula": "responsable_cedula",
     "cédula": "responsable_cedula",
     "identificacion": "responsable_cedula",

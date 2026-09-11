@@ -364,7 +364,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 5: Contacto Comercial / Responsable del Diligenciamiento (ADR-0007 / ADR-0009) ──
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario|encargado\s+de\s+ventas)|nombre\s+encargado\s+de\s+ventas|encargado\s+de\s+ventas|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto|nombre\s+completo|nombres?\s+y\s+apellidos?|nombre)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable|funcionario|encargado\s+de\s+ventas)|nombre\s+encargado\s+de\s+ventas|encargado\s+de\s+ventas|asesor\s+comercial|contacto\s+comercial|diligenciado\s+por|persona\s+de\s+contacto|nombre\s+completo|nombres?\s+y\s+apellidos?|contacto|nombre)\s*$", re.IGNORECASE),
         "responsable_nombre",
         "derecha",
     ),
@@ -549,10 +549,24 @@ def ejecutar_pase_cobertura_exhaustiva(
 
         # Safe Passivity & Operadores (ADR-0004 / ADR-0007): Descartar rótulos genéricos o contacto sin operador
         txt_limpio = limpiar_rotulo(txt)
-        if txt_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
+        if txt_limpio in ROTULOS_GENERICOS_BLOQUEADOS or re.search(r"\bcontacto\s+(?:en\s+\w+|del?\s+cliente)\b", txt, re.IGNORECASE):
             continue
         tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
-        es_rot_contacto = bool(PATRON_CONTACTO_COMERCIAL.search(txt) or PAT_SECCION_CONTACTO_COMERCIAL.search(sec_titulo))
+        filas_contacto_existentes = {
+            (m.get("hoja"), int(m.get("fila") or 0))
+            for m in plan_resultado + nuevos_mapeos
+            if (m.get("campo") in CAMPOS_RESPONSABLE_COMERCIAL or m.get("campo_final") in CAMPOS_RESPONSABLE_COMERCIAL)
+            and m.get("estado") != EstadoMapeo.DESCARTADO
+        }
+        es_inmediato_contacto = any(
+            hc == cand["hoja"] and 1 <= (cand["fila"] - fc) <= 2
+            for hc, fc in filas_contacto_existentes
+        )
+        es_rot_contacto = bool(
+            PATRON_CONTACTO_COMERCIAL.search(txt)
+            or PAT_SECCION_CONTACTO_COMERCIAL.search(sec_titulo)
+            or es_inmediato_contacto
+        )
         if es_rot_contacto and not tiene_datos_op:
             continue
 
@@ -570,7 +584,11 @@ def ejecutar_pase_cobertura_exhaustiva(
                 continue
 
             # 1. Comprobar pertinencia de sección y texto de rótulo
-            aplica_sec = bool(pat_sec.search(sec_titulo)) or (pat_sec == PAT_SECCION_EMPRESA and not es_rot_contacto)
+            aplica_sec = (
+                bool(pat_sec.search(sec_titulo))
+                or (pat_sec == PAT_SECCION_EMPRESA and not es_rot_contacto)
+                or (pat_sec == PAT_SECCION_CONTACTO_COMERCIAL and es_rot_contacto)
+            )
             if not aplica_sec:
                 continue
 
@@ -605,12 +623,16 @@ def ejecutar_pase_cobertura_exhaustiva(
                 ubicacion = dir_espacial if dir_espacial in ("derecha", "abajo", "misma") else dir_fallback
 
             # Calcular celda destino física
+            col_dest_prev = int(elem_raw.get("inicioLineaCol", 0) or 0)
+            if not col_dest_prev or col_dest_prev <= c:
+                col_dest_prev = c + 1
+
             if ubicacion == "abajo":
                 coord_dest = (h, f + 1, c)
             elif ubicacion == "misma":
                 coord_dest = (h, f, c)
             else:
-                coord_dest = (h, f, c + 1)
+                coord_dest = (h, f, col_dest_prev)
 
             # Evitar colisiones en destino
             if coord_dest in coords_destino_ocupadas:
@@ -633,6 +655,7 @@ def ejecutar_pase_cobertura_exhaustiva(
                 "anchoLinea": ancho_l,
                 "seccion": sec_titulo,
                 "tipo_elemento": cand.get("tipo_elemento", "FIELD"),
+                "es_fila_contacto": es_rot_contacto,
             }
 
             # Preservar metadatos de PDF si existen
