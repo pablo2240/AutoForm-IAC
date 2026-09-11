@@ -42,7 +42,18 @@ _PATRON_CONTROL_DOCUMENTAL = re.compile(
 )
 
 _PATRON_USO_EXCLUSIVO = re.compile(
-    r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|espacio\s+reservado|reservado\s+para\s+la\s+empresa|verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones|para\s+uso\s+de\s+la\s+entidad|auditor[ií]a",
+    r"campo\s+exclusivo|espacio\s+(?:(?:para\s+ser\s+)?diligenciado|reservado|exclusivo)(?:\s+por)?|"
+    r"diligenciado\s+por\s+(?:la\s+)?(?:empresa|entidad|cliente|[a-z0-9\s]+sas|[a-z0-9\s]+s\.a\.s)|"
+    r"para\s+(?:ser\s+)?diligenciado\s+por|"
+    r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|"
+    r"exclusivo\s+(?:para|de)|para\s+uso\s+exclusivo|"
+    r"espacio\s+reservado|reservado\s+para(?:\s+la\s+empresa)?|"
+    r"selecci[oó]n\s+del?\s+proveedor|evaluaci[oó]n\s+del?\s+proveedor|calificaci[oó]n\s+del?\s+proveedor|"
+    r"criterios\s+de\s+selecci[oó]n|escala\s+de\s+calificaci[oó]n|"
+    r"concepto\s+(?:comercial|de\s+la\s+entidad|financiero|final)|"
+    r"verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones|"
+    r"para\s+uso\s+de\s+la\s+entidad|(?:\b(?:control|uso|espacio)\s+(?:de\s+)?|^)auditor[ií]a(?:\s+interna)?$|"
+    r"observaciones\s+del\s+l[ií]der",
     re.IGNORECASE
 )
 
@@ -58,6 +69,7 @@ _PATRON_INSTRUCCIONES_ANEXOS = re.compile(
 
 _PATRON_OPCIONES_SELECCION = re.compile(
     r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
+    r"contado|credito|cr[eé]dito|\d+\s*d[ií]as|cumple|no\s+cumple|resultado|aprobado\??|no\s+aprobado|"
     r"tipo\s+\d+|vinculaci[oó]n|tipo\s+de\s+vinculaci[oó]n|"
     r"nit|n\.?i\.?t\.?|cc|c\.?c\.?|ce|c\.?e\.?|ti|t\.?i\.?|pas|pasaporte|pep|ppt|rc|r\.?c\.?|rut|"
     r"\[\s*\]|\(\s*\)|\[\s*x\s*\]|\(\s*x\s*\)|☐|☑|☒|✓|✗)\s*$",
@@ -68,6 +80,7 @@ from core.domain_constants import (
     PATRON_CONTACTO_COMERCIAL,
     ROTULOS_GENERICOS_BLOQUEADOS,
     TOKENS_TITULO_SECCION_PRIORITARIO,
+    TOKENS_USO_INTERNO_EXCLUSIVO,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
 )
@@ -159,6 +172,8 @@ def es_titulo_seccion(texto: str) -> bool:
         r"^composicion\s+accionaria(?:\s*\(.*?\))?$",
         r"^declaracion\s+de\s+origen\s+de\s+(?:fondos|bienes|recursos)(?:\s*\(.*?\))?$",
         r"^confirmacion\s+de\s+datos(?:\s*\(.*?\))?$",
+        r"^(?:condiciones\s+de\s+pago\s+y\s+descuentos|pago\s+y\s+descuentos)(?:\s*\(.*?\))?$",
+        r"^datos\s+bancarios(?:\s*\(.*?\))?$",
     ]
     for pat in titulos_tipicos_norm:
         if re.match(pat, t_norm, re.IGNORECASE):
@@ -183,7 +198,7 @@ def clasificar_rotulo_individual(rotulo: str, propiedades_celda: Optional[Dict[s
         return ClasificacionElemento.CONTROL_DOCUMENTAL
 
     # 2. Uso exclusivo
-    if _PATRON_USO_EXCLUSIVO.search(txt):
+    if _PATRON_USO_EXCLUSIVO.search(txt) or any(tok in txt_norm for tok in TOKENS_USO_INTERNO_EXCLUSIVO):
         return ClasificacionElemento.USO_EXCLUSIVO
 
     # 3. Firmas
@@ -273,7 +288,7 @@ def clasificar_elementos_formulario(
                 fila_inicio_exclusivo = fila
 
             if rango_uso_exclusivo_activo:
-                if fila > fila_inicio_exclusivo + 15 or (tipo_clasif == ClasificacionElemento.TITULO_SECCION and tipo_clasif != ClasificacionElemento.USO_EXCLUSIVO):
+                if fila > fila_inicio_exclusivo + 35 or (tipo_clasif == ClasificacionElemento.TITULO_SECCION and tipo_clasif != ClasificacionElemento.USO_EXCLUSIVO):
                     rango_uso_exclusivo_activo = False
                 else:
                     tipo_clasif = ClasificacionElemento.USO_EXCLUSIVO

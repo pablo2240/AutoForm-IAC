@@ -35,12 +35,14 @@ PATRON_PEP_BENEFICIARIOS = re.compile(
 )
 
 
-# ── Rótulos genéricos u opciones que NUNCA deben recibir mapeo automático ──────
 ROTULOS_GENERICOS_BLOQUEADOS: Set[str] = {
     "cliente", "vinculacion", "tipo de vinculacion", "otro", "otros", "otra", "otras",
     "pep", "si", "no", "s", "n", "na", "n/a", "opcion", "opciones", "seleccione",
     "declaracion", "firma", "huella", "fecha", "dia", "mes", "ano", "año",
     "tipo 1", "tipo 2", "tipo 3", "tipo 4", "tipo 5",
+    "area", "área", "comercial", "cartera", "contabilidad", "calidad",
+    "seleccionado por", "aprobado por", "evaluado por", "calificado por",
+    "concepto comercial", "concepto", "concepto final",
 }
 
 # ── Patrón de limpieza de caracteres terminales y espacios ─────────────────────
@@ -154,10 +156,32 @@ TOKENS_USO_INTERNO_EXCLUSIVO: Set[str] = {
     "uso exclusivo",
     "uso interno",
     "espacio exclusivo",
+    "campo exclusivo",
+    "exclusivo para",
+    "exclusivo de",
+    "para uso exclusivo",
     "espacio reservado",
     "reservado para la empresa",
+    "reservado para",
     "para uso de la entidad",
     "espacio para diligenciamiento",
+    "seleccion del proveedor",
+    "selección del proveedor",
+    "evaluacion del proveedor",
+    "evaluación del proveedor",
+    "evaluacion de proveedores",
+    "evaluación de proveedores",
+    "calificacion del proveedor",
+    "calificación del proveedor",
+    "criterios de seleccion",
+    "criterios de selección",
+    "escala de calificacion",
+    "escala de calificación",
+    "concepto comercial",
+    "concepto de la entidad",
+    "seleccionado por",
+    "aprobado por",
+    "evaluado por",
 }
 
 TOKENS_CONTACTO_SECCION: Set[str] = TOKENS_CONTACTO_COMERCIAL.union({
@@ -185,6 +209,11 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "rol": "responsable_cargo",
     "telefono": "responsable_telefono",
     "teléfono": "responsable_telefono",
+    "telefono * ext o celular": "responsable_telefono",
+    "telefono * ext. o celular": "responsable_telefono",
+    "telefono o celular": "responsable_telefono",
+    "telefono / celular": "responsable_telefono",
+    "telefono fijo o celular": "responsable_telefono",
     "celular": "responsable_telefono",
     "movil": "responsable_telefono",
     "móvil": "responsable_telefono",
@@ -216,6 +245,7 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
 
 # ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
 CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
+    "razon_social": "responsable_nombre",
     "representante_legal": "responsable_nombre",
     "representante_nombres": "responsable_nombre",
     "representante_apellidos": "responsable_nombre",
@@ -313,6 +343,10 @@ TOKENS_TITULO_SECCION_PRIORITARIO: Set[str] = {
     "información financiera", "informacion financiera",
     "información fiscal", "informacion fiscal",
     "datos financieros", "datos fiscales",
+    "condiciones de pago y descuentos", "condiciones de pago y descuento",
+    "pago y descuentos", "pagos y descuentos",
+    "datos bancarios", "información bancaria", "informacion bancaria",
+    "referencias bancarias", "referencia bancaria",
 }
 
 

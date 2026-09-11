@@ -473,6 +473,11 @@ _PATRON_NUMERO_TEXTO = re.compile(r'^[\d.,\s%$\-+()]{1,20}$')
 _PATRON_SOLO_PUNTUACION = re.compile(r'^[\W_]+$')
 # Patron: codigos CIIU (4 digitos exactos), codigos de actividad o codigos postales cortos
 _PATRON_CODIGO_CORTO = re.compile(r'^\d{3,6}$')
+# Patron: telefonos prellenados con extensiones (ej. '(4) 2656868 Ext 106') que son valores previos
+_PATRON_TELEFONO_PRELLENADO = re.compile(
+    r"^\s*(?:\(?\+?\d{1,4}\)?[\s\-]*)?(?:\(?\d{1,4}\)?[\s\-]*)?\d{6,10}(?:\s*(?:ext|x)\.?\s*\d+)?\s*$",
+    re.IGNORECASE,
+)
 # Patron: URLs, correos o cadenas tecnicas que no son rotulos de formulario
 _PATRON_URL = re.compile(r'https?://|www\.|@.*\.', re.IGNORECASE)
 
@@ -486,6 +491,7 @@ def _es_texto_ruido(texto: str) -> bool:
     - Codigos cortos de 3 a 6 digitos (CIIU, codigos postales, etc.)
     - Texto compuesto unicamente de puntuacion o simbolos
     - URLs o correos electronicos
+    - Telefonos prellenados con o sin extension
     """
     t = texto.strip()
     if _PATRON_FECHA.match(t):
@@ -497,6 +503,8 @@ def _es_texto_ruido(texto: str) -> bool:
     if _PATRON_SOLO_PUNTUACION.match(t):
         return True
     if _PATRON_URL.search(t):
+        return True
+    if _PATRON_TELEFONO_PRELLENADO.match(t):
         return True
     return False
 

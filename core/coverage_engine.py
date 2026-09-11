@@ -153,7 +153,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_FINANCIERO,
-        re.compile(r"^\s*(?:n[uú]mero\s+de\s+cuenta|no\.?\s*cuenta|cuenta\s+no\.?|n[uú]mero\s+cuenta|cuenta|n[°º]?\s*(?:de\s+)?cuenta)\s*:?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:n[uú]mero\s+(?:de\s+)?cuenta|no\.?\s*(?:de\s+)?cuenta|nro\.?\s*(?:de\s+)?cuenta|cuenta\s+no\.?|n[uú]mero\s+cuenta|cuenta|n[°º]?\s*(?:de\s+)?cuenta)\s*:?\s*$", re.IGNORECASE),
         "numero_cuenta",
         "derecha",
     ),
@@ -388,7 +388,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_CONTACTO_COMERCIAL,
-        re.compile(r"^\s*(?:tel[eé]fono|celular|m[oó]vil|tel[\s/]*cel|tel)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:tel[eé]fono.*|celular.*|m[oó]vil.*|tel[\s/]*cel.*|tel\b.*)(?:\s*(?:del?\s*)?(?:contacto|asesor|comercial|responsable))?\s*$", re.IGNORECASE),
         "responsable_telefono",
         "derecha",
     ),

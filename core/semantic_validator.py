@@ -572,6 +572,27 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # ── Safe Passivity & Domain Isolation: Áreas de uso exclusivo o evaluación interna ──
+    from core.domain_constants import TOKENS_USO_INTERNO_EXCLUSIVO, ROTULOS_GENERICOS_BLOQUEADOS
+    from core.spatial_ir import _PATRON_USO_EXCLUSIVO
+
+    pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
+    es_bloque_exclusivo = (
+        pertinencia_item == "OMITIR_USO_INTERNO"
+        or bool(_PATRON_USO_EXCLUSIVO.search(seccion))
+        or any(tok in seccion_norm for tok in TOKENS_USO_INTERNO_EXCLUSIVO)
+        or bool(_PATRON_USO_EXCLUSIVO.search(rotulo))
+        or rotulo_norm in ROTULOS_GENERICOS_BLOQUEADOS
+        or bool(re.search(r"^\s*(?:seleccionado|aprobado|evaluado|calificado|revisado)\s+por\b", rotulo_norm))
+        or bool(re.search(r"^\s*concepto\s+(?:comercial|tecnico|t[eé]cnico|financiero|final)\b", rotulo_norm))
+    )
+    if es_bloque_exclusivo:
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = f"Domain Isolation: Área de uso exclusivo de la entidad receptora o evaluación interna ('{rotulo}' en '{seccion}')."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
     # ── Safe Passivity (ADR-0005): Secciones o campos de PEP / Beneficiarios Finales ──
     contexto_item = str(plan_item.get("contexto_fila") or "").strip()
     if es_seccion_o_campo_pep(seccion_norm, rotulo_norm, contexto_item):
@@ -642,6 +663,13 @@ def validar_item_mapeo(
             return resultado
 
         # Con operador activo presente:
+        if campo_original in ("nit", "rut", "matricula_mercantil", "objeto_social", "actividad_economica"):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation: Campo corporativo '{campo_original}' prohibido en bloque de contacto comercial."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
         rotulo_limpio = limpiar_rotulo(rotulo_norm)
         es_bare_geo_o_corp = rotulo_limpio in ("ciudad", "municipio", "departamento", "depto", "pais", "direccion", "domicilio")
         if (es_sec_contacto or (es_rotulo_contacto and not es_bare_geo_o_corp)) and rotulo_limpio in _BARE_LABELS_CONTACTO_COMERCIAL:

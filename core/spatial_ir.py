@@ -206,7 +206,18 @@ _PATRON_OPCIONES = re.compile(
     r"urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|"
     r"principal|sucursal|privada|p[uú]blica|mixta|simplificado|"
     r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica|"
-    r"contado|credito|cr[eé]dito)\s*$",
+    r"contado|credito|cr[eé]dito|\d+\s*d[ií]as|cumple|no\s+cumple|aprobado\??|no\s+aprobado)\s*$",
+    re.IGNORECASE,
+)
+
+_PATRON_ROTULOS_TABLA_O_CATEGORIA = re.compile(
+    r"^\s*(?:[aá]rea|cargo|correo(?:\s+electr[oó]nico)?|email|e-mail|tel[eé]fono.*|nombre|"
+    r"comercial|cartera|contabilidad|calidad|administrativ[ao]|operaciones|ventas|compras|jur[ií]dica|t[eé]cnica|"
+    r"seg[uú]n(?:\s+el)?\s+producto.*|en\s+\d+.*|.*\d+\s*%.*|"
+    r"fecha(?:\s+de)?(?:\s+diligenciamiento)?.*|"
+    r"\d+\s*d[ií]as|cumple|no\s+cumple|resultado|aprobado\??|escala(?:\s+de\s+calificaci[oó]n)?|"
+    r"\d+\.\s*(?:productos|condiciones|normalizaci[oó]n|seguridad|entregas|respaldo)|"
+    r"criterios(?:\s+de\s+selecci[oó]n)?|nueva\s+versi[oó]n|cambio\s+realizado)\s*$",
     re.IGNORECASE,
 )
 
@@ -236,13 +247,17 @@ _PATRON_CONTROL_DOCUMENTAL = re.compile(
 )
 
 _PATRON_USO_EXCLUSIVO = re.compile(
-    r"espacio\s+(?:(?:para\s+ser\s+)?diligenciado|reservado|exclusivo)(?:\s+por)?|"
+    r"campo\s+exclusivo|espacio\s+(?:(?:para\s+ser\s+)?diligenciado|reservado|exclusivo)(?:\s+por)?|"
     r"diligenciado\s+por\s+(?:la\s+)?(?:empresa|entidad|cliente|[a-z0-9\s]+sas|[a-z0-9\s]+s\.a\.s)|"
     r"para\s+(?:ser\s+)?diligenciado\s+por|"
     r"espacio\s+exclusivo|uso\s+exclusivo|uso\s+interno|"
-    r"espacio\s+reservado|reservado\s+para\s+la\s+empresa|"
+    r"exclusivo\s+(?:para|de)|para\s+uso\s+exclusivo|"
+    r"espacio\s+reservado|reservado\s+para(?:\s+la\s+empresa)?|"
+    r"selecci[oó]n\s+del?\s+proveedor|evaluaci[oó]n\s+del?\s+proveedor|calificaci[oó]n\s+del?\s+proveedor|"
+    r"criterios\s+de\s+selecci[oó]n|escala\s+de\s+calificaci[oó]n|"
+    r"concepto\s+(?:comercial|de\s+la\s+entidad|financiero|final)|"
     r"verificaci[oó]n\s+de\s+informaci[oó]n\s*/\s*observaciones|"
-    r"para\s+uso\s+de\s+la\s+entidad|auditor[ií]a\s+interna|"
+    r"para\s+uso\s+de\s+la\s+entidad|(?:\b(?:control|uso|espacio)\s+(?:de\s+)?|^)auditor[ií]a(?:\s+interna)?$|"
     r"observaciones\s+del\s+l[ií]der",
     re.IGNORECASE,
 )
@@ -261,7 +276,7 @@ _PATRON_FIRMAS = re.compile(
 
 _TERMINOS_CABECERA = re.compile(
     r"^(?:datos|informaci[oó]n|documentaci[oó]n|proponente|oferente|"
-    r"titulo|secci[oó]n|bloque|cap[ií]tulo|numeral|anexo|"
+    r"titulo|secci[oó]n|bloque|cap[ií]tulo|numeral|anexo|anexar|"
     r"composici[oó]n|declaraci[oó]n|referencias|representante|"
     r"[oó]rganos|conflicto|autorizaci[oó]n|cumplimiento)\b",
     re.IGNORECASE,
@@ -272,7 +287,8 @@ _TERMINOS_CAMPO_CORTO = re.compile(
     r"tel[eé]fono|celular|direcci[oó]n|correo|email|e-mail|ciudad|municipio|"
     r"departamento|pa[ií]s|cargo|banco|cuenta|p[aá]gina|web|objeto|"
     r"actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
-    r"lugar\s+(?:de\s+)?expedici[oó]n|"
+    r"lugar\s+(?:de\s+)?expedici[oó]n|ciiu|c[oó]digo\s+ciiu|c[oó]digo|codigo|[aá]rea|area|"
+    r"fecha|fecha\s+de\s+diligenciamiento|diligenciamiento|"
     r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento|"
     r"empresa|contacto|activos?|pasivos?|patrimonio|ingresos?|egresos?|gastos?|ventas?)\b",
     re.IGNORECASE,
@@ -297,8 +313,30 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     ):
         return False
 
+    # Fechas o marcas temporales nunca son títulos de sección (ej. '2024-02-08 00:00:00')
+    if re.search(r"^\d{4}[/\-.]\d{1,2}[/\-.]\d{1,2}", t_clean):
+        return False
+
     # Opciones de selección o respuestas nunca son títulos de sección
     if _PATRON_OPCIONES.search(t_clean):
+        return False
+
+    # Rótulos de columnas o filas internas de tabla nunca son títulos de sección
+    if _PATRON_ROTULOS_TABLA_O_CATEGORIA.match(t_clean):
+        return False
+
+    # Valores porcentuales o avances nunca son títulos de sección (ej. 'En 1ra auditoria interna 50%')
+    if re.search(r"\d+\s*%", t_clean):
+        return False
+
+    # Textos condicionales o descriptivos que empiezan por 'según' o 'en' (ej. 'Según producto o servicio')
+    if re.match(r"^\s*seg[uú]n\b", t_clean, re.IGNORECASE):
+        return False
+    if re.match(r"^\s*en\s+(?:1ra|2da|3ra|documentaci|preauditor|caso)\b", t_clean, re.IGNORECASE):
+        return False
+
+    # Campos de fecha de diligenciamiento nunca son títulos de sección
+    if re.match(r"^\s*fecha(?:\s+de)?\s+diligenciamiento\b", t_clean, re.IGNORECASE):
         return False
 
     # Direcciones físicas o vías nunca son títulos de sección (ej. 'Cra 63 B Nº 32 E 25')
@@ -308,6 +346,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     t_norm = _normalizar(t_clean)
     # Títulos prioritarios de sección (Q4: Información Financiera/Fiscal, etc.)
     if any(tok in t_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO):
+        return True
+
+    # Secciones o bloques de uso exclusivo / evaluación de la entidad receptora (ADR-0010)
+    if _PATRON_USO_EXCLUSIVO.search(t_clean) or any(tok in t_norm for tok in TOKENS_USO_INTERNO_EXCLUSIVO):
         return True
 
     # Elementos de firma, huella o sello nunca son títulos de sección por sí solos
@@ -334,7 +376,7 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if re.search(
         r"^\s*(?:\d+(?:\.\d+)*[\.]\s*)?(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|"
         r"PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|"
-        r"NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|"
+        r"NUMERAL|ANEXO|ANEXAR|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|"
         r"REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)",
         t_clean,
         re.IGNORECASE,
@@ -353,6 +395,8 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         r"^composicion\s+accionaria(?:\s*\(.*?\))?$",
         r"^declaracion\s+de\s+origen\s+de\s+(?:fondos|bienes|recursos)(?:\s*\(.*?\))?$",
         r"^confirmacion\s+de\s+datos(?:\s*\(.*?\))?$",
+        r"^(?:condiciones\s+de\s+pago\s+y\s+descuentos|pago\s+y\s+descuentos)(?:\s*\(.*?\))?$",
+        r"^datos\s+bancarios(?:\s*\(.*?\))?$",
     ]
     for pat in titulos_norm:
         if re.match(pat, t_norm, re.IGNORECASE):
@@ -404,12 +448,12 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
 
         # 2. Franja divisoria con color de fondo (banner con relleno):
         if color_fondo:
-            # Si tiene fondo sombreado y abarca merge (span >= 2) o no tiene celda de llenado contigua
-            if es_merge or span_merge >= 2 or not tiene_espacio_llenado:
+            # Si tiene fondo sombreado y abarca merge ancho (span >= 4 o es franja de ancho completo)
+            if es_franja_ancho_completo or span_merge >= 4:
                 if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                     return True
-            # Si el texto es descriptivo en mayúsculas o título con fondo
-            if len(t_clean) >= 6 and (t_clean.isupper() or t_clean.istitle()) and not _TERMINOS_CAMPO_CORTO.search(t_clean):
+            # Si el texto es descriptivo en mayúsculas o título formal con fondo y sin celda de llenado contigua
+            if len(t_clean) >= 6 and (t_clean.isupper() or t_clean.istitle()) and not tiene_espacio_llenado and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                 return True
 
         # 3. Celda combinada ancha (span >= 4) sin celda de captura a la derecha:
@@ -424,12 +468,19 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
 # 5. Función de Clasificación de Tipo de Elemento (Fase 1: ¿Qué es?)
 # ──────────────────────────────────────────────────────────────────────────────
 
+_PATRON_CATEGORIAS_TABLA_DECORATIVAS = re.compile(
+    r"^\s*(?:[aá]rea|comercial|cartera|contabilidad|calidad|administrativ[ao]|operaciones|ventas|compras|jur[ií]dica|t[eé]cnica)\s*$",
+    re.IGNORECASE,
+)
+
+
 def clasificar_tipo_elemento(texto: str, propiedades: Optional[Dict[str, Any]] = None) -> TipoElemento:
     """Clasifica QUÉ TIPO de elemento es un texto, sin intentar mapearlo a datos maestros.
 
     Flujo de decisión:
       1. ¿Es un título de sección (léxico o visual con fondo)? → SECTION_TITLE
       2. ¿Es un texto de control documental?                   → DECORATIVE
+      2b. ¿Es una categoría/fila fija de tabla?                → DECORATIVE
       3. ¿Es una zona de uso exclusivo?                        → INSTRUCTION
       4. ¿Es una firma?                                       → DECORATIVE
       5. ¿Es una opción de selección?                          → OPTION
@@ -448,6 +499,10 @@ def clasificar_tipo_elemento(texto: str, propiedades: Optional[Dict[str, Any]] =
 
     # 2. Control documental (versión, código, paginación)
     if _PATRON_CONTROL_DOCUMENTAL.search(txt):
+        return TipoElemento.DECORATIVE
+
+    # 2b. Rótulos fijos de categoría de tabla (Área, Comercial, Cartera, etc.)
+    if _PATRON_CATEGORIAS_TABLA_DECORATIVAS.match(txt):
         return TipoElemento.DECORATIVE
 
     # 3. Uso exclusivo
@@ -499,6 +554,12 @@ def clasificar_seccion_contacto(
         return (
             PertinenciaSeccion.OMITIR_USO_INTERNO,
             "Área de uso exclusivo o diligenciamiento interno del cliente / auditoría (Safe Passivity)",
+        )
+
+    if any(t in titulo for t in ("anexar", "anexo", "documentos a presentar", "documentos a adjuntar", "documentos requeridos")):
+        return (
+            PertinenciaSeccion.OMITIR_USO_INTERNO,
+            "Lista de verificación de documentos o anexos adjuntos (Safe Passivity)",
         )
 
     es_referencias = any(t in titulo for t in TOKENS_REFERENCIAS_EXCLUIDAS)
@@ -555,7 +616,13 @@ def _es_titulo_seccion_externa_proveedor(texto: str) -> bool:
     patrones = [
         r"datos\s+(?:de\s+la\s+empresa|del\s+proveedor|del\s+oferente|del\s+proponente|del\s+acreedor|basicos|generales)",
         r"datos\s+del\s+representante",
-        r"informacion\s+(?:general|basica|del\s+proveedor|de\s+la\s+empresa)",
+        r"informacion\s+(?:del\s+personal\s+de\s+contacto|de\s+contacto|financiera|tributaria|bancaria|legal|general|basica|del\s+proveedor|de\s+la\s+empresa)",
+        r"personal\s+de\s+contacto",
+        r"contacto\s+comercial",
+        r"responsabilidades?\s+tributarias?",
+        r"autorizacion\s+para\s+el\s+tratamiento",
+        r"anexar\s+los\s+siguientes\s+documentos",
+        r"referencias?\s+(?:bancarias?|comerciales?)",
         r"declaracion\s+de\s+(?:origen|bienes|fondos)",
         r"firma\s+del\s+representante",
         r"firma\s+autorizada",
@@ -740,21 +807,30 @@ def construir_ir(
             # Asignar pertinencia según reglas de negocio (ADR-0004 / ADR-0005 / ADR-0010)
             titulo_sec_norm = _normalizar(titulo_sec)
 
-            if en_bloque_uso_interno and _es_titulo_seccion_externa_proveedor(titulo_sec):
-                en_bloque_uso_interno = False
+            pert_c, motivo_c = clasificar_seccion_contacto(titulo_sec, filas_ordenadas)
+            es_uso_exclusivo_propio = bool(_PATRON_USO_EXCLUSIVO.search(titulo_sec) or any(t in titulo_sec_norm for t in TOKENS_USO_INTERNO_EXCLUSIVO))
 
             if es_seccion_o_campo_pep(titulo_sec):
                 pert_sec = PertinenciaSeccion.OMITIR_LEGAL
                 motivo_sec = "Sección o bloque de PEP / Beneficiarios Finales (Safe Passivity ADR-0005)"
-            elif _PATRON_USO_EXCLUSIVO.search(titulo_sec) or any(t in titulo_sec_norm for t in TOKENS_USO_INTERNO_EXCLUSIVO):
+                en_bloque_uso_interno = False
+            elif es_uso_exclusivo_propio:
                 pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
                 motivo_sec = "Área de uso exclusivo de la entidad receptora / diligenciamiento interno"
                 en_bloque_uso_interno = True
             elif en_bloque_uso_interno:
-                pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
-                motivo_sec = f"Sub-bloque interno dentro de área reservada para la empresa ({titulo_sec})"
+                # Si aparece una sección del proveedor o contacto comercial, termina el bloque interno
+                if (
+                    pert_c in (PertinenciaSeccion.CONTACTO_COMERCIAL, PertinenciaSeccion.MIXTA)
+                    or _es_titulo_seccion_externa_proveedor(titulo_sec)
+                ):
+                    en_bloque_uso_interno = False
+                    pert_sec = pert_c if pert_c != PertinenciaSeccion.PROCESAR else PertinenciaSeccion.PROCESAR
+                    motivo_sec = motivo_c if pert_c != PertinenciaSeccion.PROCESAR else "Sección procesable"
+                else:
+                    pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO
+                    motivo_sec = f"Sub-bloque interno dentro de área reservada para la empresa ({titulo_sec})"
             else:
-                pert_c, motivo_c = clasificar_seccion_contacto(titulo_sec, filas_ordenadas)
                 if pert_c != PertinenciaSeccion.PROCESAR:
                     pert_sec = pert_c
                     motivo_sec = motivo_c
