@@ -610,7 +610,13 @@ def ejecutar_stage_3_mapper(
             if re.search(r"_{2,}|\.{3,}", rotulo_orig):
                 ubic = "misma"
             else:
-                ubic = str(item.get("ubicacion") or elem_orig.get("tipoEspacioEscritura") or "derecha").lower()
+                dir_stage2 = str(c_info.get("tipoEspacioEscritura") or "").lower()
+                if dir_stage2 not in ("derecha", "abajo", "misma"):
+                    dir_stage2 = str(elem_orig.get("tipoEspacioEscritura") or "").lower()
+                if dir_stage2 in ("derecha", "abajo", "misma"):
+                    ubic = dir_stage2
+                else:
+                    ubic = str(item.get("ubicacion") or "derecha").lower()
                 if ubic not in ("derecha", "abajo", "misma"):
                     ubic = "derecha"
 
@@ -629,6 +635,7 @@ def ejecutar_stage_3_mapper(
                 # HSP: preservar contexto de sección y tipo para el validador
                 "seccion": c_info.get("_seccion_titulo") or c_info.get("seccion", ""),
                 "tipo_elemento": c_info.get("tipo_elemento", "FIELD"),
+                "contexto_fila": c_info.get("contexto_fila", ""),
             }
 
             # Preservar metadatos de PDF

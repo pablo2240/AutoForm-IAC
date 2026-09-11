@@ -388,6 +388,16 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         es_franja_ancho_completo = (
             es_merge and min_col <= 3 and (span_merge >= 5 or max_col >= 10)
         )
+        es_formato_titulo = (
+            t_clean.isupper()
+            or t_clean.istitle()
+            or bool(re.match(r"^\s*(?:\d+(?:\.\d+)*[\.]?|[I|V|X]+\.?)\s+", t_clean))
+            or any(tok in t_norm for tok in TOKENS_TITULO_SECCION_PRIORITARIO)
+        )
+        # Textos descriptivos o párrafos en minúsculas/oración no son títulos de sección
+        if not es_formato_titulo and len(t_clean.split()) > 4:
+            return False
+
         if es_franja_ancho_completo:
             if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):
                 return True
@@ -673,13 +683,14 @@ def construir_ir(
                 # Color de fondo
                 color = str(elem.get("colorFondo", ""))
 
-                # Dirección de escritura calculada
                 der_vacia = bool(elem.get("derechaVacia", False))
                 ab_vacia = bool(elem.get("abajoVacia", False))
+                ab_es_merge = bool(elem.get("abajoEsMerge", False))
+                der_es_merge = bool(elem.get("derechaEsMerge", False))
                 es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta)\s*$", texto, re.IGNORECASE))
                 if re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "misma"
-                elif ab_vacia and (not der_vacia or es_cabecera_tabla):
+                elif ab_vacia and (not der_vacia or es_cabecera_tabla or (ab_es_merge and not der_es_merge)):
                     dir_esc = "abajo"
                 else:
                     dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()

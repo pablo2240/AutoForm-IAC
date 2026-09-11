@@ -245,15 +245,17 @@ def _calcular_ubicacion_fisica(
     color_fondo: str = "",
     derecha_con_borde_inf: bool = False,
     ancho_linea: int = 1,
+    abajo_es_merge: bool = False,
 ) -> str:
     """Calcula la ubicación de escritura usando flags espaciales y estilo visual de la celda.
 
     Jerarquía determinista (ADR-0004):
       1. Regla estricta: 'misma' SOLO se permite si el rótulo mismo contiene la línea
          de puntos o guiones inline dentro de su propio texto (ej. "Yo, ________").
-      2. Si la derecha tiene espacio, es merge, tiene borde inferior (subrayado) o
+      2. Si la derecha está bloqueada pero abajo libre → ABAJO.
+      2b. Si abajo hay un bloque combinado de captura libre y la derecha no es merge → ABAJO.
+      3. Si la derecha tiene espacio, es merge, tiene borde inferior (subrayado) o
          ancho_linea > 1 → DERECHA obligatoria.
-      3. Si la derecha está bloqueada pero abajo libre → ABAJO.
       4. Fallback seguro → DERECHA.
     Returns:
         str: "misma" | "derecha" | "abajo"
@@ -264,6 +266,10 @@ def _calcular_ubicacion_fisica(
 
     # Regla 2: Si la derecha está ocupada pero abajo libre → ABAJO obligatoria
     if not derecha_vacia and abajo_vacia:
+        return "abajo"
+
+    # Regla 2b: Si abajo hay bloque combinado de captura vacío y la derecha no es merge → ABAJO
+    if abajo_vacia and abajo_es_merge and not derecha_es_merge:
         return "abajo"
 
     # Regla 3: Espacio libre, subrayado o merge a la derecha → DERECHA

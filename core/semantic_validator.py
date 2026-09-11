@@ -317,6 +317,7 @@ def _regla_autocorrecciones_semanticas_adicionales(
     campo: str,
     rotulo_normalizado: str,
     seccion_normalizada: str = "",
+    contexto_fila: str = "",
 ) -> Tuple[str, str]:
     """R5b (autocorrecciones semánticas de negocio solicitadas con desambiguación contextual)."""
     # 1. Ciudad / Departamento combinado vs Ciudad/Municipio (Q1)
@@ -410,8 +411,15 @@ def _regla_autocorrecciones_semanticas_adicionales(
             if campo != "numero_cuenta":
                 return "numero_cuenta", "Rótulo 'Número' en contexto Bancario → asignado a 'numero_cuenta'."
 
-        # Contexto Representante Legal / Persona Natural (o si el campo ya apuntaba a representante)
-        elif any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL) or "representante" in rotulo_normalizado or "apoderado" in rotulo_normalizado or "natural" in rotulo_normalizado or "persona natural" in seccion_normalizada:
+        # Contexto Representante Legal / Persona Natural (o si el campo ya apuntaba a representante o contexto de fila)
+        elif (
+            any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
+            or "representante" in rotulo_normalizado
+            or "apoderado" in rotulo_normalizado
+            or "natural" in rotulo_normalizado
+            or "persona natural" in seccion_normalizada
+            or ("representante" in contexto_fila and "nit" not in rotulo_normalizado)
+        ):
             if campo != "cedula":
                 return "cedula", "Rótulo 'Número/Identificación' en contexto de Representante Legal → asignado a 'cedula'."
 
@@ -523,6 +531,7 @@ def validar_item_mapeo(
 
     rotulo_norm = _normalizar(rotulo)
     seccion_norm = _normalizar(seccion)
+    contexto_fila_norm = str(plan_item.get("contexto_fila") or "").lower()
 
     resultado = dict(plan_item)
     resultado["campo_propuesto"] = campo_original
@@ -789,7 +798,7 @@ def validar_item_mapeo(
         es_rot_rep = any(t in rotulo_norm for t in ("representante", "rep legal", "firmante", "apoderado"))
         contexto_fila_norm = str(plan_item.get("contexto_fila") or "").lower()
         es_rot_id_rep = any(t in rotulo_norm for t in ("cedula", "c c", "cc", "c.c", "exped", "nacionalidad")) or (("nit" in rotulo_norm or "identificacion" in rotulo_norm or "cc" in rotulo_norm) and "representante" in contexto_fila_norm)
-        if not (es_sec_legal or (es_sec_general and (es_rot_rep or es_rot_id_rep))):
+        if not (es_sec_legal or es_rot_rep or es_rot_id_rep or es_sec_general):
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"Domain Isolation (ADR-0004): Datos de Representante Legal no permitidos en sección ('{seccion}')."
@@ -825,7 +834,7 @@ def validar_item_mapeo(
             resultado["motivo"] = motivo_r5
 
         campo_ajustado_r5b, motivo_r5b = _regla_autocorrecciones_semanticas_adicionales(
-            campo_original, rotulo_norm, seccion_norm
+            campo_original, rotulo_norm, seccion_norm, contexto_fila=contexto_fila_norm
         )
         if motivo_r5b:
             campo_original = campo_ajustado_r5b

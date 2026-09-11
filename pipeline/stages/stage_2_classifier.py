@@ -321,20 +321,36 @@ def clasificar_elementos_formulario(
             # 'misma' SOLO sobrevive si el rótulo contiene la línea de puntos dentro de su propio texto
             derecha_vacia = bool(elem.get("derechaVacia", False))
             abajo_vacia = bool(elem.get("abajoVacia", False))
+            derecha_es_merge = bool(elem.get("derechaEsMerge", False))
+            abajo_es_merge = bool(elem.get("abajoEsMerge", False))
             tiene_guiones_inline = bool(re.search(r"_{2,}|\.{3,}", rotulo))
             derecha_disponible = (
                 derecha_vacia
                 and (
-                    bool(elem.get("derechaEsMerge", False))
+                    derecha_es_merge
                     or bool(elem.get("derechaConBordeInferior", False))
                     or int(elem.get("anchoLinea", 1) or 1) > 1
                     or True
                 )
             )
 
+            # Heurística de orientación vertical en formularios corporativos:
+            # Si abajo hay una celda combinada vacía para captura (abajo_es_merge y abajo_vacia)
+            # y a la derecha NO es un merge propio de captura, la dirección es estrictamente "abajo".
+            es_captura_vertical = (
+                abajo_vacia
+                and abajo_es_merge
+                and not derecha_es_merge
+                and not tiene_guiones_inline
+            )
+
             if tiene_guiones_inline:
                 ubicacion_sugerida = "misma"
-            elif (not derecha_vacia and abajo_vacia) or tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+            elif (
+                (not derecha_vacia and abajo_vacia)
+                or tipo_clasif == ClasificacionElemento.TABLA_CABECERA
+                or es_captura_vertical
+            ):
                 ubicacion_sugerida = "abajo"
             elif derecha_disponible:
                 ubicacion_sugerida = "derecha"

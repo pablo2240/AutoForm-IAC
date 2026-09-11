@@ -55,13 +55,13 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 1: Representante Legal / Persona Natural / Firma ──
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n|identificado\s+con\s+(?:el\s+)?(?:documento|c[eé]dula|c\.?c\.?|doc)?(?:\s+de\s+identidad)?)\s*:?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:id|identificaci[oó]n|c\.?c\.?|cedula|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|no\.?\s*de\s+identificaci[oó]n|n[o°º]?\.?\s*(?:de\s+)?identificaci[oó]n|n\s+identificacion|n[uú]mero\s+(?:de\s+)?identificaci[oó]n|identificado\s+con\s+(?:el\s+)?(?:documento|c[eé]dula|c\.?c\.?|doc)?(?:\s+de\s+identidad)?)\s*:?\s*$", re.IGNORECASE),
         "cedula",
         "derecha",
     ),
     (
         PAT_SECCION_REP_LEGAL,
-        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos|nombre|yo)\s*:?,?\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nombre\s*/?\s*apellidos?|nombres?\s+y\s+apellidos?|nombre\s+completo(?:\s+(?:del?\s+)?representante(?:\s+legal)?)?|representante\s+legal|raz[oó]n\s+social\s+o\s+nombres\s+y\s+apellidos|nombre|yo)\s*:?,?\s*$", re.IGNORECASE),
         "representante_legal",
         "derecha",
     ),
@@ -296,7 +296,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_EMPRESA,
-        re.compile(r"^\s*(?:nit(?:\s*\(.*?\))?|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|nit\s+o\s+identificaci[oó]n\s+tributaria)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:nit(?:\s*\(.*?\))?|nit\s*/\s*tax\s*id|tax\s*id|cc\s*/\s*ce\s*/\s*pas\s*/\s*nit|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|nit\s+o\s+identificaci[oó]n\s+tributaria|n[o°º]?\.?\s*(?:de\s+)?identificaci[oó]n|n\s+identificacion|n[uú]mero\s+(?:de\s+)?identificaci[oó]n)\s*$", re.IGNORECASE),
         "nit",
         "derecha",
     ),
@@ -584,10 +584,12 @@ def ejecutar_pase_cobertura_exhaustiva(
                 continue
 
             # 1. Comprobar pertinencia de sección y texto de rótulo
+            es_rot_rep_cand = bool(re.search(r"\brepresentante(?:\s+legal)?\b|\bapoderado\b", txt, re.IGNORECASE))
             aplica_sec = (
                 bool(pat_sec.search(sec_titulo))
                 or (pat_sec == PAT_SECCION_EMPRESA and not es_rot_contacto)
                 or (pat_sec == PAT_SECCION_CONTACTO_COMERCIAL and es_rot_contacto)
+                or (pat_sec == PAT_SECCION_REP_LEGAL and es_rot_rep_cand)
             )
             if not aplica_sec:
                 continue
@@ -614,10 +616,12 @@ def ejecutar_pase_cobertura_exhaustiva(
             elem_raw = cand.get("propiedades_raw") or {}
             der_vacia = bool(elem_raw.get("derechaVacia", False))
             ab_vacia = bool(elem_raw.get("abajoVacia", False))
+            ab_es_merge = bool(elem_raw.get("abajoEsMerge", False))
+            der_es_merge = bool(elem_raw.get("derechaEsMerge", False))
 
             if re.search(r"_{2,}|\.{3,}", txt):
                 ubicacion = "misma"
-            elif dir_fallback == "abajo" or (not der_vacia and ab_vacia) or pat_sec == PAT_SECCION_JUNTA_COMP:
+            elif dir_fallback == "abajo" or (not der_vacia and ab_vacia) or (ab_vacia and ab_es_merge and not der_es_merge) or pat_sec == PAT_SECCION_JUNTA_COMP:
                 ubicacion = "abajo"
             else:
                 ubicacion = dir_espacial if dir_espacial in ("derecha", "abajo", "misma") else dir_fallback
