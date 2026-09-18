@@ -27,7 +27,14 @@ def asegurar_directorio_config() -> None:
 
 
 def sincronizar_db_con_archivos() -> None:
-    """Garantiza la consistencia inicial entre SQLite (fuente canónica) y los archivos JSON en config/."""
+    """Garantiza la consistencia inicial entre la base de datos y los archivos JSON.
+
+    En producción con Supabase, la base de datos es la única fuente de verdad y no se ejecuta
+    sincronización bidireccional automática con el disco local (ADR-0010).
+    """
+    if database.usar_supabase():
+        return
+
     asegurar_directorio_config()
     database.inicializar_db()
 
@@ -436,31 +443,31 @@ def cargar_perfil(ruta_o_id: Union[Path, str]) -> Dict[str, Any]:
 
 
 def guardar_perfil(ruta_o_id: Union[Path, str], datos: Dict[str, Any], nombre_visible: str = "") -> bool:
-    """Guarda canónicamente en SQLite y proyecta el espejo en el archivo JSON.
+    """Guarda canónicamente en la base de datos activa y proyecta el espejo en JSON si aplica.
 
     Protocolo estricto:
-    1. Escribir en SQLite (fuente canónica). Si falla -> return False.
-    2. Si SQLite OK -> escribir en archivo JSON espejo.
-    3. Si JSON falla (bloqueo en Windows, permisos) -> log WARNING, pero NO revertir SQLite; return True.
+    1. Escribir en base de datos canónica (Supabase en producción o SQLite en desarrollo).
+    2. En desarrollo o como respaldo, proyectar en archivo JSON espejo.
     """
     asegurar_directorio_config()
-    database.inicializar_db()
     slug, ruta_archivo, nombre = _extraer_slug_y_ruta(ruta_o_id, nombre_sugerido=nombre_visible)
-
     taxonomia = estructurar_perfil_taxonomia(datos)
 
-    # 1. CANÓNICO: Escribir en SQLite (transaccional ACID)
-    ok_sqlite = database.guardar_perfil_db(slug, nombre, taxonomia)
-    if not ok_sqlite:
-        print(f"[AutoForm AI] Error fatal: Falló la escritura canónica en SQLite para '{slug}'.")
+    # 1. CANÓNICO: Escribir en la base de datos activa
+    ok_db = database.guardar_perfil_db(slug, nombre, taxonomia)
+    if not ok_db:
+        print(f"[AutoForm AI] Error fatal: Falló la escritura canónica en base de datos para '{slug}'.")
         return False
 
-    # 2 & 3. ESPEJO: Escribir en JSON con tolerancia a fallos de Windows
+    # 2. Archivo JSON espejo de contingencia
     try:
         with ruta_archivo.open("w", encoding="utf-8") as f:
             json.dump(taxonomia, f, indent=2, ensure_ascii=False)
     except Exception as exc:
-        print(f"[AutoForm AI Warning] Error al actualizar archivo espejo JSON '{ruta_archivo}': {exc}. SQLite permanece como fuente canónica.")
+        if not database.usar_supabase():
+            print(f"[AutoForm AI Warning] Error al actualizar archivo espejo JSON '{ruta_archivo}': {exc}.")
+
+    return True
 
     return True
 
@@ -671,18 +678,31 @@ def fusionar_operador_en_datos_empresa(
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# 7. AUTENTICACIÓN Y CONTROL DE ACCESO (ADR-0008)
+# 7. AUTENTICACIÓN Y CONTROL DE ACCESO (ADR-0008 / ADR-0010)
 # ──────────────────────────────────────────────────────────────────────────────
 
 def autenticar_usuario(correo: str, password: str) -> Optional[Dict[str, Any]]:
-    """Valida credenciales y retorna los datos del usuario o None."""
-    return database.autenticar_usuario_db(correo, password)
+    """Valida credenciales y retorna los datos del usuario o None.
+
+    En modo Supabase, obtiene y guarda los tokens de sesión en st.session_state si está disponible.
+    """
+    from core import auth_manager
+    ok, user_auth, tokens, _ = auth_manager.iniciar_sesion(correo, password)
+    if ok and user_auth:
+        if tokens:
+            try:
+                import streamlit as st
+                st.session_state["supabase_session"] = tokens
+            except Exception:
+                pass
+        return user_auth
+    return None
 
 
 def registrar_usuario(
     nombre: str,
     correo: str,
-    password: str,
+    password: str = "",
     cargo: str = "",
     cedula: str = "",
     telefono: str = "",
@@ -690,7 +710,7 @@ def registrar_usuario(
     ciudad: str = "Bogotá",
     es_admin: int = 0,
 ) -> Tuple[bool, str]:
-    """Registra un nuevo usuario con verificación de dominio corporativo."""
+    """Registra un nuevo usuario o envía invitación oficial según el entorno."""
     return database.crear_usuario_db(
         nombre=nombre,
         correo=correo,

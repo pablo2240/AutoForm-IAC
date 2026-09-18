@@ -1,5 +1,6 @@
 import json
 import os
+import time
 import traceback
 import warnings
 from io import BytesIO
@@ -105,6 +106,18 @@ def _safe_rerun():
             st.experimental_rerun()
         except Exception:
             pass
+
+
+# Verificación de configuración y conectividad de persistencia canónica (ADR-0010 / Q4)
+try:
+    from core.database import usar_supabase, ConfiguracionInvalidaError
+    _ = usar_supabase()
+except ConfiguracionInvalidaError as _conf_err:
+    st.error(f"🔒 **Acceso Bloqueado por Seguridad**: {_conf_err}")
+    st.stop()
+except Exception as _db_err:
+    st.error("🔒 **Error de Conexión Corporativa**: No se pudo establecer comunicación segura con los servicios de base de datos.")
+    st.stop()
 
 
 # 1. Configuración de pantalla con el Sistema de Diseño IAC
@@ -438,16 +451,20 @@ if not st.session_state.get("usuario_activo"):
             </div>
         """, unsafe_allow_html=True)
 
-        tab_login, tab_reg = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
+        tab_login, tab_info = st.tabs(["🔑 Iniciar Sesión", "ℹ️ Registro y Acceso"])
 
         with tab_login:
             st.markdown("##### Ingreso con Credenciales Corporativas")
-            login_correo = st.text_input("Correo Corporativo", placeholder="usuario@iaclatam.com", key="gate_login_correo")
-            login_pwd = st.text_input("Contraseña", type="password", key="gate_login_pwd")
+            with st.form("gate_login_form", clear_on_submit=False):
+                login_correo = st.text_input("Correo Corporativo", placeholder="usuario@iaclatam.com", key="gate_login_correo")
+                login_pwd = st.text_input("Contraseña", type="password", key="gate_login_pwd")
+                btn_login = st.form_submit_button("Ingresar a la Plataforma", type="primary", use_container_width=True)
 
-            if st.button("Ingresar a la Plataforma", type="primary", use_container_width=True, key="btn_gate_login"):
-                if login_correo.strip() and login_pwd:
-                    user_auth = profile_manager.autenticar_usuario(login_correo.strip(), login_pwd)
+            if btn_login:
+                correo_val = str(login_correo or st.session_state.get("gate_login_correo") or "").strip()
+                pwd_val = str(login_pwd or st.session_state.get("gate_login_pwd") or "")
+                if correo_val and pwd_val:
+                    user_auth = profile_manager.autenticar_usuario(correo_val, pwd_val)
                     if user_auth:
                         st.session_state["usuario_activo"] = user_auth
                         st.success(f"✅ ¡Bienvenido, {user_auth['nombre']}!")
@@ -457,62 +474,66 @@ if not st.session_state.get("usuario_activo"):
                 else:
                     st.warning("Ingresa tu correo y contraseña.")
 
-        with tab_reg:
-            st.markdown("##### Alta de Nuevo Usuario Corporativo")
-            reg_nom = st.text_input("Nombre Completo", placeholder="Ej: Diana Gómez", key="gate_reg_nom")
-            reg_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones", key="gate_reg_car")
-            reg_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050", key="gate_reg_ced")
-            reg_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567", key="gate_reg_tel")
-            reg_dir = st.text_input("Dirección Corporativa", value="Carrera 63 B # 32 E -25 OFC 206", key="gate_reg_dir")
-            reg_ciu = st.text_input("Ciudad", value="Bogotá", key="gate_reg_ciu")
-            reg_cor = st.text_input("Correo Corporativo (@iac.com.co o @iaclatam.com)", placeholder="nombre@iaclatam.com", key="gate_reg_cor")
-            reg_pwd1 = st.text_input("Contraseña (mínimo 6 caracteres)", type="password", key="gate_reg_pwd1")
-            reg_pwd2 = st.text_input("Confirmar Contraseña", type="password", key="gate_reg_pwd2")
-
-            if st.button("Crear Cuenta", type="primary", use_container_width=True, key="btn_gate_reg"):
-                if not reg_nom.strip():
-                    st.error("El nombre completo es obligatorio.")
-                elif not reg_cor.strip():
-                    st.error("El correo electrónico es obligatorio.")
-                elif reg_pwd1 != reg_pwd2:
-                    st.error("Las contraseñas no coinciden.")
-                elif len(reg_pwd1) < 6:
-                    st.error("La contraseña debe tener al menos 6 caracteres.")
-                else:
-                    exito_reg, msg_reg = profile_manager.registrar_usuario(
-                        nombre=reg_nom.strip(),
-                        correo=reg_cor.strip(),
-                        password=reg_pwd1,
-                        cargo=reg_car.strip(),
-                        cedula=reg_ced.strip(),
-                        telefono=reg_tel.strip(),
-                        direccion=reg_dir.strip(),
-                        ciudad=reg_ciu.strip(),
-                        es_admin=0,
-                    )
-                    if exito_reg:
-                        user_auth = profile_manager.autenticar_usuario(reg_cor.strip(), reg_pwd1)
-                        if user_auth:
-                            st.session_state["usuario_activo"] = user_auth
-                            st.success("✅ ¡Cuenta creada exitosamente! Ingresando...")
-                            _safe_rerun()
-                        else:
-                            st.success("✅ Cuenta creada. Inicia sesión en la pestaña anterior.")
-                    else:
-                        st.error(msg_reg)
+        with tab_info:
+            st.markdown("##### Acceso y Asignación de Cuentas")
+            st.markdown("""
+                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1.2rem; color: #334155; font-size: 0.9rem; line-height: 1.6;">
+                    <p style="margin-top: 0; font-weight: 600; color: #0F172A;">🔒 Registro corporativo restringido</p>
+                    <p>Por políticas de seguridad y control de acceso de <strong>IAC Latam</strong> (ADR-0010), la creación de cuentas está reservada exclusivamente a los administradores del sistema mediante invitación oficial por correo electrónico.</p>
+                    <p>Si eres colaborador de IAC y aún no cuentas con credenciales de acceso, solicita tu vinculación al administrador responsable indicando tu correo corporativo (<code>@iaclatam.com</code> o <code>@iac.com.co</code>).</p>
+                    <p style="margin-bottom: 0; font-size: 0.8rem; color: #64748B;">Recibirás un mensaje de invitación oficial con un enlace seguro para establecer tu contraseña personal.</p>
+                </div>
+            """, unsafe_allow_html=True)
 
     st.stop()
 
 # 3. Header Hero Institucional y Barra de Sesión
 usuario_actual = st.session_state["usuario_activo"]
-# Sincronización automática de datos frescos desde SQLite (garantiza columnas nuevas como direccion y ciudad)
+
+# REGLA DE SEGURIDAD (Auditoría A-02 / A-03):
+# 1. Validación de expiración de token JWT y auto-refresco antes de los 5 minutos del vencimiento
+if profile_manager.database.usar_supabase() and "supabase_session" in st.session_state:
+    _ses = st.session_state["supabase_session"]
+    if isinstance(_ses, dict):
+        _exp = _ses.get("expires_at")
+        _ref_token = _ses.get("refresh_token")
+        if _exp and (float(_exp) - 300 <= time.time()) and _ref_token:
+            try:
+                _cli_pub = profile_manager.database.obtener_cliente_publico()
+                _refreshed = _cli_pub.auth.refresh_session(_ref_token)
+                if _refreshed and _refreshed.session:
+                    st.session_state["supabase_session"] = {
+                        "access_token": _refreshed.session.access_token,
+                        "refresh_token": _refreshed.session.refresh_token,
+                        "expires_at": getattr(_refreshed.session, "expires_at", None),
+                        "user_id": _refreshed.user.id if _refreshed.user else _ses.get("user_id"),
+                    }
+                else:
+                    raise ValueError("Sesión no renovable.")
+            except Exception as _err_ref:
+                auth_manager.cerrar_sesion(_ses)
+                st.session_state.clear()
+                st.warning("⚠️ Tu sesión ha expirado por inactividad. Por favor, ingresa nuevamente.")
+                _safe_rerun()
+
+# 2. Sincronización de perfil fresco y desalojo inmediato si el usuario fue desactivado
 try:
     _u_fresco = profile_manager.database.obtener_usuario_por_correo_db(usuario_actual.get("correo", ""))
+    if profile_manager.database.usar_supabase():
+        if not _u_fresco or not _u_fresco.get("activo"):
+            auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
+            st.session_state.clear()
+            st.error("⛔ Tu cuenta se encuentra inactiva o ha sido dada de baja. Acceso denegado.")
+            _safe_rerun()
     if _u_fresco:
         st.session_state["usuario_activo"].update(_u_fresco)
         usuario_actual = st.session_state["usuario_activo"]
-except Exception:
-    pass
+except Exception as _sync_err:
+    if profile_manager.database.usar_supabase() and profile_manager.database.es_modo_produccion():
+        auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
+        st.session_state.clear()
+        st.error("🔒 Error validando credenciales de sesión activa. Sesión cerrada por seguridad.")
+        _safe_rerun()
 
 es_admin_usuario = bool(usuario_actual.get("es_admin", False))
 rol_badge_label = "🛡️ Administrador" if es_admin_usuario else "💼 Asesor Comercial"
@@ -563,6 +584,7 @@ with col_ses_cache:
         _safe_rerun()
 with col_ses_btn:
     if st.button("🚪 Cerrar Sesión", key="btn_logout_top", use_container_width=True):
+        auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
         st.session_state.clear()
         _safe_rerun()
 
@@ -1124,6 +1146,46 @@ with st.sidebar:
                         _safe_rerun()
                     else:
                         st.error("❌ El archivo JSON no tiene un formato válido.")
+
+        with st.expander("👥 Gestión e Invitación de Usuarios (Supabase Auth)", expanded=False):
+            st.caption("Invita formalmente a nuevos colaboradores de IAC Latam para que configuren su acceso:")
+            with st.form("form_invitar_usuario", clear_on_submit=True):
+                col_inv1, col_inv2 = st.columns(2)
+                with col_inv1:
+                    inv_nom = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez")
+                    inv_cor = st.text_input("Correo Corporativo (@iaclatam.com o @iac.com.co)*", placeholder="diana.gomez@iaclatam.com")
+                    inv_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones")
+                with col_inv2:
+                    inv_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567")
+                    inv_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050")
+                    inv_es_admin = st.checkbox("Asignar rol de Administrador", value=False)
+
+                btn_enviar_inv = st.form_submit_button("✉️ Enviar Invitación Oficial", type="primary", use_container_width=True)
+
+            if btn_enviar_inv:
+                if not inv_nom.strip() or not inv_cor.strip():
+                    st.error("El nombre completo y correo corporativo son obligatorios.")
+                elif not auth_manager.validar_dominio_corporativo(inv_cor.strip()):
+                    st.error("Acceso denegado: El correo debe pertenecer a @iaclatam.com o @iac.com.co (ADR-0010).")
+                else:
+                    # Hardening-01: Se pasa el access_token real del solicitante.
+                    # La verificación de admin se realiza contra public.perfiles_usuario
+                    # usando el JWT, no desde st.session_state["usuario_activo"]["es_admin"].
+                    _ses_actual = st.session_state.get("supabase_session", {})
+                    _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
+                    ok_inv, msg_inv = auth_manager.invitar_usuario_corporativo(
+                        correo=inv_cor.strip(),
+                        nombre=inv_nom.strip(),
+                        cargo=inv_car.strip(),
+                        cedula=inv_ced.strip(),
+                        telefono=inv_tel.strip(),
+                        es_admin=inv_es_admin,
+                        access_token_solicitante=_acc_token,
+                    )
+                    if ok_inv:
+                        st.success(f"✅ {msg_inv}")
+                    else:
+                        st.error(f"❌ {msg_inv}")
 
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────

@@ -55,6 +55,13 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`RepresentativeNameDecomposition`** | Canonical 4-part split (`primer_nombre`, `segundo_nombre`, `primer_apellido`, `segundo_apellido`) for forms requiring individual name components, with automatic derivation and UI manual override. | "Split rústico de nombres" |
 | **`RepresentativeGeographicDomain`** | Segregated personal geographic scope (`lugar_nacimiento`, `ciudad_residencia`, `departamento_residencia`) strictly isolated from enterprise headquarters location. | "Cruce de domicilios" |
 | **`PrioritySectionHeader`** | Section title precedence policy where corporate/financial major section markers (`TOKENS_TITULO_SECCION_PRIORITARIO`) override parenthetical qualifiers or options. | "Descarte por paréntesis" |
+| **`SupabaseSession`** | Scoped per-user auth session holding `access_token`, `refresh_token`, and user metadata in `st.session_state` without global persistence. | "Sesión global", "Cookie compartida" |
+| **`PerfilesUsuario`** | Relational user profile entity (`public.perfiles_usuario`) linked 1:1 with `auth.users(id)` and restricted to authorized corporate domains (`@iaclatam.com`, `@iac.com.co`). | "Tabla de cuentas", "Users plano" |
+| **`PerfilesEmpresaJSONB`** | Canonical enterprise profile schema in PostgreSQL combining queryable relational metadata columns (`id`, `slug`, `nombre_empresa`, `nit`, `es_activa`) with flexible `datos_json JSONB`. | "Tabla plana", "Solo JSON" |
+| **`ServiceRoleAdminClient`** | Supabase client instantiated strictly with `SUPABASE_SERVICE_ROLE_KEY` for server-side administrative tasks (migrations, user invitations), completely quarantined from frontend/browser. | "Cliente global", "Superusuario web" |
+| **`UserAuthenticatedClient`** | Ephemeral Supabase client instantiated with `SUPABASE_ANON_KEY` and injected with the user's JWT tokens, enforcing Row Level Security (RLS) on all queries. | "Cliente anónimo", "Conexión directa" |
+| **`PublicAnonClient`** | Supabase client instantiated with `SUPABASE_ANON_KEY` without session tokens, restricted strictly to public authentication operations. | "Cliente de consultas", "Conexión general" |
+| **`SingleTenantInvariant`** | Architectural rule guaranteeing strictly one active enterprise profile (`idx_un_perfil_activo`) so automated filling deterministically selects official company data. | "Multi-empresa concurrente" |
 
 ---
 
@@ -69,3 +76,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0007: Operator Catalog, Runtime Fusion & Commercial Contact Domain Isolation`](docs/adr/0007-operator-catalog-and-commercial-contact-domain.md)
 * [`ADR-0008: User Authentication, Gatekeeper Shield & Role-Based Access Control`](docs/adr/0008-user-authentication-gatekeeper-and-role-based-access.md)
 * [`ADR-0009: Commercial Contact Section Detection, Grids Safe Passivity and Deterministic HSP Remapping`](docs/adr/0009-commercial-contact-detection-and-hsp-remapping.md)
+* [`ADR-0010: Supabase PostgreSQL, Authentication and Row Level Security Architecture`](docs/adr/0010-supabase-postgresql-auth-and-rls-architecture.md)

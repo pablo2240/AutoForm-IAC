@@ -1,7 +1,9 @@
-"""Módulo de persistencia canónica en SQLite para AutoForm AI.
+"""Módulo de persistencia canónica para AutoForm AI (ADR-0010).
 
-Define SQLite (`config/empresa.db`) como la Fuente Única de Verdad (Single Source of Truth)
-para los perfiles empresariales, garantizando transacciones ACID y resiliencia ante reinicios.
+En producción (APP_ENVIRONMENT=production), Supabase (PostgreSQL + Auth + RLS) es la Fuente
+Única de Verdad (Single Source of Truth).
+En desarrollo local (APP_ENVIRONMENT=development), se permite el uso de SQLite (config/empresa.db)
+como respaldo de transición cuando USE_SQLITE=true.
 """
 
 from __future__ import annotations
@@ -14,10 +16,186 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+try:
+    from supabase import create_client, Client
+except ImportError:
+    create_client = None
+    Client = Any  # type: ignore
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DB_PATH = CONFIG_DIR / "empresa.db"
 
+
+class ConfiguracionInvalidaError(Exception):
+    """Excepción lanzada cuando faltan variables requeridas o la configuración es inválida."""
+    pass
+
+
+class SesionNoAutenticadaError(Exception):
+    """Excepción lanzada cuando una operación protegida se ejecuta en producción sin sesión JWT."""
+    pass
+
+
+# ── DETECCIÓN DE ENTORNO Y FACTORÍA DE CLIENTES SUPABASE (ADR-0010 / Q2 / Q3 / Q4) ─
+
+def es_modo_produccion() -> bool:
+    """Indica si la aplicación se ejecuta en entorno de producción."""
+    env = os.environ.get("APP_ENVIRONMENT", "production").strip().lower()
+    return env == "production"
+
+
+def usar_supabase() -> bool:
+    """Determina si la capa de persistencia activa es Supabase o SQLite.
+
+    En producción (APP_ENVIRONMENT=production), Supabase es obligatorio y fail-closed (Q4).
+    En desarrollo (APP_ENVIRONMENT=development), se permite SQLite si USE_SQLITE=true.
+    """
+    if es_modo_produccion():
+        url = os.environ.get("SUPABASE_URL", "").strip()
+        anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+        if not url or not anon_key:
+            raise ConfiguracionInvalidaError(
+                "AutoForm AI está configurado en producción (APP_ENVIRONMENT=production), "
+                "pero no se encontraron SUPABASE_URL o SUPABASE_ANON_KEY en las variables de entorno. "
+                "Por política de seguridad (ADR-0010), el fallback automático a SQLite está prohibido en producción."
+            )
+        return True
+
+    # Entorno development
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    use_sqlite = os.environ.get("USE_SQLITE", "false").strip().lower() in ("true", "1", "yes")
+    return bool(url and anon_key and not use_sqlite)
+
+
+PROHIBITED_PROJECT_REFS = {
+    "tnhedxwbpqihlqbtzudt",  # AutoForm PDF Producción
+    "nfsijcwkmcvtwsponqsw",  # AutoForm PDF Staging
+}
+
+
+def _validar_project_ref_no_prohibido(url: str) -> None:
+    """Verifica que la URL de Supabase no apunte a ningún proyecto perteneciente a AutoForm PDF."""
+    if not url:
+        return
+    for ref in PROHIBITED_PROJECT_REFS:
+        if ref in url:
+            raise ConfiguracionInvalidaError(
+                f"[BLOQUEO DE SEGURIDAD] Operación prohibida: La URL '{url}' contiene un PROJECT_REF "
+                f"perteneciente a AutoForm PDF ('{ref}'). Conexión cancelada para proteger el aislamiento de proyectos."
+            )
+
+
+def obtener_cliente_publico() -> Client:
+    """Retorna un cliente Supabase con la Anon Key sin sesión de usuario (Q3).
+
+    Utilizado exclusivamente para autenticación pública (login, reset de contraseña).
+    Row Level Security (RLS) deniega cualquier acceso a datos protegidos con este cliente.
+    """
+    if create_client is None:
+        raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
+
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    if not url or not anon_key:
+        raise ConfiguracionInvalidaError(
+            "Se requieren SUPABASE_URL y SUPABASE_ANON_KEY para inicializar el cliente público."
+        )
+    _validar_project_ref_no_prohibido(url)
+    return create_client(url, anon_key)
+
+
+def obtener_cliente_admin() -> Client:
+    """Retorna un cliente Supabase con la Service Role Key para operaciones del servidor (Q3).
+
+    REGLA DE SEGURIDAD ABSOLUTA: Uso exclusivo en el backend para migraciones, seeding e invitaciones
+    oficiales por correo. Jamás debe exponerse al frontend, navegador ni logs.
+    """
+    if create_client is None:
+        raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
+
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    if not url or not service_key:
+        raise ConfiguracionInvalidaError(
+            "Se requieren SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY para inicializar el cliente administrativo."
+        )
+    _validar_project_ref_no_prohibido(url)
+    return create_client(url, service_key)
+
+
+def obtener_cliente_usuario(
+    access_token: Optional[str] = None,
+    refresh_token: Optional[str] = None,
+) -> Client:
+    """Retorna una instancia efímera de cliente Supabase para la sesión activa del usuario (Q3).
+
+    Configurada con el JWT del usuario para que todas las operaciones respeten Row Level Security (RLS).
+    No se almacena en caché global ni se comparte entre sesiones.
+    """
+    if create_client is None:
+        raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
+
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    if not url or not anon_key:
+        raise ConfiguracionInvalidaError(
+            "Se requieren SUPABASE_URL y SUPABASE_ANON_KEY para inicializar el cliente de usuario."
+        )
+    _validar_project_ref_no_prohibido(url)
+    client: Client = create_client(url, anon_key)
+    if access_token:
+        # Inyectar el token JWT en el cliente PostgREST para que todas las consultas
+        # a tablas respeten las políticas de Row Level Security (RLS)
+        client.postgrest.auth(access_token)
+        if refresh_token:
+            try:
+                client.auth.set_session(access_token, refresh_token)
+            except Exception as exc:
+                print(f"[AutoForm AI DB] Advertencia al inyectar sesión JWT en cliente usuario: {exc}")
+    return client
+
+
+def _obtener_cliente_activo(cliente_provisto: Optional[Client] = None) -> Client:
+    """Resuelve el cliente Supabase adecuado según el contexto de ejecución.
+
+    REGLA DE SEGURIDAD ABSOLUTA (Auditoría C-01):
+    1. Si se proporciona un cliente explícito, se utiliza directamente.
+    2. Si existe sesión JWT en st.session_state, se utiliza obtener_cliente_usuario().
+    3. JAMÁS hace fallback automático a obtener_cliente_admin(). Ninguna función de UI
+       ni operación de datos puede obtener privilegios de service_role implícitamente.
+    4. En producción (APP_ENVIRONMENT=production), la ausencia de un cliente autenticado
+       lanza obligatoriamente SesionNoAutenticadaError (Fail-Closed).
+    """
+    if cliente_provisto is not None:
+        return cliente_provisto
+
+    # Intentar obtener tokens desde la sesión web de Streamlit si está activa
+    try:
+        import streamlit as st
+        if hasattr(st, "session_state") and "supabase_session" in st.session_state:
+            ses = st.session_state["supabase_session"]
+            if isinstance(ses, dict):
+                acc = ses.get("access_token")
+                ref = ses.get("refresh_token")
+                if acc and ref:
+                    return obtener_cliente_usuario(acc, ref)
+    except Exception:
+        pass
+
+    # Si estamos en producción y no hay cliente autenticado ni provisto: fail-closed
+    if es_modo_produccion():
+        raise SesionNoAutenticadaError(
+            "Acceso protegido denegado: Se requiere una sesión autenticada con JWT válido en entorno de producción. "
+            "El acceso anónimo o administrativo implícito está estrictamente prohibido."
+        )
+
+    # Entorno development: retornar cliente público (RLS denegará accesos no permitidos)
+    return obtener_cliente_publico()
+
+
+# ── SQLite: RESPALDO LOCAL PARA DESARROLLO (APP_ENVIRONMENT=development) ──────────
 
 def _asegurar_config_dir() -> None:
     """Garantiza la existencia del directorio config/."""
@@ -25,7 +203,7 @@ def _asegurar_config_dir() -> None:
 
 
 def obtener_conexion() -> sqlite3.Connection:
-    """Abre y devuelve una conexión a la base de datos SQLite corporativa."""
+    """Abre y devuelve una conexión a la base de datos SQLite corporativa local."""
     _asegurar_config_dir()
     conn = sqlite3.connect(str(DB_PATH), timeout=15.0)
     conn.row_factory = sqlite3.Row
@@ -33,7 +211,10 @@ def obtener_conexion() -> sqlite3.Connection:
 
 
 def inicializar_db() -> None:
-    """Crea la estructura de tablas e índices si no existen y siembra datos iniciales."""
+    """Crea la estructura de tablas e índices en SQLite para desarrollo local si no existen."""
+    if usar_supabase():
+        return
+
     with obtener_conexion() as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -54,7 +235,6 @@ def inicializar_db() -> None:
             """
         )
 
-        # ADR-0007: Catálogo independiente de operadores/comerciales
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS operadores (
@@ -78,7 +258,6 @@ def inicializar_db() -> None:
             """
         )
 
-        # Migración dinámica de columnas direccion y ciudad si no existen en operadores
         cursor.execute("PRAGMA table_info(operadores)")
         cols_op = {row["name"] for row in cursor.fetchall()}
         if "direccion" not in cols_op:
@@ -86,7 +265,6 @@ def inicializar_db() -> None:
         if "ciudad" not in cols_op:
             cursor.execute("ALTER TABLE operadores ADD COLUMN ciudad TEXT DEFAULT ''")
 
-        # Sembrar operador predeterminado inicial si la tabla está vacía
         cursor.execute("SELECT COUNT(*) AS total FROM operadores")
         fila_count = cursor.fetchone()
         if fila_count and fila_count["total"] == 0:
@@ -99,8 +277,8 @@ def inicializar_db() -> None:
                 (
                     "antonio_prieto",
                     "Antonio Prieto",
-                    "Asesor Comercial / Aplicaciones",
-                    "",
+                    "Director Comercial Senior",
+                    "99887766",
                     "3001122334",
                     "antonio.prieto@iaclatam.com",
                     "Carrera 63 B # 32 E -25 OFC 206",
@@ -109,7 +287,6 @@ def inicializar_db() -> None:
                 ),
             )
 
-        # ADR-0008: Tabla canónica de usuarios autenticados
         cursor.execute(
             """
             CREATE TABLE IF NOT EXISTS usuarios (
@@ -141,7 +318,6 @@ def inicializar_db() -> None:
             """
         )
 
-        # Migración dinámica de columnas direccion y ciudad si no existen en usuarios
         cursor.execute("PRAGMA table_info(usuarios)")
         cols_usr = {row["name"] for row in cursor.fetchall()}
         if "direccion" not in cols_usr:
@@ -149,7 +325,6 @@ def inicializar_db() -> None:
         if "ciudad" not in cols_usr:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN ciudad TEXT DEFAULT ''")
 
-        # Sembrar usuario administrador por defecto si no existe ninguno
         cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
         total_usuarios = cursor.fetchone()["total"]
         if total_usuarios == 0:
@@ -164,8 +339,8 @@ def inicializar_db() -> None:
                 (
                     "antonio_prieto",
                     "Antonio Prieto",
-                    "Asesor Comercial / Aplicaciones",
-                    "",
+                    "Director Comercial Senior",
+                    "99887766",
                     "3001122334",
                     "antonio.prieto@iaclatam.com",
                     "Carrera 63 B # 32 E -25 OFC 206",
@@ -175,32 +350,58 @@ def inicializar_db() -> None:
                 ),
             )
 
-        # Migración automática de semilla de Antonio Prieto a @iaclatam.com y asignación de dirección, ciudad y teléfono por defecto
-        cursor.execute("UPDATE operadores SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
-        cursor.execute("UPDATE usuarios SET correo = 'antonio.prieto@iaclatam.com' WHERE id = 'antonio_prieto' AND correo = 'antonio.prieto@iac.com.co'")
-        cursor.execute("UPDATE operadores SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá', telefono = '3001122334' WHERE id = 'antonio_prieto' AND (telefono IS NULL OR telefono = '')")
-        cursor.execute("UPDATE usuarios SET direccion = 'Carrera 63 B # 32 E -25 OFC 206', ciudad = 'Bogotá', telefono = '3001122334' WHERE id = 'antonio_prieto' AND (telefono IS NULL OR telefono = '')")
-
         conn.commit()
 
+
+# ── GESTIÓN DE PERFILES DE EMPRESA (Q1: HÍBRIDO RELACIONAL + JSONB) ──────────────
 
 def guardar_perfil_db(
     id_perfil: str,
     nombre: str,
     datos: Dict[str, Any],
     es_activo: Optional[bool] = None,
+    client: Optional[Client] = None,
 ) -> bool:
-    """Guarda o actualiza de forma canónica un perfil empresarial en SQLite.
+    """Guarda o actualiza canónicamente un perfil empresarial en la base de datos activa."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            slug_limpio = id_perfil.strip().lower()
+            nombre_limpio = nombre.strip()
 
-    Args:
-        id_perfil: Slug único identificador (ej. 'principal', 'bogota').
-        nombre: Etiqueta visible en la interfaz (ej. '🏢 Principal (IAC Latam)').
-        datos: Diccionario de datos de la empresa (plano o estructurado).
-        es_activo: Si es True, marca este perfil como activo y desmarca los demás.
+            nit = None
+            if isinstance(datos, dict):
+                nit = datos.get("empresa", {}).get("identidad", {}).get("nit") or datos.get("nit")
+                if nit:
+                    nit = str(nit).strip()
 
-    Returns:
-        bool: True si la transacción SQLite se completó exitosamente.
-    """
+            if es_activo is True:
+                # Desmarcar los demás perfiles para respetar el índice único parcial
+                cli.table("perfiles_empresa").update({"es_activa": False}).neq("slug", slug_limpio).execute()
+                activo_val = True
+            elif es_activo is False:
+                activo_val = False
+            else:
+                activo_val = None
+
+            registro: Dict[str, Any] = {
+                "slug": slug_limpio,
+                "nombre_empresa": nombre_limpio,
+                "nit": nit,
+                "datos_json": datos,
+            }
+            if activo_val is not None:
+                registro["es_activa"] = activo_val
+
+            cli.table("perfiles_empresa").upsert(registro, on_conflict="slug").execute()
+            return True
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al guardar perfil en Supabase '{id_perfil}': {exc}")
+            return False
+
+    # Modo SQLite (Desarrollo local)
     inicializar_db()
     id_limpio = id_perfil.strip().lower()
     nombre_limpio = nombre.strip()
@@ -210,16 +411,15 @@ def guardar_perfil_db(
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
-
             if es_activo is True:
                 cursor.execute("UPDATE perfiles_empresa SET es_activo = 0")
-                activo_val = 1
+                activo_val_sql = 1
             elif es_activo is False:
-                activo_val = 0
+                activo_val_sql = 0
             else:
-                activo_val = None
+                activo_val_sql = None
 
-            if activo_val is not None:
+            if activo_val_sql is not None:
                 cursor.execute(
                     """
                     INSERT INTO perfiles_empresa (id, nombre, datos_json, es_activo, actualizado_en)
@@ -230,7 +430,7 @@ def guardar_perfil_db(
                         es_activo = excluded.es_activo,
                         actualizado_en = excluded.actualizado_en;
                     """,
-                    (id_limpio, nombre_limpio, datos_serializados, activo_val, ahora_iso),
+                    (id_limpio, nombre_limpio, datos_serializados, activo_val_sql, ahora_iso),
                 )
             else:
                 cursor.execute(
@@ -244,25 +444,35 @@ def guardar_perfil_db(
                     """,
                     (id_limpio, nombre_limpio, datos_serializados, ahora_iso),
                 )
-
             conn.commit()
             return True
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error fatal al guardar en SQLite perfil '{id_perfil}': {exc}")
+        print(f"[AutoForm AI DB] Error al guardar perfil en SQLite '{id_perfil}': {exc}")
         return False
 
 
-def obtener_perfil_db(id_perfil: str) -> Optional[Dict[str, Any]]:
-    """Recupera los datos de un perfil desde SQLite por su ID/slug."""
+def obtener_perfil_db(id_perfil: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Recupera los datos de un perfil por su slug/identificador."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            slug_limpio = id_perfil.strip().lower()
+            res = cli.table("perfiles_empresa").select("datos_json").eq("slug", slug_limpio).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                return res.data[0].get("datos_json")
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al leer perfil '{id_perfil}' desde Supabase: {exc}")
+        return None
+
+    # Modo SQLite
     inicializar_db()
     id_limpio = id_perfil.strip().lower()
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT datos_json FROM perfiles_empresa WHERE id = ?",
-                (id_limpio,),
-            )
+            cursor.execute("SELECT datos_json FROM perfiles_empresa WHERE id = ?", (id_limpio,))
             row = cursor.fetchone()
             if row and row["datos_json"]:
                 return json.loads(row["datos_json"])
@@ -271,12 +481,24 @@ def obtener_perfil_db(id_perfil: str) -> Optional[Dict[str, Any]]:
     return None
 
 
-def obtener_perfil_activo_db() -> Optional[Tuple[str, str, Dict[str, Any]]]:
-    """Recupera el perfil marcado como activo en SQLite.
+def obtener_perfil_activo_db(client: Optional[Client] = None) -> Optional[Tuple[str, str, Dict[str, Any]]]:
+    """Recupera el perfil marcado como activo. Retorna (slug, nombre, datos)."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("perfiles_empresa").select("slug, nombre_empresa, datos_json").eq("es_activa", True).order("updated_at", desc=True).limit(1).execute()
+            if not res.data:
+                res = cli.table("perfiles_empresa").select("slug, nombre_empresa, datos_json").order("updated_at", desc=True).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                fila = res.data[0]
+                return str(fila.get("slug")), str(fila.get("nombre_empresa")), fila.get("datos_json", {})
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al obtener perfil activo de Supabase: {exc}")
+        return None
 
-    Returns:
-        Optional[Tuple[id, nombre, datos]]: Datos del perfil activo o None si no hay perfiles.
-    """
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -290,15 +512,13 @@ def obtener_perfil_activo_db() -> Optional[Tuple[str, str, Dict[str, Any]]]:
             )
             row = cursor.fetchone()
             if not row:
-                # Si ninguno está marcado con es_activo=1, tomar el más recientemente actualizado
                 cursor.execute(
                     """
                     SELECT id, nombre, datos_json FROM perfiles_empresa
                     ORDER BY actualizado_en DESC LIMIT 1
                     """
-                    )
+                )
                 row = cursor.fetchone()
-
             if row:
                 datos = json.loads(row["datos_json"]) if row["datos_json"] else {}
                 return str(row["id"]), str(row["nombre"]), datos
@@ -307,8 +527,23 @@ def obtener_perfil_activo_db() -> Optional[Tuple[str, str, Dict[str, Any]]]:
     return None
 
 
-def establecer_perfil_activo_db(id_o_nombre: str) -> bool:
-    """Marca un perfil como activo en SQLite desmarcando los demás."""
+def establecer_perfil_activo_db(id_o_nombre: str, client: Optional[Client] = None) -> bool:
+    """Marca un perfil como activo y desmarca a los demás."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            criterio = id_o_nombre.strip()
+            slug = criterio.lower()
+            cli.table("perfiles_empresa").update({"es_activa": False}).execute()
+            res = cli.table("perfiles_empresa").update({"es_activa": True}).or_(f"slug.eq.{slug},nombre_empresa.eq.{criterio}").execute()
+            return bool(res.data and len(res.data) > 0)
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al activar perfil '{id_o_nombre}' en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
     inicializar_db()
     criterio = id_o_nombre.strip()
     try:
@@ -326,12 +561,33 @@ def establecer_perfil_activo_db(id_o_nombre: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error al establecer perfil activo '{id_o_nombre}': {exc}")
+        print(f"[AutoForm AI DB] Error al activar perfil '{id_o_nombre}' en SQLite: {exc}")
         return False
 
 
-def listar_perfiles_db() -> List[Dict[str, Any]]:
-    """Devuelve la lista completa de perfiles registrados en SQLite."""
+def listar_perfiles_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
+    """Devuelve la lista de perfiles registrados."""
+    if usar_supabase():
+        perfiles = []
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("perfiles_empresa").select("slug, nombre_empresa, datos_json, es_activa, updated_at").order("slug", desc=False).execute()
+            filas = sorted(res.data or [], key=lambda r: (0 if r.get("slug") == "principal" else 1, r.get("nombre_empresa", "")))
+            for fila in filas:
+                perfiles.append({
+                    "id": str(fila.get("slug")),
+                    "nombre": str(fila.get("nombre_empresa")),
+                    "datos": fila.get("datos_json") or {},
+                    "es_activo": bool(fila.get("es_activa")),
+                    "actualizado_en": str(fila.get("updated_at")),
+                })
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al listar perfiles desde Supabase: {exc}")
+        return perfiles
+
+    # Modo SQLite
     inicializar_db()
     perfiles = []
     try:
@@ -357,15 +613,29 @@ def listar_perfiles_db() -> List[Dict[str, Any]]:
     return perfiles
 
 
-def eliminar_perfil_db(id_perfil: str) -> bool:
-    """Elimina un perfil secundario de SQLite (el perfil 'principal' no puede eliminarse)."""
-    if id_perfil.lower().strip() == "principal":
+def eliminar_perfil_db(id_perfil: str, client: Optional[Client] = None) -> bool:
+    """Elimina un perfil secundario (el perfil 'principal' está protegido)."""
+    slug = id_perfil.lower().strip()
+    if slug == "principal":
         return False
+
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            cli.table("perfiles_empresa").delete().eq("slug", slug).execute()
+            return True
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error eliminando perfil '{id_perfil}' en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM perfiles_empresa WHERE id = ?", (id_perfil.lower().strip(),))
+            cursor.execute("DELETE FROM perfiles_empresa WHERE id = ?", (slug,))
             conn.commit()
             return True
     except Exception as exc:
@@ -373,9 +643,7 @@ def eliminar_perfil_db(id_perfil: str) -> bool:
         return False
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ADR-0007: GESTIÓN DE OPERADORES Y COMERCIALES (SQLITE CANÓNICO)
-# ──────────────────────────────────────────────────────────────────────────────
+# ── GESTIÓN DE OPERADORES Y COMERCIALES (ADR-0007 / ADR-0010) ────────────────────
 
 def guardar_operador_db(
     id_operador: str,
@@ -387,20 +655,60 @@ def guardar_operador_db(
     direccion: str = "",
     ciudad: str = "",
     es_activo: Optional[bool] = None,
+    client: Optional[Client] = None,
+    usuario_id: Optional[str] = None,
 ) -> bool:
-    """Guarda o actualiza un operador comercial en SQLite.
+    """Guarda o actualiza un operador en la base de datos activa."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            id_limpio = id_operador.strip().lower()
+            nombre_limpio = nombre.strip()
 
-    Args:
-        id_operador: Slug único (ej. 'antonio_prieto').
-        nombre: Nombre completo del operador.
-        cargo: Cargo en la empresa (ej. 'Asesor Comercial').
-        cedula: Documento de identidad del operador.
-        telefono: Celular o teléfono directo.
-        correo: Correo corporativo del operador.
-        direccion: Dirección de contacto del operador.
-        ciudad: Ciudad de ubicación del operador.
-        es_activo: Si es True, marca este operador como el activo y desmarca los demás.
-    """
+            if es_activo is True:
+                cli.table("operadores").update({"es_activo": False}).neq("id", id_limpio).execute()
+                activo_val = True
+            elif es_activo is False:
+                activo_val = False
+            else:
+                activo_val = None
+
+            registro: Dict[str, Any] = {
+                "id": id_limpio,
+                "nombre": nombre_limpio,
+                "cargo": cargo.strip(),
+                "cedula": cedula.strip(),
+                "telefono": telefono.strip(),
+                "correo": correo.strip().lower(),
+                "direccion": direccion.strip(),
+                "ciudad": ciudad.strip(),
+            }
+            if usuario_id:
+                registro["usuario_id"] = usuario_id
+            if activo_val is not None:
+                registro["es_activo"] = activo_val
+
+            cli.table("operadores").upsert(registro, on_conflict="id").execute()
+
+            # Sincronizar con perfiles_usuario si existe
+            correo_limpio = correo.strip().lower()
+            if correo_limpio:
+                cli.table("perfiles_usuario").update({
+                    "nombre": nombre_limpio,
+                    "cargo": cargo.strip(),
+                    "cedula": cedula.strip(),
+                    "telefono": telefono.strip(),
+                    "direccion": direccion.strip(),
+                    "ciudad": ciudad.strip(),
+                }).eq("correo", correo_limpio).execute()
+            return True
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error guardando operador en Supabase '{id_operador}': {exc}")
+            return False
+
+    # Modo SQLite
     inicializar_db()
     id_limpio = id_operador.strip().lower()
     nombre_limpio = nombre.strip()
@@ -409,45 +717,42 @@ def guardar_operador_db(
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
-
             if es_activo is True:
                 cursor.execute("UPDATE operadores SET es_activo = 0")
-                activo_val = 1
+                activo_val_sql = 1
             elif es_activo is False:
-                activo_val = 0
+                activo_val_sql = 0
             else:
-                activo_val = None
+                activo_val_sql = None
 
             cursor.execute("SELECT id, es_activo FROM operadores WHERE id = ?", (id_limpio,))
             fila_existente = cursor.fetchone()
 
             if fila_existente:
-                if activo_val is None:
-                    activo_val = fila_existente["es_activo"]
+                if activo_val_sql is None:
+                    activo_val_sql = fila_existente["es_activo"]
                 cursor.execute(
                     """
                     UPDATE operadores
                     SET nombre = ?, cargo = ?, cedula = ?, telefono = ?, correo = ?, direccion = ?, ciudad = ?, es_activo = ?, actualizado_en = ?
                     WHERE id = ?
                     """,
-                    (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val, ahora_iso, id_limpio),
+                    (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val_sql, ahora_iso, id_limpio),
                 )
             else:
-                if activo_val is None:
-                    # Si es el primer operador creado, activarlo por defecto
+                if activo_val_sql is None:
                     cursor.execute("SELECT COUNT(*) as total FROM operadores")
                     c_row = cursor.fetchone()
-                    activo_val = 1 if (c_row and c_row["total"] == 0) else 0
+                    activo_val_sql = 1 if (c_row and c_row["total"] == 0) else 0
 
                 cursor.execute(
                     """
                     INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
                     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (id_limpio, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val, ahora_iso),
+                    (id_limpio, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), activo_val_sql, ahora_iso),
                 )
 
-            # Sincronización bidireccional automática con la tabla usuarios si el operador tiene cuenta de usuario
             correo_limpio = correo.strip().lower()
             correo_alt = ""
             if correo_limpio.endswith("@iac.com.co"):
@@ -463,16 +768,41 @@ def guardar_operador_db(
                 """,
                 (nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo.strip(), direccion.strip(), ciudad.strip(), id_limpio, correo_limpio, correo_alt, correo_alt),
             )
-
             conn.commit()
             return True
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error guardando operador '{id_operador}' en SQLite: {exc}")
+        print(f"[AutoForm AI DB] Error guardando operador en SQLite '{id_operador}': {exc}")
         return False
 
 
-def listar_operadores_db() -> List[Dict[str, Any]]:
-    """Devuelve la lista completa de operadores registrados en SQLite."""
+def listar_operadores_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
+    """Devuelve la lista de operadores registrados."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("operadores").select("*").order("es_activo", desc=True).order("nombre", desc=False).execute()
+            ops = []
+            for row in (res.data or []):
+                ops.append({
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo") or ""),
+                    "direccion": str(row.get("direccion") or ""),
+                    "ciudad": str(row.get("ciudad") or ""),
+                    "es_activo": bool(row.get("es_activo")),
+                    "actualizado_en": str(row.get("updated_at")),
+                })
+            return ops
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error listando operadores en Supabase: {exc}")
+            return []
+
+    # Modo SQLite
     inicializar_db()
     operadores = []
     try:
@@ -503,8 +833,33 @@ def listar_operadores_db() -> List[Dict[str, Any]]:
     return operadores
 
 
-def obtener_operador_db(id_operador: str) -> Optional[Dict[str, Any]]:
-    """Obtiene un operador específico por su identificador único."""
+def obtener_operador_db(id_operador: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Obtiene un operador por su identificador único."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("operadores").select("*").eq("id", id_operador.strip().lower()).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                return {
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo") or ""),
+                    "direccion": str(row.get("direccion") or ""),
+                    "ciudad": str(row.get("ciudad") or ""),
+                    "es_activo": bool(row.get("es_activo")),
+                    "actualizado_en": str(row.get("updated_at")),
+                }
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error obteniendo operador '{id_operador}' en Supabase: {exc}")
+        return None
+
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -532,12 +887,37 @@ def obtener_operador_db(id_operador: str) -> Optional[Dict[str, Any]]:
                     "actualizado_en": str(row["actualizado_en"]),
                 }
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error obteniendo operador '{id_operador}': {exc}")
+        print(f"[AutoForm AI DB] Error obteniendo operador '{id_operador}' en SQLite: {exc}")
     return None
 
 
-def obtener_operador_activo_db() -> Optional[Dict[str, Any]]:
-    """Devuelve el operador actualmente marcado como activo en SQLite."""
+def obtener_operador_activo_db(client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Devuelve el operador marcado como activo."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("operadores").select("*").eq("es_activo", True).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                return {
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo") or ""),
+                    "direccion": str(row.get("direccion") or ""),
+                    "ciudad": str(row.get("ciudad") or ""),
+                    "es_activo": True,
+                    "actualizado_en": str(row.get("updated_at")),
+                }
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error obteniendo operador activo en Supabase: {exc}")
+        return None
+
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -565,12 +945,26 @@ def obtener_operador_activo_db() -> Optional[Dict[str, Any]]:
                     "actualizado_en": str(row["actualizado_en"]),
                 }
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error obteniendo operador activo: {exc}")
+        print(f"[AutoForm AI DB] Error obteniendo operador activo en SQLite: {exc}")
     return None
 
 
-def activar_operador_db(id_operador: str) -> bool:
+def activar_operador_db(id_operador: str, client: Optional[Client] = None) -> bool:
     """Marca un operador como activo y desmarca a los demás."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            id_limpio = id_operador.strip().lower()
+            cli.table("operadores").update({"es_activo": False}).execute()
+            res = cli.table("operadores").update({"es_activo": True}).eq("id", id_limpio).execute()
+            return bool(res.data and len(res.data) > 0)
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error activando operador '{id_operador}' en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -580,12 +974,24 @@ def activar_operador_db(id_operador: str) -> bool:
             conn.commit()
             return cursor.rowcount > 0
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error activando operador '{id_operador}': {exc}")
+        print(f"[AutoForm AI DB] Error activando operador '{id_operador}' en SQLite: {exc}")
         return False
 
 
-def eliminar_operador_db(id_operador: str) -> bool:
-    """Elimina un operador de SQLite."""
+def eliminar_operador_db(id_operador: str, client: Optional[Client] = None) -> bool:
+    """Elimina un operador."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            cli.table("operadores").delete().eq("id", id_operador.strip().lower()).execute()
+            return True
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error eliminando operador '{id_operador}' en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -594,87 +1000,14 @@ def eliminar_operador_db(id_operador: str) -> bool:
             conn.commit()
             return True
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error eliminando operador '{id_operador}': {exc}")
+        print(f"[AutoForm AI DB] Error eliminando operador '{id_operador}' en SQLite: {exc}")
         return False
 
 
-# ──────────────────────────────────────────────────────────────────────────────
-# ADR-0008: GESTIÓN DE USUARIOS Y AUTENTICACIÓN (SQLITE CANÓNICO)
-# ──────────────────────────────────────────────────────────────────────────────
+# ── GESTIÓN DE USUARIOS Y AUTENTICACIÓN (ADR-0008 / ADR-0010) ───────────────────
 
-def crear_usuario_db(
-    nombre: str,
-    correo: str,
-    password: str,
-    cargo: str = "",
-    cedula: str = "",
-    telefono: str = "",
-    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
-    ciudad: str = "Bogotá",
-    es_admin: int = 0,
-) -> Tuple[bool, str]:
-    """Registra un nuevo usuario en SQLite tras hashear su contraseña.
-
-    Returns:
-        Tuple[bool, str]: (exito, mensaje_o_id)
-    """
-    from core.auth_manager import hashear_password, validar_dominio_corporativo, validar_formato_correo
-
-    inicializar_db()
-    correo_limpio = correo.strip().lower()
-    nombre_limpio = nombre.strip()
-
-    if not nombre_limpio:
-        return False, "El nombre completo es obligatorio."
-    if not validar_formato_correo(correo_limpio):
-        return False, "El formato de correo no es válido."
-    if not validar_dominio_corporativo(correo_limpio):
-        return False, "Registro no autorizado. Utiliza un correo corporativo de la empresa."
-    if not password or len(password) < 6:
-        return False, "La contraseña debe tener al menos 6 caracteres."
-
-    slug_id = re.sub(r"[^\w]+", "_", correo_limpio.split("@")[0]).strip("_")
-    pwd_hash = hashear_password(password)
-    ahora_iso = datetime.now(timezone.utc).isoformat()
-
-    try:
-        with obtener_conexion() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                """
-                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
-                """,
-                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, int(es_admin), ahora_iso),
-            )
-            # También sincronizar en operadores para compatibilidad
-            cursor.execute(
-                """
-                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    nombre = excluded.nombre,
-                    cargo = excluded.cargo,
-                    cedula = excluded.cedula,
-                    telefono = excluded.telefono,
-                    correo = excluded.correo,
-                    direccion = excluded.direccion,
-                    ciudad = excluded.ciudad,
-                    actualizado_en = excluded.actualizado_en
-                """,
-                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), ahora_iso),
-            )
-            conn.commit()
-            return True, slug_id
-    except sqlite3.IntegrityError:
-        return False, "Ya existe una cuenta registrada con este correo electrónico."
-    except Exception as exc:
-        return False, f"Error al registrar usuario: {exc}"
-
-
-def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
-    """Obtiene un usuario por su correo electrónico (con soporte a variantes @iaclatam.com / @iac.com.co)."""
-    inicializar_db()
+def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Obtiene un usuario por su correo electrónico (con soporte para @iaclatam.com y @iac.com.co)."""
     correo_limpio = correo.strip().lower()
     correo_alt = ""
     if correo_limpio.endswith("@iac.com.co"):
@@ -682,6 +1015,36 @@ def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
     elif correo_limpio.endswith("@iaclatam.com"):
         correo_alt = correo_limpio.replace("@iaclatam.com", "@iac.com.co")
 
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("perfiles_usuario").select("*").eq("correo", correo_limpio).eq("activo", True).limit(1).execute()
+            if not res.data and correo_alt:
+                res = cli.table("perfiles_usuario").select("*").eq("correo", correo_alt).eq("activo", True).limit(1).execute()
+
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                return {
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo")),
+                    "direccion": str(row.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206"),
+                    "ciudad": str(row.get("ciudad") or "Bogotá"),
+                    "es_admin": bool(row.get("es_admin")),
+                    "activo": bool(row.get("activo")),
+                    "creado_en": str(row.get("created_at")),
+                }
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al buscar usuario por correo en Supabase: {exc}")
+        return None
+
+    # Modo SQLite
+    inicializar_db()
     try:
         with obtener_conexion() as conn:
             cursor = conn.cursor()
@@ -711,32 +1074,143 @@ def obtener_usuario_por_correo_db(correo: str) -> Optional[Dict[str, Any]]:
                     "creado_en": str(row["creado_en"]),
                 }
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error al buscar usuario por correo '{correo}': {exc}")
+        print(f"[AutoForm AI DB] Error al buscar usuario por correo en SQLite: {exc}")
     return None
 
 
 def autenticar_usuario_db(correo: str, password: str) -> Optional[Dict[str, Any]]:
-    """Verifica credenciales del usuario contra el hash en base de datos.
+    """Autentica un usuario contra el almacén de credenciales activo."""
+    if usar_supabase():
+        # En Supabase, la autenticación se gestiona vía core.auth_manager.iniciar_sesion()
+        from core import auth_manager
+        ok, user_dict, _, _ = auth_manager.iniciar_sesion(correo, password)
+        return user_dict if ok else None
 
-    Returns:
-        Dict con los datos del usuario autenticado (sin el hash) o None si falla.
-    """
+    # Modo SQLite (Desarrollo local con PBKDF2)
     from core.auth_manager import verificar_password
-
     usuario = obtener_usuario_por_correo_db(correo)
     if not usuario:
         return None
 
-    if verificar_password(password, usuario["password_hash"]):
+    if verificar_password(password, usuario.get("password_hash", "")):
         datos_seguros = dict(usuario)
-        del datos_seguros["password_hash"]
+        datos_seguros.pop("password_hash", None)
         return datos_seguros
 
     return None
 
 
-def listar_usuarios_db() -> List[Dict[str, Any]]:
+def crear_usuario_db(
+    nombre: str,
+    correo: str,
+    password: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
+    ciudad: str = "Bogotá",
+    es_admin: int = 0,
+) -> Tuple[bool, str]:
+    """Registra un usuario en la base de datos activa."""
+    from core.auth_manager import validar_dominio_corporativo, validar_formato_correo
+
+    correo_limpio = correo.strip().lower()
+    nombre_limpio = nombre.strip()
+
+    if not nombre_limpio:
+        return False, "El nombre completo es obligatorio."
+    if not validar_formato_correo(correo_limpio):
+        return False, "El formato de correo no es válido."
+    if not validar_dominio_corporativo(correo_limpio):
+        return False, "Registro no autorizado. Utiliza un correo corporativo de la empresa (@iaclatam.com o @iac.com.co)."
+
+    if usar_supabase():
+        # En producción con Supabase, las cuentas se crean exclusivamente por invitación oficial (Q5)
+        from core import auth_manager
+        return auth_manager.invitar_usuario_corporativo(
+            correo=correo_limpio,
+            nombre=nombre_limpio,
+            cargo=cargo,
+            cedula=cedula,
+            telefono=telefono,
+            direccion=direccion,
+            ciudad=ciudad,
+            es_admin=bool(es_admin),
+        )
+
+    # Modo SQLite
+    inicializar_db()
+    if not password or len(password) < 6:
+        return False, "La contraseña debe tener al menos 6 caracteres."
+
+    from core.auth_manager import hashear_password
+    slug_id = re.sub(r"[^\w]+", "_", correo_limpio.split("@")[0]).strip("_")
+    pwd_hash = hashear_password(password)
+    ahora_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)
+                """,
+                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, int(es_admin), ahora_iso),
+            )
+            cursor.execute(
+                """
+                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                ON CONFLICT(id) DO UPDATE SET
+                    nombre = excluded.nombre,
+                    cargo = excluded.cargo,
+                    cedula = excluded.cedula,
+                    telefono = excluded.telefono,
+                    correo = excluded.correo,
+                    direccion = excluded.direccion,
+                    ciudad = excluded.ciudad,
+                    actualizado_en = excluded.actualizado_en
+                """,
+                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), ahora_iso),
+            )
+            conn.commit()
+            return True, slug_id
+    except sqlite3.IntegrityError:
+        return False, "Ya existe una cuenta registrada con este correo electrónico."
+    except Exception as exc:
+        return False, f"Error al registrar usuario en SQLite: {exc}"
+
+
+def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
     """Devuelve la lista de usuarios para administración."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("perfiles_usuario").select("*").order("es_admin", desc=True).order("nombre", desc=False).execute()
+            users = []
+            for row in (res.data or []):
+                users.append({
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo")),
+                    "direccion": str(row.get("direccion") or ""),
+                    "ciudad": str(row.get("ciudad") or ""),
+                    "es_admin": bool(row.get("es_admin")),
+                    "activo": bool(row.get("activo")),
+                    "creado_en": str(row.get("created_at")),
+                })
+            return users
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error listando usuarios en Supabase: {exc}")
+            return []
+
+    # Modo SQLite
     inicializar_db()
     usuarios = []
     try:
@@ -764,7 +1238,5 @@ def listar_usuarios_db() -> List[Dict[str, Any]]:
                     "creado_en": str(row["creado_en"]),
                 })
     except Exception as exc:
-        print(f"[AutoForm AI DB] Error listando usuarios: {exc}")
+        print(f"[AutoForm AI DB] Error listando usuarios en SQLite: {exc}")
     return usuarios
-
-

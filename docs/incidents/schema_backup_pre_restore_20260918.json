@@ -1,0 +1,58 @@
+{
+  "project_ref": "tnhedxwbpqihlqbtzudt",
+  "timestamp": "2026-09-18T18:53:59.40924+00:00",
+  "tables": [
+    "perfiles_empresa",
+    "perfiles_usuario",
+    "operadores",
+    "migration_runs"
+  ],
+  "row_counts": {
+    "perfiles_empresa": 0,
+    "perfiles_usuario": 0,
+    "operadores": 0,
+    "migration_runs": 0,
+    "auth_users": 0,
+    "storage_objects": 0
+  },
+  "functions": [
+    "actualizar_timestamp_updated_at",
+    "is_active_user",
+    "is_admin",
+    "proteger_columnas_perfil_usuario",
+    "validar_dominio_correo_auth"
+  ],
+  "triggers": [
+    {"table": "users", "trigger": "trigger_validar_dominio_correo"},
+    {"table": "perfiles_usuario", "trigger": "trigger_proteger_columnas_perfil_usuario"},
+    {"table": "perfiles_empresa", "trigger": "trigger_perfiles_empresa_updated_at"},
+    {"table": "perfiles_usuario", "trigger": "trigger_perfiles_usuario_updated_at"},
+    {"table": "operadores", "trigger": "trigger_operadores_updated_at"}
+  ],
+  "policies": [
+    {"table": "perfiles_empresa", "policy": "perfiles_empresa_select_auth", "cmd": "SELECT"},
+    {"table": "perfiles_empresa", "policy": "perfiles_empresa_admin_modificar", "cmd": "ALL"},
+    {"table": "perfiles_usuario", "policy": "perfiles_usuario_select", "cmd": "SELECT"},
+    {"table": "perfiles_usuario", "policy": "perfiles_usuario_insert_admin", "cmd": "INSERT"},
+    {"table": "perfiles_usuario", "policy": "perfiles_usuario_update", "cmd": "UPDATE"},
+    {"table": "perfiles_usuario", "policy": "perfiles_usuario_delete_admin", "cmd": "DELETE"},
+    {"table": "operadores", "policy": "operadores_select_auth", "cmd": "SELECT"},
+    {"table": "operadores", "policy": "operadores_insert_admin", "cmd": "INSERT"},
+    {"table": "operadores", "policy": "operadores_update_dueno_o_admin", "cmd": "UPDATE"},
+    {"table": "operadores", "policy": "operadores_delete_admin", "cmd": "DELETE"},
+    {"table": "migration_runs", "policy": "migration_runs_admin", "cmd": "ALL"}
+  ],
+  "buckets": [
+    "templates",
+    "signatures",
+    "generated-pdfs"
+  ],
+  "migrations": [
+    "20260917211050",
+    "20260918124544",
+    "20260918130026",
+    "20260918134709",
+    "20260918141808",
+    "20260918182816"
+  ]
+}
