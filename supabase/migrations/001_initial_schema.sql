@@ -228,19 +228,11 @@ DECLARE
 BEGIN
     caller_is_admin := public.is_admin();
 
-    BEGIN
-        jwt_role := coalesce(auth.role(), '');
-    EXCEPTION WHEN OTHERS THEN
-        jwt_role := '';
-    END;
-
-    IF jwt_role = '' THEN
-        BEGIN
-            jwt_role := coalesce(nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role', '');
-        EXCEPTION WHEN OTHERS THEN
-            jwt_role := '';
-        END IF;
-    END IF;
+    jwt_role := COALESCE(
+        auth.role(),
+        (nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> 'role'),
+        ''
+    );
 
     -- Si el llamante no es administrador activo ni service_role, proteger columnas sensibles
     IF NOT caller_is_admin 
