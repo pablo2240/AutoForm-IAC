@@ -22,6 +22,12 @@ except ImportError:
     create_client = None
     Client = Any  # type: ignore
 
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 CONFIG_DIR = PROJECT_ROOT / "config"
 DB_PATH = CONFIG_DIR / "empresa.db"

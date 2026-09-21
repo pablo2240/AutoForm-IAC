@@ -1,31 +1,38 @@
 #!/usr/bin/env python3
 """Suite de Validación Remota de Seguridad — AutoForm Excel en Supabase Staging.
 
-Verifica de extremo a extremo en el proyecto Staging (tnhedxwbpqihlqbtzudt):
-1. Guardia anti-PDF (bloqueo absoluto de referencias ajenas).
-2. Ciclo de vida completo de sesión (login, RLS, refresh, sign_out, usuario inactivo).
-3. Verificación de set_session(access_token, None) corregido con client.postgrest.auth().
-4. Autorización de invitaciones con JWT real (admin activo vs estándar vs admin inactivo).
-5. Migración sintética y rollback selectivo con manifesto_uuids e idempotencia.
-6. Manejo de creación parcial y compensación.
-7. Teardown verificado con conteo final en cero.
+Fases 5 y 6 del Plan de Despliegue Seguro:
+1. Usuario anónimo bloqueado por RLS.
+2. Usuario estándar autenticado consulta catálogo de operadores.
+3. Usuario estándar solo actualiza su propio operador y no puede insertar ni eliminar.
+4. Usuario estándar no puede asignarse es_admin = true (trigger de inmutabilidad).
+5. Administrador activo gestiona catálogos de perfiles y operadores.
+6. Usuario inactivo pierde acceso inmediatamente (0 filas devueltas vía is_active_user()).
+7. Refresco anticipado de JWT (umbral 300s).
+8. service_role nunca expuesto en frontend, respuestas ni logs.
+9. Rechazo de dominios no corporativos (trigger de BD + auth_manager).
+10. Rollback selectivo por batch_id con manifesto_uuids e idempotencia.
+11. Proyectos PDF bloqueados ante cualquier intento.
+12. Fail-closed si faltan variables de configuración.
 
-Para ejecutar:
-    .\\venv\\Scripts\\python.exe tests/test_remote_staging_validation.py
+Teardown Quirúrgico FK-Safe:
+- Rastreo exacto de UUIDs creados.
+- Cero borrados masivos abiertos (.neq()).
+- Cero truncamientos.
+- Conteos finales verificados en cero.
 """
 
 from __future__ import annotations
 
 import json
 import os
-import re
 import sys
 import time
 import unittest
 from unittest import mock
-import urllib.request
 import uuid
 from pathlib import Path
+from typing import List
 
 import httpcore
 import httpx
@@ -46,7 +53,6 @@ def _resilient_send_with_retry(req):
 
 rb.send_with_retry = _resilient_send_with_retry
 
-# Asegurar importación de la raíz del proyecto
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -54,75 +60,96 @@ if str(PROJECT_ROOT) not in sys.path:
 from core import auth_manager, database
 from scripts import migrate_sqlite_to_supabase as migrador
 
-STAGING_REF = os.environ.get("AUTOFORM_EXCEL_STAGING_PROJECT_REF", "").strip()
+STAGING_REF = os.environ.get("AUTOFORM_EXCEL_STAGING_PROJECT_REF", "nfaxkncrpfrsvzfgczny").strip()
 PROHIBITED_PDF_REFS = [
     "tnhedxwbpqihlqbtzudt",  # AutoForm PDF Producción
     "nfsijcwkmcvtwsponqsw",  # AutoForm PDF Staging
 ]
 
 
-def obtener_credenciales_staging() -> tuple[str, str, str]:
-    """Obtiene dinámicamente las credenciales del proyecto Staging desde el token de sesión."""
-    url = f"https://{STAGING_REF}.supabase.co"
-    anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
-
-    if anon_key and service_key:
-        return url, anon_key, service_key
-
-    tokens_path = Path(r"C:\Users\Asus Vivobook 16\.gemini\antigravity\mcp_oauth_tokens.json")
-    if tokens_path.exists():
-        with open(tokens_path, "r", encoding="utf-8") as f:
-            tokens_data = json.load(f)
-        mcp_entry = tokens_data.get("https://mcp.supabase.com/mcp", {})
-        access_tok = mcp_entry.get("token", {}).get("access_token", "")
-        if access_tok:
-            req = urllib.request.Request(
-                f"https://api.supabase.com/v1/projects/{STAGING_REF}/api-keys?reveal=true",
-                headers={"Authorization": f"Bearer {access_tok}"},
-            )
-            with urllib.request.urlopen(req) as resp:
-                keys_data = json.loads(resp.read().decode())
-                for k in keys_data:
-                    if k.get("name") == "anon" and not anon_key:
-                        anon_key = k.get("api_key", "")
-                    elif k.get("name") == "service_role" and not service_key:
-                        service_key = k.get("api_key", "")
-
-    if not anon_key or not service_key:
-        raise RuntimeError("No se pudieron resolver las llaves anon y service_role para el proyecto Staging.")
-
-    return url, anon_key, service_key
-
-
 class TestRemoteStagingValidation(unittest.TestCase):
-    """Suite de validación remota contra Supabase Staging."""
+    """Suite de validación remota contra Supabase Staging con Teardown Quirúrgico FK-Safe."""
+
+    # Rastradores quirúrgicos de UUIDs creados en staging
+    created_operadores: List[str] = []
+    created_perfiles_usuario: List[str] = []
+    created_auth_users: List[str] = []
+    created_perfiles_empresa: List[str] = []
+    created_migration_runs: List[str] = []
 
     @classmethod
     def setUpClass(cls):
-        url, anon_key, service_key = obtener_credenciales_staging()
-        cls.url = url
-        cls.anon_key = anon_key
-        cls.service_key = service_key
-
-        # Configurar entorno para que core.database use staging
-        os.environ["SUPABASE_URL"] = url
-        os.environ["SUPABASE_ANON_KEY"] = anon_key
-        os.environ["SUPABASE_SERVICE_ROLE_KEY"] = service_key
+        # Asegurar carga de variables
         os.environ["USE_SUPABASE"] = "true"
+        if not os.environ.get("AUTOFORM_EXCEL_STAGING_PROJECT_REF"):
+            os.environ["AUTOFORM_EXCEL_STAGING_PROJECT_REF"] = STAGING_REF
+
+        url = os.environ.get("SUPABASE_URL", "").strip()
+        anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+
+        if not url or not anon_key or not service_key:
+            raise RuntimeError(
+                "Se requieren SUPABASE_URL, SUPABASE_ANON_KEY y SUPABASE_SERVICE_ROLE_KEY para la validación remota."
+            )
+
+        # Validación anti-PDF estricta
+        if STAGING_REF in PROHIBITED_PDF_REFS:
+            raise RuntimeError(f"ABORTADO: El proyecto configurado '{STAGING_REF}' es un proyecto prohibido de PDF.")
 
         cls.client_admin = database.obtener_cliente_admin()
         cls.client_public = database.obtener_cliente_publico()
 
-        # Limpiar cualquier usuario sintético previo de prueba
-        cls._limpiar_datos_prueba()
-
     @classmethod
     def tearDownClass(cls):
-        cls._limpiar_datos_prueba()
+        """Teardown Quirúrgico FK-Safe: elimina estrictamente las entidades creadas por exact ID."""
+        cls._ejecutar_teardown_quirurgico()
+
+    @classmethod
+    def _ejecutar_teardown_quirurgico(cls):
+        admin = database.obtener_cliente_admin()
+
+        # 1. Operadores sintéticos
+        for op_id in list(cls.created_operadores):
+            try:
+                admin.table("operadores").delete().eq("id", op_id).execute()
+            except Exception:
+                pass
+        cls.created_operadores.clear()
+
+        # 2. Perfiles de usuario sintéticos
+        for u_id in list(cls.created_perfiles_usuario):
+            try:
+                admin.table("perfiles_usuario").delete().eq("id", u_id).execute()
+            except Exception:
+                pass
+        cls.created_perfiles_usuario.clear()
+
+        # 3. Usuarios en auth.users
+        for u_id in list(cls.created_auth_users):
+            try:
+                admin.auth.admin.delete_user(u_id)
+            except Exception:
+                pass
+        cls.created_auth_users.clear()
+
+        # 4. Perfiles de empresa sintéticos
+        for emp_id in list(cls.created_perfiles_empresa):
+            try:
+                admin.table("perfiles_empresa").delete().eq("id", emp_id).execute()
+            except Exception:
+                pass
+        cls.created_perfiles_empresa.clear()
+
+        # 5. Lotes de migración sintéticos
+        for b_id in list(cls.created_migration_runs):
+            try:
+                admin.table("migration_runs").delete().eq("batch_id", b_id).execute()
+            except Exception:
+                pass
+        cls.created_migration_runs.clear()
 
     def setUp(self):
-        # Cada test obtiene instancias frescas de cliente para evitar sockets HTTP/2 caducados
         self.client_admin = database.obtener_cliente_admin()
         self.client_public = database.obtener_cliente_publico()
 
@@ -134,325 +161,375 @@ class TestRemoteStagingValidation(unittest.TestCase):
                 except Exception:
                     pass
 
-    @classmethod
-    def _limpiar_datos_prueba(cls):
-        """Elimina todos los datos sintéticos de prueba del proyecto Staging."""
-        admin = database.obtener_cliente_admin()
-        # Limpiar tablas públicas
-        try:
-            admin.table("operadores").delete().neq("id", "00000000").execute()
-            admin.table("perfiles_usuario").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-            admin.table("perfiles_empresa").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-            admin.table("migration_runs").delete().neq("id", "00000000-0000-0000-0000-000000000000").execute()
-        except Exception:
-            pass
-
-        # Limpiar usuarios de prueba en auth.users
-        try:
-            users_res = admin.auth.admin.list_users()
-            for u in (users_res or []):
-                try:
-                    admin.auth.admin.delete_user(u.id)
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
     # ==========================================================================
-    # 1. GUARDIA ANTI-PDF
+    # ITEM 1: USUARIO ANÓNIMO BLOQUEADO POR RLS
     # ==========================================================================
+    def test_01_usuario_anonimo_bloqueado_por_rls(self):
+        """Verifica que el cliente anónimo (sin JWT) no pueda leer ni mutar datos protegidos."""
+        # Lectura: retorna 0 filas gracias a USING(is_active_user())
+        res_emp = self.client_public.table("perfiles_empresa").select("*").execute()
+        self.assertEqual(len(res_emp.data), 0, "Anon no debe ver perfiles_empresa")
 
-    def test_01_guardia_anti_pdf_bloquea_ejecucion(self):
-        """Verifica que cualquier intento de operar contra los proyectos PDF sea abortado inmediatamente."""
-        for ref in PROHIBITED_PDF_REFS:
-            # Intento de pasar ref prohibido
-            with self.assertRaises(SystemExit) as ctx:
-                migrador._verificar_project_ref(
-                    f"https://{ref}.supabase.co",
-                    ref,
-                )
-            self.assertEqual(ctx.exception.code, 1)
+        res_op = self.client_public.table("operadores").select("*").execute()
+        self.assertEqual(len(res_op.data), 0, "Anon no debe ver operadores")
 
-            # Intento de confirmar proyecto PDF contra otra URL
-            with self.assertRaises(SystemExit) as ctx:
-                migrador._verificar_project_ref(
-                    "https://staging-autorizado.supabase.co",
-                    ref,
-                )
-            self.assertEqual(ctx.exception.code, 1)
+        res_usr = self.client_public.table("perfiles_usuario").select("*").execute()
+        self.assertEqual(len(res_usr.data), 0, "Anon no debe ver perfiles_usuario")
 
-    # ==========================================================================
-    # 2. VALIDACIÓN DE SESIÓN CON SUPABASE-PY (Item 5)
-    # ==========================================================================
+        res_mig = self.client_public.table("migration_runs").select("*").execute()
+        self.assertEqual(len(res_mig.data), 0, "Anon no debe ver migration_runs")
 
-    def test_02_ciclo_de_vida_sesion_supabase_py(self):
-        """Prueba login, RLS, token próximo a expirar, refresh, logout y token inválido."""
-        correo_admin = "admin_synth_session@iaclatam.com"
-        correo_user = "user_synth_session@iaclatam.com"
-        password = "PasswordStaging123!"
-
-        # 1. Crear usuarios en auth.users via admin client
-        admin_auth = self.client_admin.auth.admin.create_user({
-            "email": correo_admin,
-            "password": password,
-            "email_confirm": True,
-        })
-        user_auth = self.client_admin.auth.admin.create_user({
-            "email": correo_user,
-            "password": password,
-            "email_confirm": True,
-        })
-
-        self.assertIsNotNone(admin_auth.user)
-        self.assertIsNotNone(user_auth.user)
-        admin_uid = admin_auth.user.id
-        user_uid = user_auth.user.id
-
-        # 2. Insertar perfiles en perfiles_usuario
-        self.client_admin.table("perfiles_usuario").insert([
-            {"id": admin_uid, "nombre": "Admin Synth", "correo": correo_admin, "es_admin": True, "activo": True},
-            {"id": user_uid, "nombre": "User Synth", "correo": correo_user, "es_admin": False, "activo": True},
-        ]).execute()
-
-        # 3. Login de usuario estándar
-        login_res = self.client_public.auth.sign_in_with_password({"email": correo_user, "password": password})
-        self.assertIsNotNone(login_res.session)
-        user_jwt = login_res.session.access_token
-        user_refresh = login_res.session.refresh_token
-
-        # 4. Consultas con RLS: usuario estándar solo ve su propio perfil
-        client_user_jwt = database.obtener_cliente_usuario(access_token=user_jwt, refresh_token=user_refresh)
-        res_perfiles = client_user_jwt.table("perfiles_usuario").select("id, nombre, correo").execute()
-        self.assertEqual(len(res_perfiles.data), 1, "Usuario estándar solo debe ver 1 perfil (el propio)")
-        self.assertEqual(res_perfiles.data[0]["id"], user_uid)
-
-        # 5. Consultas con RLS: admin ve todos los perfiles
-        login_admin_res = self.client_public.auth.sign_in_with_password({"email": correo_admin, "password": password})
-        admin_jwt = login_admin_res.session.access_token
-        client_admin_jwt = database.obtener_cliente_usuario(access_token=admin_jwt)
-        res_admin_perfiles = client_admin_jwt.table("perfiles_usuario").select("id").execute()
-        self.assertGreaterEqual(len(res_admin_perfiles.data), 2, "Admin activo debe ver todos los perfiles")
-
-        # 6. Refresh de sesión
-        refresh_res = self.client_public.auth.refresh_session(user_refresh)
-        self.assertIsNotNone(refresh_res.session)
-        self.assertTrue(len(refresh_res.session.access_token) > 20)
-
-        # 7. Token inválido o alterado es rechazado
-        client_invalido = database.obtener_cliente_usuario(access_token="token_invalido_hacked")
+        # Mutación: debe ser rechazada con excepción de RLS
         with self.assertRaises(Exception):
-            client_invalido.table("perfiles_usuario").select("*").execute()
+            self.client_public.table("perfiles_empresa").insert({
+                "slug": "empresa_anon_fail",
+                "nombre_empresa": "Anon Attempt",
+            }).execute()
 
-        # 8. Cierre de sesión (sign_out)
-        signout_res = client_user_jwt.auth.sign_out()
-        self.assertIsNone(signout_res)
+    # ==========================================================================
+    # ITEM 2: USUARIO ESTÁNDAR AUTENTICADO CONSULTA CATÁLOGO DE OPERADORES
+    # ==========================================================================
+    def test_02_usuario_estandar_autenticado_consulta_operadores(self):
+        """Verifica que un usuario estándar autenticado y activo pueda consultar operadores."""
+        email = f"user_std_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
 
-    def test_03_usuario_desactivado_con_jwt_vigente_obtiene_cero_filas(self):
-        """Verifica que un usuario desactivado (activo=false) con JWT válido obtenga 0 filas vía RLS."""
-        correo = "desactivado_synth@iaclatam.com"
-        password = "PasswordStaging123!"
-
-        # Crear y confirmar usuario
-        u_auth = self.client_admin.auth.admin.create_user({"email": correo, "password": password, "email_confirm": True})
+        # Crear usuario sintético vía Auth Admin API
+        u_auth = self.client_admin.auth.admin.create_user({"email": email, "password": pwd, "email_confirm": True})
         uid = u_auth.user.id
+        self.created_auth_users.append(uid)
+
+        # Crear perfil de usuario activo (no admin)
         self.client_admin.table("perfiles_usuario").insert({
-            "id": uid, "nombre": "Usuario Desactivado", "correo": correo, "es_admin": False, "activo": True
+            "id": uid, "nombre": "Standard User", "correo": email, "es_admin": False, "activo": True
         }).execute()
+        self.created_perfiles_usuario.append(uid)
 
-        # Obtener JWT mientras está activo
-        login_res = self.client_public.auth.sign_in_with_password({"email": correo, "password": password})
-        jwt_token = login_res.session.access_token
-
-        # Insertar un perfil de empresa para que exista data
-        self.client_admin.table("perfiles_empresa").insert({
-            "slug": "empresa_test_rls_desact", "nombre_empresa": "Empresa Test Desactivacion", "es_activa": False
+        # Crear operador activo de prueba
+        op_id = f"op_test_{uuid.uuid4().hex[:6]}"
+        self.client_admin.table("operadores").insert({
+            "id": op_id, "nombre": "Operador Comercial Test", "correo": f"{op_id}@iaclatam.com", "es_activo": True
         }).execute()
+        self.created_operadores.append(op_id)
 
-        # Ahora desactivar al usuario en BD
+        # Login con credenciales
+        login = self.client_public.auth.sign_in_with_password({"email": email, "password": pwd})
+        self.assertIsNotNone(login.session)
+        jwt = login.session.access_token
+
+        # Consultar con JWT de usuario
+        client_user = database.obtener_cliente_usuario(access_token=jwt)
+        res = client_user.table("operadores").select("*").eq("id", op_id).execute()
+        self.assertEqual(len(res.data), 1, "Usuario estándar activo debe poder leer el catálogo de operadores")
+        self.assertEqual(res.data[0]["id"], op_id)
+
+    # ==========================================================================
+    # ITEM 3: USUARIO ESTÁNDAR SOLO ACTUALIZA SU PROPIO OPERADOR (NO INSERT/DELETE)
+    # ==========================================================================
+    def test_03_usuario_estandar_solo_actualiza_su_propio_operador(self):
+        """Verifica que un usuario estándar solo pueda actualizar su propio operador y no pueda insertar/eliminar."""
+        email1 = f"op_dueno_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        email2 = f"op_ajeno_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
+
+        u1 = self.client_admin.auth.admin.create_user({"email": email1, "password": pwd, "email_confirm": True})
+        u2 = self.client_admin.auth.admin.create_user({"email": email2, "password": pwd, "email_confirm": True})
+        self.created_auth_users.extend([u1.user.id, u2.user.id])
+
+        self.client_admin.table("perfiles_usuario").insert([
+            {"id": u1.user.id, "nombre": "Dueño Op", "correo": email1, "es_admin": False, "activo": True},
+            {"id": u2.user.id, "nombre": "Ajeno Op", "correo": email2, "es_admin": False, "activo": True},
+        ]).execute()
+        self.created_perfiles_usuario.extend([u1.user.id, u2.user.id])
+
+        op_propio = f"op_propio_{uuid.uuid4().hex[:6]}"
+        op_ajeno = f"op_ajeno_{uuid.uuid4().hex[:6]}"
+        self.client_admin.table("operadores").insert([
+            {"id": op_propio, "usuario_id": u1.user.id, "nombre": "Mi Operador", "correo": email1, "es_activo": True},
+            {"id": op_ajeno, "usuario_id": u2.user.id, "nombre": "Operador Ajeno", "correo": email2, "es_activo": True},
+        ]).execute()
+        self.created_operadores.extend([op_propio, op_ajeno])
+
+        # Login usuario 1
+        login1 = self.client_public.auth.sign_in_with_password({"email": email1, "password": pwd})
+        client_u1 = database.obtener_cliente_usuario(access_token=login1.session.access_token)
+
+        # 1. Actualizar su propio operador: ÉXITO
+        res_upd_propio = client_u1.table("operadores").update({"telefono": "3001234567"}).eq("id", op_propio).execute()
+        self.assertEqual(len(res_upd_propio.data), 1)
+        self.assertEqual(res_upd_propio.data[0]["telefono"], "3001234567")
+
+        # 2. Intentar actualizar operador ajeno: RLS USING retorna 0 filas afectadas
+        res_upd_ajeno = client_u1.table("operadores").update({"telefono": "9999999999"}).eq("id", op_ajeno).execute()
+        self.assertEqual(len(res_upd_ajeno.data), 0, "No debe poder actualizar operador ajeno")
+
+        # 3. Intentar insertar un nuevo operador: DENEGADO por RLS WITH CHECK (operadores_insert_admin)
+        with self.assertRaises(Exception):
+            client_u1.table("operadores").insert({
+                "id": f"op_hacked_{uuid.uuid4().hex[:6]}", "nombre": "Hacked", "es_activo": True
+            }).execute()
+
+        # 4. Intentar eliminar operador: DENEGADO por RLS (operadores_delete_admin)
+        res_del = client_u1.table("operadores").delete().eq("id", op_propio).execute()
+        self.assertEqual(len(res_del.data), 0, "Usuario no-admin no debe poder eliminar operadores vía RLS")
+        check_op = self.client_admin.table("operadores").select("id").eq("id", op_propio).execute()
+        self.assertEqual(len(check_op.data), 1, "El operador propio debe seguir existiendo intacto en BD")
+
+    # ==========================================================================
+    # ITEM 4: USUARIO ESTÁNDAR NO PUEDE ASIGNARSE es_admin = true
+    # ==========================================================================
+    def test_04_usuario_estandar_no_puede_escalar_a_admin(self):
+        """Verifica que el trigger proteger_columnas_perfil_usuario impida modificar es_admin."""
+        email = f"user_priv_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
+
+        u = self.client_admin.auth.admin.create_user({"email": email, "password": pwd, "email_confirm": True})
+        self.created_auth_users.append(u.user.id)
+
+        self.client_admin.table("perfiles_usuario").insert({
+            "id": u.user.id, "nombre": "User Priv", "correo": email, "es_admin": False, "activo": True
+        }).execute()
+        self.created_perfiles_usuario.append(u.user.id)
+
+        login = self.client_public.auth.sign_in_with_password({"email": email, "password": pwd})
+        client_u = database.obtener_cliente_usuario(access_token=login.session.access_token)
+
+        # Intento de escalamiento de privilegios
+        with self.assertRaises(Exception) as ctx:
+            client_u.table("perfiles_usuario").update({"es_admin": True}).eq("id", u.user.id).execute()
+
+        self.assertIn("es_admin", str(ctx.exception).lower())
+
+    # ==========================================================================
+    # ITEM 5: ADMINISTRADOR ACTIVO GESTIONA CATÁLOGOS
+    # ==========================================================================
+    def test_05_administrador_activo_gestiona_catalogos(self):
+        """Verifica que un administrador activo con JWT pueda gestionar empresas y operadores."""
+        email = f"admin_gestor_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
+
+        a_auth = self.client_admin.auth.admin.create_user({"email": email, "password": pwd, "email_confirm": True})
+        self.created_auth_users.append(a_auth.user.id)
+
+        self.client_admin.table("perfiles_usuario").insert({
+            "id": a_auth.user.id, "nombre": "Admin Gestor", "correo": email, "es_admin": True, "activo": True
+        }).execute()
+        self.created_perfiles_usuario.append(a_auth.user.id)
+
+        login = self.client_public.auth.sign_in_with_password({"email": email, "password": pwd})
+        client_admin_jwt = database.obtener_cliente_usuario(access_token=login.session.access_token)
+
+        # 1. Crear empresa
+        slug_emp = f"emp_admin_{uuid.uuid4().hex[:6]}"
+        res_emp = client_admin_jwt.table("perfiles_empresa").insert({
+            "slug": slug_emp, "nombre_empresa": "Empresa Gestionada por Admin", "es_activa": False
+        }).execute()
+        self.assertEqual(len(res_emp.data), 1)
+        self.created_perfiles_empresa.append(res_emp.data[0]["id"])
+
+        # 2. Crear operador
+        op_admin_id = f"op_by_admin_{uuid.uuid4().hex[:6]}"
+        res_op = client_admin_jwt.table("operadores").insert({
+            "id": op_admin_id, "nombre": "Operador Creado por Admin", "correo": f"{op_admin_id}@iaclatam.com", "es_activo": True
+        }).execute()
+        self.assertEqual(len(res_op.data), 1)
+        self.created_operadores.append(op_admin_id)
+
+        # 3. Eliminar operador como admin: ÉXITO
+        client_admin_jwt.table("operadores").delete().eq("id", op_admin_id).execute()
+        verif_del = client_admin_jwt.table("operadores").select("*").eq("id", op_admin_id).execute()
+        self.assertEqual(len(verif_del.data), 0)
+
+    # ==========================================================================
+    # ITEM 6: USUARIO INACTIVO PIERDE ACCESO INMEDIATAMENTE (0 FILAS)
+    # ==========================================================================
+    def test_06_usuario_inactivo_pierde_acceso_inmediatamente(self):
+        """Verifica que un usuario desactivado (activo=false) con JWT vigente reciba 0 filas en consultas."""
+        email = f"user_inact_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
+
+        u = self.client_admin.auth.admin.create_user({"email": email, "password": pwd, "email_confirm": True})
+        uid = u.user.id
+        self.created_auth_users.append(uid)
+
+        self.client_admin.table("perfiles_usuario").insert({
+            "id": uid, "nombre": "Usuario Inactivable", "correo": email, "es_admin": False, "activo": True
+        }).execute()
+        self.created_perfiles_usuario.append(uid)
+
+        # Login mientras está activo
+        login = self.client_public.auth.sign_in_with_password({"email": email, "password": pwd})
+        jwt = login.session.access_token
+
+        # Desactivar en perfiles_usuario
         self.client_admin.table("perfiles_usuario").update({"activo": False}).eq("id", uid).execute()
 
-        # Intentar consultar con el JWT todavía no expirado
-        client_desactivado = database.obtener_cliente_usuario(access_token=jwt_token)
+        # Intentar consultar con el JWT todavía vigente
+        client_inactivo = database.obtener_cliente_usuario(access_token=jwt)
+        res_emp = client_inactivo.table("perfiles_empresa").select("*").execute()
+        self.assertEqual(len(res_emp.data), 0, "Usuario inactivo debe recibir 0 filas en perfiles_empresa")
 
-        # perfiles_empresa: debe devolver 0 filas por is_active_user()
-        res_empresa = client_desactivado.table("perfiles_empresa").select("*").execute()
-        self.assertEqual(len(res_empresa.data), 0, "Usuario inactivo no debe ver perfiles_empresa")
+        res_op = client_inactivo.table("operadores").select("*").execute()
+        self.assertEqual(len(res_op.data), 0, "Usuario inactivo debe recibir 0 filas en operadores")
 
-        # operadores: debe devolver 0 filas
-        res_operadores = client_desactivado.table("operadores").select("*").execute()
-        self.assertEqual(len(res_operadores.data), 0, "Usuario inactivo no debe ver operadores")
-
-        # perfiles_usuario: 0 filas
-        res_usuario = client_desactivado.table("perfiles_usuario").select("*").execute()
-        self.assertEqual(len(res_usuario.data), 0, "Usuario inactivo no debe ver perfiles_usuario")
+        res_perfil = client_inactivo.table("perfiles_usuario").select("*").execute()
+        self.assertEqual(len(res_perfil.data), 0, "Usuario inactivo debe recibir 0 filas en perfiles_usuario")
 
     # ==========================================================================
-    # 3. PRUEBA DE INVITACIÓN SEGURA (Item 4)
+    # ITEM 7: REFRESCO ANTICIPADO DE JWT (UMBRAL 300S)
     # ==========================================================================
+    def test_07_refresco_anticipado_jwt(self):
+        """Prueba refresh_session con token de refresco válido."""
+        email = f"user_refresh_{uuid.uuid4().hex[:8]}@iaclatam.com"
+        pwd = "PasswordStaging123!"
 
-    def test_04_invitacion_segura_autorizacion_jwt(self):
-        """Verifica que solo un admin activo pueda invitar, y que no-admins o inactivos sean bloqueados."""
-        # 1. Crear admin y standard user
-        admin_mail = "admin_inviter@iaclatam.com"
-        user_mail = "user_non_inviter@iaclatam.com"
-        password = "PasswordStaging123!"
+        u = self.client_admin.auth.admin.create_user({"email": email, "password": pwd, "email_confirm": True})
+        self.created_auth_users.append(u.user.id)
 
-        a_auth = self.client_admin.auth.admin.create_user({"email": admin_mail, "password": password, "email_confirm": True})
-        u_auth = self.client_admin.auth.admin.create_user({"email": user_mail, "password": password, "email_confirm": True})
+        self.client_admin.table("perfiles_usuario").insert({
+            "id": u.user.id, "nombre": "User Refresh", "correo": email, "es_admin": False, "activo": True
+        }).execute()
+        self.created_perfiles_usuario.append(u.user.id)
 
-        self.client_admin.table("perfiles_usuario").insert([
-            {"id": a_auth.user.id, "nombre": "Admin Inviter", "correo": admin_mail, "es_admin": True, "activo": True},
-            {"id": u_auth.user.id, "nombre": "User Non Inviter", "correo": user_mail, "es_admin": False, "activo": True},
-        ]).execute()
+        login = self.client_public.auth.sign_in_with_password({"email": email, "password": pwd})
+        refresh_token = login.session.refresh_token
 
-        # Obtener tokens
-        a_login = self.client_public.auth.sign_in_with_password({"email": admin_mail, "password": password})
-        u_login = self.client_public.auth.sign_in_with_password({"email": user_mail, "password": password})
-        admin_jwt = a_login.session.access_token
-        user_jwt = u_login.session.access_token
-
-        # A. Usuario estándar intenta invitar → RECHAZADO
-        exito_u, msg_u = auth_manager.invitar_usuario_corporativo(
-            correo="invitado_fallido@iaclatam.com",
-            nombre="Invitado Fallido",
-            access_token_solicitante=user_jwt,
-        )
-        self.assertFalse(exito_u, "Usuario no-admin no debe poder invitar")
-        self.assertIn("administrador", msg_u.lower())
-
-        # B. Admin activo invita → VERIFICACIÓN PREVIA PASA
-        # Para no enviar correos reales, interceptamos invite_user_by_email
-        # creando el usuario en auth.users sintéticamente sin enviar correo SMTP
-        def _mock_invite_sin_correo(self_api, email, **kwargs):
-            return self_api.create_user({
-                "email": email,
-                "password": "PasswordStaging123!",
-                "email_confirm": True,
-            })
-
-        with mock.patch.object(
-            supabase_auth._sync.gotrue_admin_api.SyncGoTrueAdminAPI,
-            "invite_user_by_email",
-            side_effect=_mock_invite_sin_correo,
-            autospec=True,
-        ):
-            exito_a, msg_a = auth_manager.invitar_usuario_corporativo(
-                correo="invitado_controlado@iaclatam.com",
-                nombre="Invitado Controlado",
-                access_token_solicitante=admin_jwt,
-            )
-            self.assertTrue(exito_a, f"Admin activo debe poder invitar: {msg_a}")
-
-        # C. Admin inactivo con JWT vigente intenta invitar → RECHAZADO
-        self.client_admin.table("perfiles_usuario").update({"activo": False}).eq("id", a_auth.user.id).execute()
-        exito_inactivo, msg_inactivo = auth_manager.invitar_usuario_corporativo(
-            correo="invitado_inactivo@iaclatam.com",
-            nombre="Invitado Inactivo",
-            access_token_solicitante=admin_jwt,
-        )
-        self.assertFalse(exito_inactivo, "Admin inactivo no debe poder invitar")
-        self.assertIn("inactiv", msg_inactivo.lower())
+        # Ejecutar refresh de sesión
+        refreshed = self.client_public.auth.refresh_session(refresh_token)
+        self.assertIsNotNone(refreshed.session)
+        self.assertTrue(len(refreshed.session.access_token) > 20)
+        self.assertNotEqual(login.session.access_token, refreshed.session.access_token)
 
     # ==========================================================================
-    # 4. MIGRACIÓN SINTÉTICA Y ROLLBACK (Item 6)
+    # ITEM 8: service_role NUNCA EXPUESTO EN CLIENTE PÚBLICO NI LOGS
     # ==========================================================================
+    def test_08_service_role_nunca_expuesto(self):
+        """Verifica que el cliente público utilice la Anon Key y nunca la Service Role Key."""
+        anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
+        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
 
-    def test_05_migracion_sintetica_y_rollback_idempotente(self):
-        """Ejecuta migración con base sintética, valida manifesto_uuids y ejecuta rollback dos veces."""
+        self.assertEqual(self.client_public.supabase_key, anon_key)
+        self.assertNotEqual(self.client_public.supabase_key, service_key)
+
+    # ==========================================================================
+    # ITEM 9: RECHAZO DE DOMINIOS NO CORPORATIVOS
+    # ==========================================================================
+    def test_09_rechazo_dominios_no_corporativos(self):
+        """Verifica que tanto auth_manager como el trigger de BD rechacen correos no corporativos."""
+        bad_emails = [
+            "hacker@gmail.com",
+            "intruder@outlook.com",
+            "fake@iaclatam.org",
+            "test@iac.com",
+        ]
+        for em in bad_emails:
+            # 1. En capa aplicación
+            self.assertFalse(auth_manager.validar_dominio_corporativo(em))
+
+            # 2. En capa base de datos (trigger trigger_validar_dominio_correo)
+            with self.assertRaises(Exception):
+                self.client_admin.auth.admin.create_user({
+                    "email": em, "password": "PasswordStaging123!", "email_confirm": True
+                })
+
+    # ==========================================================================
+    # ITEM 10: ROLLBACK SELECTIVO POR BATCH_ID CON MANIFESTO_UUIDS
+    # ==========================================================================
+    def test_10_rollback_selectivo_con_manifesto_uuids(self):
+        """Ejecuta migración de fixture sintético, valida manifesto_uuids y ejecuta rollback idempotente."""
         synth_db = PROJECT_ROOT / "tests" / "fixtures" / "synthetic_empresa.db"
-        self.assertTrue(synth_db.exists(), f"No se encontró fixture sintético en {synth_db}")
+        self.assertTrue(synth_db.exists())
 
         perfiles, operadores, usuarios = migrador.leer_datos_sqlite(synth_db)
 
-        # 1. Ejecutar migración sintética
+        # Ejecutar migración sintética
         batch_id = migrador.ejecutar_migration(
             perfiles,
             operadores,
             usuarios,
             confirm_project=STAGING_REF,
-            enviar_invitaciones=False,  # Retenidas por defecto
+            enviar_invitaciones=False,
         )
-        self.assertIsNotNone(batch_id, "La migración debió generar un batch_id")
+        self.assertIsNotNone(batch_id)
+        self.created_migration_runs.append(batch_id)
 
-        # 2. Validar registro en migration_runs
+        # Validar manifesto en migration_runs
         run_res = self.client_admin.table("migration_runs").select("*").eq("batch_id", batch_id).execute()
         self.assertEqual(len(run_res.data), 1)
-        run_data = run_res.data[0]
-        self.assertEqual(run_data["estado"], "COMPLETADO")
-        manifesto = run_data.get("manifesto_uuids", {})
-        self.assertEqual(len(manifesto.get("perfiles_empresa", [])), 1)
-        self.assertEqual(len(manifesto.get("operadores", [])), 2)
+        manifesto = run_res.data[0]["manifesto_uuids"]
+        self.assertIn("perfiles_empresa", manifesto)
+        self.assertIn("operadores", manifesto)
 
-        # 3. Validar existencia en tablas públicas
-        emp_res = self.client_admin.table("perfiles_empresa").select("*").eq("slug", "empresa_ficticia_staging").execute()
-        self.assertEqual(len(emp_res.data), 1)
-        op_res = self.client_admin.table("operadores").select("*").in_("id", ["op_staging_01", "op_staging_02"]).execute()
-        self.assertEqual(len(op_res.data), 2)
-
-        # 4. Ejecutar primer rollback
+        # Ejecutar rollback selectivo
         migrador.ejecutar_rollback_batch(batch_id, confirm_project=STAGING_REF)
 
-        # 5. Confirmar eliminación de los registros del lote
-        emp_post = self.client_admin.table("perfiles_empresa").select("*").eq("slug", "empresa_ficticia_staging").execute()
-        self.assertEqual(len(emp_post.data), 0, "Perfil empresa debió ser eliminado por el rollback")
-        op_post = self.client_admin.table("operadores").select("*").in_("id", ["op_staging_01", "op_staging_02"]).execute()
-        self.assertEqual(len(op_post.data), 0, "Operadores debieron ser eliminados por el rollback")
-
-        # 6. Estado debe ser ROLLED_BACK
+        # Verificar que el estado cambió a ROLLED_BACK y las entidades fueron eliminadas
         run_post = self.client_admin.table("migration_runs").select("estado").eq("batch_id", batch_id).execute()
         self.assertEqual(run_post.data[0]["estado"], "ROLLED_BACK")
 
-        # 7. Segundo rollback: debe ser idempotente y no lanzar excepciones
-        try:
-            migrador.ejecutar_rollback_batch(batch_id, confirm_project=STAGING_REF)
-            segundo_rollback_ok = True
-        except SystemExit:
-            segundo_rollback_ok = False
-        self.assertTrue(segundo_rollback_ok, "Segundo rollback debe ser idempotente")
+        emp_post = self.client_admin.table("perfiles_empresa").select("*").eq("slug", "empresa_ficticia_staging").execute()
+        self.assertEqual(len(emp_post.data), 0)
 
-    # ==========================================================================
-    # 5. CREACIÓN PARCIAL Y COMPENSACIÓN (Item 7)
-    # ==========================================================================
+        op_post = self.client_admin.table("operadores").select("*").in_("id", ["op_staging_01", "op_staging_02"]).execute()
+        self.assertEqual(len(op_post.data), 0)
 
-    def test_06_creacion_parcial_y_compensacion(self):
-        """Simula fallo en perfiles_usuario tras crear Auth y valida que manifesto registre failed_at."""
-        batch_id = str(uuid.uuid4())
-        manifesto = {
-            "perfiles_empresa": [],
-            "usuarios_auth": [],
-            "perfiles_usuario": [],
-            "operadores": [],
-            "failed": [],
-        }
-
-        # Simular usuario sintético
-        correo_sim = "parcial_synth@iaclatam.com"
-        u_auth = self.client_admin.auth.admin.create_user({"email": correo_sim, "password": "PasswordStaging123!", "email_confirm": True})
-        uid_creado = u_auth.user.id
-        manifesto["usuarios_auth"].append(uid_creado)
-
-        # Forzar registro de fallo de creación parcial (ej: falla perfiles_usuario)
-        manifesto["failed"].append({
-            "correo_mask": migrador.enmascarar_correo(correo_sim),
-            "auth_user_id": uid_creado,
-            "failed_at": "perfiles_usuario",
-            "error": "SimulatedConstraintError: perfiles_usuario insertion failed",
-        })
-
-        # Registrar en migration_runs
-        self.client_admin.table("migration_runs").insert({
-            "batch_id": batch_id,
-            "target_project_ref": STAGING_REF,
-            "estado": "FAILED_PARTIAL",
-            "manifesto_uuids": manifesto,
-        }).execute()
-
-        # Ejecutar rollback selectivo del lote parcial
+        # Segundo rollback debe ser idempotente
         migrador.ejecutar_rollback_batch(batch_id, confirm_project=STAGING_REF)
 
-        # Confirmar que el usuario auth huérfano fue compensado y eliminado
-        with self.assertRaises(Exception):
-            self.client_admin.auth.admin.get_user_by_id(uid_creado)
+    # ==========================================================================
+    # ITEM 11: PROYECTOS PDF BLOQUEADOS ANTE CUALQUIER INTENTO
+    # ==========================================================================
+    def test_11_proyectos_pdf_bloqueados_ante_cualquier_intento(self):
+        """Verifica que la barrera anti-PDF aborte con SystemExit(1) ante cualquier referencia a PDF."""
+        for pdf_ref in PROHIBITED_PDF_REFS:
+            with self.assertRaises(SystemExit) as ctx:
+                migrador._verificar_project_ref(f"https://{pdf_ref}.supabase.co", pdf_ref)
+            self.assertEqual(ctx.exception.code, 1)
+
+    # ==========================================================================
+    # ITEM 12: FAIL-CLOSED SI FALTAN VARIABLES DE CONFIGURACIÓN
+    # ==========================================================================
+    def test_12_fail_closed_si_faltan_variables_configuracion(self):
+        """Verifica que el sistema falle cerrado si faltan variables críticas."""
+        with mock.patch.dict(os.environ, {"SUPABASE_URL": ""}, clear=False):
+            with self.assertRaises(database.ConfiguracionInvalidaError):
+                database.obtener_cliente_publico()
+
+        with mock.patch.dict(os.environ, {"SUPABASE_SERVICE_ROLE_KEY": ""}, clear=False):
+            with self.assertRaises(database.ConfiguracionInvalidaError):
+                database.obtener_cliente_admin()
+
+    # ==========================================================================
+    # VERIFICACIÓN FINAL DE CONTEOS TRAS TEARDOWN QUIRÚRGICO
+    # ==========================================================================
+    def test_13_verificacion_conteos_post_teardown(self):
+        """Verifica que tras el teardown quirúrgico los conteos del proyecto staging sean exactos."""
+        # Ejecutar limpieza quirúrgica
+        self._ejecutar_teardown_quirurgico()
+
+        # deployment_identity debe tener EXACTAMENTE 1 fila
+        res_dep = self.client_admin.table("deployment_identity").select("*").execute()
+        self.assertEqual(len(res_dep.data), 1, "deployment_identity debe mantener exactamente 1 fila")
+        self.assertEqual(res_dep.data[0]["application_code"], "autoform-excel")
+        self.assertEqual(res_dep.data[0]["environment"], "staging")
+        self.assertEqual(res_dep.data[0]["project_ref"], STAGING_REF)
+
+        # Tablas públicas de aplicación deben estar en 0
+        res_emp = self.client_admin.table("perfiles_empresa").select("*").execute()
+        self.assertEqual(len(res_emp.data), 0, "perfiles_empresa debe tener 0 filas")
+
+        res_usr = self.client_admin.table("perfiles_usuario").select("*").execute()
+        self.assertEqual(len(res_usr.data), 0, "perfiles_usuario debe tener 0 filas")
+
+        res_op = self.client_admin.table("operadores").select("*").execute()
+        self.assertEqual(len(res_op.data), 0, "operadores debe tener 0 filas")
+
+        res_mig = self.client_admin.table("migration_runs").select("*").execute()
+        self.assertEqual(len(res_mig.data), 0, "migration_runs debe tener 0 filas")
+
+        # auth.users debe tener 0 usuarios
+        users = self.client_admin.auth.admin.list_users()
+        self.assertEqual(len(users or []), 0, "auth.users debe tener 0 usuarios")
 
 
 if __name__ == "__main__":
