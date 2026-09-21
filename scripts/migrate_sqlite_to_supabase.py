@@ -313,7 +313,7 @@ def verificar_identidad_despliegue(client: Any, project_ref_esperado: str) -> Di
     """Comprueba la coincidencia 5-way con la tabla public.deployment_identity en Supabase.
 
     Verifica a nivel de motor de datos (ADR-0010):
-    1. Que la tabla 'deployment_identity' exista y contenga registros.
+    1. Que la tabla 'deployment_identity' contenga EXACTAMENTE una fila.
     2. Que application_code sea exactamente 'autoform-excel'.
     3. Que environment sea exactamente 'staging'.
     4. Que project_ref en la base de datos coincida con el project_ref_esperado.
@@ -321,11 +321,18 @@ def verificar_identidad_despliegue(client: Any, project_ref_esperado: str) -> Di
     Lanza SystemExit(1) ante cualquier discrepancia para prevenir contaminación cruzada.
     """
     try:
-        res = client.table("deployment_identity").select("application_code, environment, project_ref").limit(1).execute()
+        res = client.table("deployment_identity").select("singleton_id, application_code, environment, project_ref").execute()
         if not res.data:
             print(
                 "\n[BLOQUEO DE SEGURIDAD] La tabla 'deployment_identity' está vacía. "
-                "Debe inicializarse con application_code='autoform-excel' y environment='staging'."
+                "Debe inicializarse con exactamente 1 fila con application_code='autoform-excel' y environment='staging'."
+            )
+            sys.exit(1)
+
+        if len(res.data) != 1:
+            print(
+                f"\n[BLOQUEO DE SEGURIDAD] Violación de singleton en 'deployment_identity': "
+                f"Se encontraron {len(res.data)} filas, pero debe existir exactamente una fila."
             )
             sys.exit(1)
 
@@ -355,7 +362,7 @@ def verificar_identidad_despliegue(client: Any, project_ref_esperado: str) -> Di
             )
             sys.exit(1)
 
-        print(f"   [OK] Identidad de despliegue validada 5-way: app='{app_code}', env='{env}', ref='{p_ref}'")
+        print(f"   [OK] Identidad de despliegue validada 5-way: app='{app_code}', env='{env}', ref='{p_ref}' (singleton exacto)")
         return record
     except Exception as exc:
         if isinstance(exc, SystemExit):

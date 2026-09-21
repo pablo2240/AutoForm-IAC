@@ -122,16 +122,12 @@ CREATE INDEX IF NOT EXISTS idx_migration_runs_estado
 -- Garantiza a nivel de motor de base de datos que ninguna migración, script o cliente
 -- opere contra una base de datos errónea o cruzada entre aplicaciones (PDF vs Excel).
 CREATE TABLE IF NOT EXISTS public.deployment_identity (
-    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    singleton_id INTEGER PRIMARY KEY DEFAULT 1 CHECK (singleton_id = 1),
     application_code TEXT NOT NULL CHECK (application_code = 'autoform-excel'),
     environment TEXT NOT NULL CHECK (environment IN ('staging', 'production')),
     project_ref TEXT NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL,
-    CONSTRAINT uq_deployment_identity_singleton UNIQUE (application_code, environment)
+    created_at TIMESTAMPTZ DEFAULT timezone('utc'::text, now()) NOT NULL
 );
-
-CREATE INDEX IF NOT EXISTS idx_deployment_identity_app
-    ON public.deployment_identity (application_code, environment);
 
 -- 6. FUNCIONES DE SEGURIDAD (SECURITY DEFINER CON SET search_path = '')
 
@@ -462,11 +458,4 @@ CREATE POLICY "deployment_identity_no_mutations"
     TO authenticated, anon
     USING (false)
     WITH CHECK (false);
-
--- ── REGISTRO INICIAL: deployment_identity ─────────────────────────────────────
--- Identidad canónica singleton de AutoForm Excel Staging
-INSERT INTO public.deployment_identity (application_code, environment, project_ref)
-VALUES ('autoform-excel', 'staging', 'PENDIENTE_CREACION_REF')
-ON CONFLICT (application_code, environment) DO UPDATE
-SET project_ref = EXCLUDED.project_ref;
 

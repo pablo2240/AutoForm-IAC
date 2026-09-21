@@ -348,8 +348,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
         def mock_table(name):
             t = MagicMock()
             if name == "deployment_identity":
-                t.select.return_value.limit.return_value.execute.return_value = MagicMock(
-                    data=[{"application_code": "autoform-excel", "environment": "staging", "project_ref": "test123"}]
+                t.select.return_value.execute.return_value = MagicMock(
+                    data=[{"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "test123"}]
                 )
             elif name == "migration_runs":
                 t.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
@@ -397,8 +397,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
         def mock_table(name):
             if name == "deployment_identity":
                 t = MagicMock()
-                t.select.return_value.limit.return_value.execute.return_value = MagicMock(
-                    data=[{"application_code": "autoform-excel", "environment": "staging", "project_ref": "test123"}]
+                t.select.return_value.execute.return_value = MagicMock(
+                    data=[{"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "test123"}]
                 )
                 return t
             elif name == "migration_runs":
@@ -528,8 +528,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
     def test_26_verificar_identidad_despliegue_exitosa(self):
         """Verifica que verificar_identidad_despliegue retorne el registro cuando los 5 parámetros coinciden."""
         mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"application_code": "autoform-excel", "environment": "staging", "project_ref": "staging-123"}]
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[{"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "staging-123"}]
         )
         rec = migrador.verificar_identidad_despliegue(mock_client, "staging-123")
         self.assertEqual(rec["application_code"], "autoform-excel")
@@ -539,8 +539,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
     def test_27_verificar_identidad_despliegue_rechaza_app_incorrecta(self):
         """Verifica que aborte si application_code en BD no es 'autoform-excel' (ej: autoform-pdf)."""
         mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"application_code": "autoform-pdf", "environment": "staging", "project_ref": "staging-123"}]
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[{"singleton_id": 1, "application_code": "autoform-pdf", "environment": "staging", "project_ref": "staging-123"}]
         )
         with self.assertRaises(SystemExit) as ctx:
             migrador.verificar_identidad_despliegue(mock_client, "staging-123")
@@ -549,8 +549,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
     def test_28_verificar_identidad_despliegue_rechaza_environment_incorrecto(self):
         """Verifica que aborte si environment en BD no es 'staging' (ej: production)."""
         mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"application_code": "autoform-excel", "environment": "production", "project_ref": "staging-123"}]
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[{"singleton_id": 1, "application_code": "autoform-excel", "environment": "production", "project_ref": "staging-123"}]
         )
         with self.assertRaises(SystemExit) as ctx:
             migrador.verificar_identidad_despliegue(mock_client, "staging-123")
@@ -559,8 +559,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
     def test_29_verificar_identidad_despliegue_rechaza_project_ref_mismatch(self):
         """Verifica que aborte si project_ref en BD no coincide con el proyecto objetivo."""
         mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(
-            data=[{"application_code": "autoform-excel", "environment": "staging", "project_ref": "proyecto-bd-diferente"}]
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[{"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "proyecto-bd-diferente"}]
         )
         with self.assertRaises(SystemExit) as ctx:
             migrador.verificar_identidad_despliegue(mock_client, "staging-123")
@@ -569,7 +569,7 @@ class TestSecurityRemediationSuite(unittest.TestCase):
     def test_30_verificar_identidad_despliegue_rechaza_tabla_vacia(self):
         """Verifica que aborte si deployment_identity está vacía o sin inicializar."""
         mock_client = MagicMock()
-        mock_client.table.return_value.select.return_value.limit.return_value.execute.return_value = MagicMock(
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
             data=[]
         )
         with self.assertRaises(SystemExit) as ctx:
@@ -588,6 +588,19 @@ class TestSecurityRemediationSuite(unittest.TestCase):
             with self.assertRaises(SystemExit) as ctx:
                 migrador.ejecutar_rollback_batch(batch_id, confirm_project="")
             self.assertEqual(ctx.exception.code, 1)
+
+    def test_32_verificar_identidad_despliegue_rechaza_multiples_filas(self):
+        """Verifica que aborte si deployment_identity contiene más de una fila (violación de singleton)."""
+        mock_client = MagicMock()
+        mock_client.table.return_value.select.return_value.execute.return_value = MagicMock(
+            data=[
+                {"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "staging-123"},
+                {"singleton_id": 2, "application_code": "autoform-excel", "environment": "staging", "project_ref": "staging-123"},
+            ]
+        )
+        with self.assertRaises(SystemExit) as ctx:
+            migrador.verificar_identidad_despliegue(mock_client, "staging-123")
+        self.assertEqual(ctx.exception.code, 1)
 
 
 if __name__ == "__main__":
