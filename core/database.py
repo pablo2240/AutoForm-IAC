@@ -51,28 +51,56 @@ def es_modo_produccion() -> bool:
     return env == "production"
 
 
+def es_modo_staging() -> bool:
+    """Indica si la aplicación se ejecuta en entorno explícito de staging."""
+    env = os.environ.get("APP_ENVIRONMENT", "").strip().lower()
+    return env == "staging"
+
+
+def es_entorno_estricto() -> bool:
+    """Indica si el entorno exige Supabase estricto sin SQLite (production o staging)."""
+    env = os.environ.get("APP_ENVIRONMENT", "production").strip().lower()
+    return env in ("production", "staging")
+
+
+def _resolver_publishable_key() -> str:
+    """Retorna la Publishable Key moderna o fallback a la Anon Key legacy."""
+    return (
+        os.environ.get("SUPABASE_PUBLISHABLE_KEY", "").strip()
+        or os.environ.get("SUPABASE_ANON_KEY", "").strip()
+    )
+
+
+def _resolver_secret_key() -> str:
+    """Retorna la Secret Key moderna o fallback a la Service Role Key legacy."""
+    return (
+        os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+
+
 def usar_supabase() -> bool:
     """Determina si la capa de persistencia activa es Supabase o SQLite.
 
-    En producción (APP_ENVIRONMENT=production), Supabase es obligatorio y fail-closed (Q4).
+    En producción y staging (APP_ENVIRONMENT=production | staging), Supabase es obligatorio y fail-closed (Q4).
     En desarrollo (APP_ENVIRONMENT=development), se permite SQLite si USE_SQLITE=true.
     """
-    if es_modo_produccion():
-        url = os.environ.get("SUPABASE_URL", "").strip()
-        anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-        if not url or not anon_key:
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    pub_key = _resolver_publishable_key()
+
+    if es_entorno_estricto():
+        if not url or not pub_key:
+            env_nombre = "staging" if es_modo_staging() else "producción"
             raise ConfiguracionInvalidaError(
-                "AutoForm AI está configurado en producción (APP_ENVIRONMENT=production), "
-                "pero no se encontraron SUPABASE_URL o SUPABASE_ANON_KEY en las variables de entorno. "
-                "Por política de seguridad (ADR-0010), el fallback automático a SQLite está prohibido en producción."
+                f"AutoForm AI está configurado en {env_nombre} (APP_ENVIRONMENT={os.environ.get('APP_ENVIRONMENT')}), "
+                f"pero no se encontraron SUPABASE_URL o SUPABASE_PUBLISHABLE_KEY / SUPABASE_ANON_KEY en las variables de entorno. "
+                f"Por política de seguridad (ADR-0010), el fallback automático a SQLite está prohibido en {env_nombre}."
             )
         return True
 
     # Entorno development
-    url = os.environ.get("SUPABASE_URL", "").strip()
-    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
     use_sqlite = os.environ.get("USE_SQLITE", "false").strip().lower() in ("true", "1", "yes")
-    return bool(url and anon_key and not use_sqlite)
+    return bool(url and pub_key and not use_sqlite)
 
 
 PROHIBITED_PROJECT_REFS = {
@@ -94,7 +122,7 @@ def _validar_project_ref_no_prohibido(url: str) -> None:
 
 
 def obtener_cliente_publico() -> Client:
-    """Retorna un cliente Supabase con la Anon Key sin sesión de usuario (Q3).
+    """Retorna un cliente Supabase con la Publishable Key (o Anon Key legacy) sin sesión de usuario (Q3).
 
     Utilizado exclusivamente para autenticación pública (login, reset de contraseña).
     Row Level Security (RLS) deniega cualquier acceso a datos protegidos con este cliente.
@@ -103,17 +131,17 @@ def obtener_cliente_publico() -> Client:
         raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
 
     url = os.environ.get("SUPABASE_URL", "").strip()
-    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-    if not url or not anon_key:
+    pub_key = _resolver_publishable_key()
+    if not url or not pub_key:
         raise ConfiguracionInvalidaError(
-            "Se requieren SUPABASE_URL y SUPABASE_ANON_KEY para inicializar el cliente público."
+            "Se requieren SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY (o SUPABASE_ANON_KEY) para inicializar el cliente público."
         )
     _validar_project_ref_no_prohibido(url)
-    return create_client(url, anon_key)
+    return create_client(url, pub_key)
 
 
 def obtener_cliente_admin() -> Client:
-    """Retorna un cliente Supabase con la Service Role Key para operaciones del servidor (Q3).
+    """Retorna un cliente Supabase con la Secret Key (o Service Role Key legacy) para operaciones del servidor (Q3).
 
     REGLA DE SEGURIDAD ABSOLUTA: Uso exclusivo en el backend para migraciones, seeding e invitaciones
     oficiales por correo. Jamás debe exponerse al frontend, navegador ni logs.
@@ -122,13 +150,13 @@ def obtener_cliente_admin() -> Client:
         raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
 
     url = os.environ.get("SUPABASE_URL", "").strip()
-    service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
-    if not url or not service_key:
+    secret_key = _resolver_secret_key()
+    if not url or not secret_key:
         raise ConfiguracionInvalidaError(
-            "Se requieren SUPABASE_URL y SUPABASE_SERVICE_ROLE_KEY para inicializar el cliente administrativo."
+            "Se requieren SUPABASE_URL y SUPABASE_SECRET_KEY (o SUPABASE_SERVICE_ROLE_KEY) para inicializar el cliente administrativo."
         )
     _validar_project_ref_no_prohibido(url)
-    return create_client(url, service_key)
+    return create_client(url, secret_key)
 
 
 def obtener_cliente_usuario(
@@ -144,13 +172,13 @@ def obtener_cliente_usuario(
         raise ImportError("La librería 'supabase' no está instalada en el entorno. Ejecuta: pip install supabase")
 
     url = os.environ.get("SUPABASE_URL", "").strip()
-    anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-    if not url or not anon_key:
+    pub_key = _resolver_publishable_key()
+    if not url or not pub_key:
         raise ConfiguracionInvalidaError(
-            "Se requieren SUPABASE_URL y SUPABASE_ANON_KEY para inicializar el cliente de usuario."
+            "Se requieren SUPABASE_URL y SUPABASE_PUBLISHABLE_KEY (o SUPABASE_ANON_KEY) para inicializar el cliente de usuario."
         )
     _validar_project_ref_no_prohibido(url)
-    client: Client = create_client(url, anon_key)
+    client: Client = create_client(url, pub_key)
     if access_token:
         # Inyectar el token JWT en el cliente PostgREST para que todas las consultas
         # a tablas respeten las políticas de Row Level Security (RLS)
@@ -190,15 +218,79 @@ def _obtener_cliente_activo(cliente_provisto: Optional[Client] = None) -> Client
     except Exception:
         pass
 
-    # Si estamos en producción y no hay cliente autenticado ni provisto: fail-closed
-    if es_modo_produccion():
+    # Si estamos en producción o staging y no hay cliente autenticado ni provisto: fail-closed
+    if es_entorno_estricto():
+        env_nombre = "staging" if es_modo_staging() else "producción"
         raise SesionNoAutenticadaError(
-            "Acceso protegido denegado: Se requiere una sesión autenticada con JWT válido en entorno de producción. "
+            f"Acceso protegido denegado: Se requiere una sesión autenticada con JWT válido en entorno de {env_nombre}. "
             "El acceso anónimo o administrativo implícito está estrictamente prohibido."
         )
 
     # Entorno development: retornar cliente público (RLS denegará accesos no permitidos)
     return obtener_cliente_publico()
+
+
+def validar_identidad_despliegue(
+    client: Optional[Client] = None,
+    entorno_esperado: str = "staging",
+) -> Dict[str, Any]:
+    """Valida la identidad canónica del despliegue en Supabase contra deployment_identity.
+
+    Verificaciones estrictas de aislamiento (ADR-0010):
+    1. Bloqueo inmediato si SUPABASE_URL apunta a proyectos PDF prohibidos.
+    2. Existencia de exactamente una fila en public.deployment_identity (violación de singleton).
+    3. application_code == 'autoform-excel'.
+    4. environment == entorno_esperado (por defecto 'staging').
+    5. Si AUTOFORM_EXCEL_STAGING_PROJECT_REF está configurada, debe coincidir con project_ref.
+    """
+    url = os.environ.get("SUPABASE_URL", "").strip()
+    _validar_project_ref_no_prohibido(url)
+
+    if client is None:
+        client = obtener_cliente_publico()
+
+    try:
+        res = client.table("deployment_identity").select("singleton_id, application_code, environment, project_ref").execute()
+    except Exception as exc:
+        raise ConfiguracionInvalidaError(f"[BLOQUEO DE SEGURIDAD] Error al consultar 'deployment_identity': {exc}")
+
+    if not res.data:
+        raise ConfiguracionInvalidaError(
+            "[BLOQUEO DE SEGURIDAD] La tabla 'deployment_identity' está vacía. "
+            f"Debe inicializarse con exactamente 1 fila con application_code='autoform-excel' y environment='{entorno_esperado}'."
+        )
+
+    if len(res.data) != 1:
+        raise ConfiguracionInvalidaError(
+            f"[BLOQUEO DE SEGURIDAD] Violación de singleton en 'deployment_identity': "
+            f"Se encontraron {len(res.data)} filas, pero debe existir exactamente una fila."
+        )
+
+    record = res.data[0]
+    app_code = str(record.get("application_code") or "").strip()
+    env = str(record.get("environment") or "").strip()
+    p_ref = str(record.get("project_ref") or "").strip()
+
+    if app_code != "autoform-excel":
+        raise ConfiguracionInvalidaError(
+            f"[BLOQUEO DE SEGURIDAD] Discrepancia en deployment_identity: "
+            f"application_code es '{app_code}', se esperaba 'autoform-excel'."
+        )
+
+    if env != entorno_esperado:
+        raise ConfiguracionInvalidaError(
+            f"[BLOQUEO DE SEGURIDAD] Discrepancia en deployment_identity: "
+            f"environment es '{env}', se esperaba '{entorno_esperado}'."
+        )
+
+    staging_ref_cfg = os.environ.get("AUTOFORM_EXCEL_STAGING_PROJECT_REF", "").strip()
+    if staging_ref_cfg and p_ref != staging_ref_cfg:
+        raise ConfiguracionInvalidaError(
+            f"[BLOQUEO DE SEGURIDAD] Discrepancia en deployment_identity: "
+            f"project_ref registrado es '{p_ref}', pero la allowlist espera '{staging_ref_cfg}'."
+        )
+
+    return record
 
 
 # ── SQLite: RESPALDO LOCAL PARA DESARROLLO (APP_ENVIRONMENT=development) ──────────
@@ -210,6 +302,12 @@ def _asegurar_config_dir() -> None:
 
 def obtener_conexion() -> sqlite3.Connection:
     """Abre y devuelve una conexión a la base de datos SQLite corporativa local."""
+    if es_entorno_estricto():
+        env_nombre = os.environ.get("APP_ENVIRONMENT", "production").strip()
+        raise ConfiguracionInvalidaError(
+            f"[BLOQUEO DE SEGURIDAD] SQLite está completamente bloqueado en el entorno '{env_nombre}'. "
+            "En producción y staging, Supabase es la única fuente de verdad y el fallback a SQLite está prohibido."
+        )
     _asegurar_config_dir()
     conn = sqlite3.connect(str(DB_PATH), timeout=15.0)
     conn.row_factory = sqlite3.Row
@@ -335,12 +433,37 @@ def inicializar_db() -> None:
         total_usuarios = cursor.fetchone()["total"]
         if total_usuarios == 0:
             from core.auth_manager import hashear_password
-            admin_pwd = os.environ.get("AUTOFORM_ADMIN_PASSWORD", "IAC2026*")
+            admin_pwd = os.environ.get("AUTOFORM_ADMIN_PASSWORD", "").strip()
+            if not admin_pwd:
+                raise RuntimeError(
+                    "Error de configuración: La variable de entorno 'AUTOFORM_ADMIN_PASSWORD' "
+                    "no está definida. Debe configurarse explícitamente para inicializar la cuenta administrativa de AutoForm Excel en SQLite."
+                )
             ahora = datetime.now(timezone.utc).isoformat()
+            # 1. Administrador nominal del sistema (Guillermo Cañón)
             cursor.execute(
                 """
                 INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 1, ?)
+                """,
+                (
+                    "guillermo_canon",
+                    "Guillermo Humberto Cañón Sarria",
+                    "Representante Legal / Gerente General",
+                    "98555384",
+                    "2656868",
+                    "guillermo.canon@iaclatam.com",
+                    "Carrera 63 B # 32 E -25 OFC 206",
+                    "Medellin",
+                    hashear_password(admin_pwd),
+                    ahora,
+                ),
+            )
+            # 2. Operador comercial estándar (Antonio Prieto)
+            cursor.execute(
+                """
+                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, ?)
                 """,
                 (
                     "antonio_prieto",
@@ -1164,22 +1287,23 @@ def crear_usuario_db(
                 """,
                 (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, int(es_admin), ahora_iso),
             )
-            cursor.execute(
-                """
-                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
-                ON CONFLICT(id) DO UPDATE SET
-                    nombre = excluded.nombre,
-                    cargo = excluded.cargo,
-                    cedula = excluded.cedula,
-                    telefono = excluded.telefono,
-                    correo = excluded.correo,
-                    direccion = excluded.direccion,
-                    ciudad = excluded.ciudad,
-                    actualizado_en = excluded.actualizado_en
-                """,
-                (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), ahora_iso),
-            )
+            if not es_admin:
+                cursor.execute(
+                    """
+                    INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        nombre = excluded.nombre,
+                        cargo = excluded.cargo,
+                        cedula = excluded.cedula,
+                        telefono = excluded.telefono,
+                        correo = excluded.correo,
+                        direccion = excluded.direccion,
+                        ciudad = excluded.ciudad,
+                        actualizado_en = excluded.actualizado_en
+                    """,
+                    (slug_id, nombre_limpio, cargo.strip(), cedula.strip(), telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), ahora_iso),
+                )
             conn.commit()
             return True, slug_id
     except sqlite3.IntegrityError:

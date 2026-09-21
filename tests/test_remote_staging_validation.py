@@ -85,12 +85,12 @@ class TestRemoteStagingValidation(unittest.TestCase):
             os.environ["AUTOFORM_EXCEL_STAGING_PROJECT_REF"] = STAGING_REF
 
         url = os.environ.get("SUPABASE_URL", "").strip()
-        anon_key = os.environ.get("SUPABASE_ANON_KEY", "").strip()
-        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+        pub_key = database._resolver_publishable_key()
+        secret_key = database._resolver_secret_key()
 
-        if not url or not anon_key or not service_key:
+        if not url or not pub_key or not secret_key:
             raise RuntimeError(
-                "Se requieren SUPABASE_URL, SUPABASE_ANON_KEY y SUPABASE_SERVICE_ROLE_KEY para la validación remota."
+                "Se requieren SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY (o ANON_KEY) y SUPABASE_SECRET_KEY (o SERVICE_ROLE_KEY) para la validación remota."
             )
 
         # Validación anti-PDF estricta
@@ -404,12 +404,12 @@ class TestRemoteStagingValidation(unittest.TestCase):
     # ITEM 8: service_role NUNCA EXPUESTO EN CLIENTE PÚBLICO NI LOGS
     # ==========================================================================
     def test_08_service_role_nunca_expuesto(self):
-        """Verifica que el cliente público utilice la Anon Key y nunca la Service Role Key."""
-        anon_key = os.environ.get("SUPABASE_ANON_KEY", "")
-        service_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "")
+        """Verifica que el cliente público utilice la Publishable Key y nunca la Secret Key."""
+        pub_key = database._resolver_publishable_key()
+        secret_key = database._resolver_secret_key()
 
-        self.assertEqual(self.client_public.supabase_key, anon_key)
-        self.assertNotEqual(self.client_public.supabase_key, service_key)
+        self.assertEqual(self.client_public.supabase_key, pub_key)
+        self.assertNotEqual(self.client_public.supabase_key, secret_key)
 
     # ==========================================================================
     # ITEM 9: RECHAZO DE DOMINIOS NO CORPORATIVOS
@@ -495,9 +495,21 @@ class TestRemoteStagingValidation(unittest.TestCase):
             with self.assertRaises(database.ConfiguracionInvalidaError):
                 database.obtener_cliente_publico()
 
-        with mock.patch.dict(os.environ, {"SUPABASE_SERVICE_ROLE_KEY": ""}, clear=False):
+        with mock.patch.dict(
+            os.environ,
+            {"SUPABASE_SERVICE_ROLE_KEY": "", "SUPABASE_SECRET_KEY": ""},
+            clear=False,
+        ):
             with self.assertRaises(database.ConfiguracionInvalidaError):
                 database.obtener_cliente_admin()
+
+        with mock.patch.dict(
+            os.environ,
+            {"SUPABASE_ANON_KEY": "", "SUPABASE_PUBLISHABLE_KEY": ""},
+            clear=False,
+        ):
+            with self.assertRaises(database.ConfiguracionInvalidaError):
+                database.obtener_cliente_publico()
 
     # ==========================================================================
     # VERIFICACIÓN FINAL DE CONTEOS TRAS TEARDOWN QUIRÚRGICO
@@ -530,6 +542,10 @@ class TestRemoteStagingValidation(unittest.TestCase):
         # auth.users debe tener 0 usuarios
         users = self.client_admin.auth.admin.list_users()
         self.assertEqual(len(users or []), 0, "auth.users debe tener 0 usuarios")
+
+        # storage debe tener 0 buckets y 0 objetos
+        buckets = self.client_admin.storage.list_buckets()
+        self.assertEqual(len(buckets or []), 0, "storage no debe tener buckets ni objetos")
 
 
 if __name__ == "__main__":

@@ -47,14 +47,14 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 database._obtener_cliente_activo(cliente_provisto=None)
 
     def test_02_obtener_cliente_admin_falla_sin_service_role_key(self):
-        """Verifica que obtener_cliente_admin falle si no está SUPABASE_SERVICE_ROLE_KEY."""
-        with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_ROLE_KEY": ""}):
+        """Verifica que obtener_cliente_admin falle si no están SUPABASE_SECRET_KEY ni SUPABASE_SERVICE_ROLE_KEY."""
+        with patch.dict(os.environ, {"SUPABASE_URL": "https://test.supabase.co", "SUPABASE_SERVICE_ROLE_KEY": "", "SUPABASE_SECRET_KEY": ""}):
             with self.assertRaises(database.ConfiguracionInvalidaError):
                 database.obtener_cliente_admin()
 
     def test_03_obtener_cliente_usuario_falla_sin_anon_key(self):
-        """Verifica que obtener_cliente_usuario falle si faltan SUPABASE_URL o SUPABASE_ANON_KEY."""
-        with patch.dict(os.environ, {"SUPABASE_URL": "", "SUPABASE_ANON_KEY": ""}):
+        """Verifica que obtener_cliente_usuario falle si faltan SUPABASE_URL o ambas llaves públicas."""
+        with patch.dict(os.environ, {"SUPABASE_URL": "", "SUPABASE_ANON_KEY": "", "SUPABASE_PUBLISHABLE_KEY": ""}):
             with self.assertRaises(database.ConfiguracionInvalidaError):
                 database.obtener_cliente_usuario()
 
@@ -601,6 +601,313 @@ class TestSecurityRemediationSuite(unittest.TestCase):
         with self.assertRaises(SystemExit) as ctx:
             migrador.verificar_identidad_despliegue(mock_client, "staging-123")
         self.assertEqual(ctx.exception.code, 1)
+
+    def test_33_prioridad_publishable_key_sobre_anon_key(self):
+        """Verifica que _resolver_publishable_key priorice SUPABASE_PUBLISHABLE_KEY sobre SUPABASE_ANON_KEY."""
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_modern",
+                "SUPABASE_ANON_KEY": "anon_legacy",
+            },
+        ):
+            self.assertEqual(database._resolver_publishable_key(), "sb_publishable_modern")
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_PUBLISHABLE_KEY": "",
+                "SUPABASE_ANON_KEY": "anon_legacy",
+            },
+        ):
+            self.assertEqual(database._resolver_publishable_key(), "anon_legacy")
+
+    def test_34_prioridad_secret_key_sobre_service_role_key(self):
+        """Verifica que _resolver_secret_key priorice SUPABASE_SECRET_KEY sobre SUPABASE_SERVICE_ROLE_KEY."""
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_SECRET_KEY": "sb_secret_modern",
+                "SUPABASE_SERVICE_ROLE_KEY": "service_legacy",
+            },
+        ):
+            self.assertEqual(database._resolver_secret_key(), "sb_secret_modern")
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_SECRET_KEY": "",
+                "SUPABASE_SERVICE_ROLE_KEY": "service_legacy",
+            },
+        ):
+            self.assertEqual(database._resolver_secret_key(), "service_legacy")
+
+    def test_35_migrador_prioriza_secret_key_moderna(self):
+        """Verifica que el migrador utilice _resolver_secret_key priorizando SUPABASE_SECRET_KEY."""
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_SECRET_KEY": "sb_secret_modern",
+                "SUPABASE_SERVICE_ROLE_KEY": "service_legacy",
+            },
+        ):
+            self.assertEqual(migrador._resolver_secret_key(), "sb_secret_modern")
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_SECRET_KEY": "",
+                "SUPABASE_SERVICE_ROLE_KEY": "service_legacy",
+            },
+        ):
+            self.assertEqual(migrador._resolver_secret_key(), "service_legacy")
+
+    def test_36_obtener_cliente_publico_y_admin_usan_claves_modernas(self):
+        """Verifica que obtener_cliente_publico y admin pasen las claves modernas a create_client."""
+        with patch("core.database.create_client") as mock_create:
+            with patch.dict(
+                os.environ,
+                {
+                    "SUPABASE_URL": "https://test-ref.supabase.co",
+                    "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_test_val",
+                    "SUPABASE_SECRET_KEY": "sb_secret_test_val",
+                },
+            ):
+                database.obtener_cliente_publico()
+                mock_create.assert_called_with("https://test-ref.supabase.co", "sb_publishable_test_val")
+
+                database.obtener_cliente_admin()
+                mock_create.assert_called_with("https://test-ref.supabase.co", "sb_secret_test_val")
+
+    def test_37_antonio_usuario_comercial_activo_y_operador_predeterminado(self):
+        """Verifica que Antonio Prieto sea usuario comercial estándar activo y operador predeterminado."""
+        _, operadores, usuarios = migrador.leer_datos_sqlite()
+        antonio_usr = next((u for u in usuarios if u["id"] == "antonio_prieto"), None)
+        self.assertIsNotNone(antonio_usr, "Antonio Prieto debe existir en usuarios")
+        self.assertTrue(antonio_usr["activo"], "Antonio Prieto debe estar activo")
+        self.assertFalse(antonio_usr["es_admin"], "Antonio Prieto debe tener rol estándar (no admin)")
+
+        antonio_op = next((op for op in operadores if op["id"] == "antonio_prieto"), None)
+        self.assertIsNotNone(antonio_op, "Antonio Prieto debe existir en operadores")
+        self.assertTrue(antonio_op["es_activo"], "Antonio Prieto debe ser el operador activo predeterminado")
+
+    def test_38_carlos_usuario_comercial_activo_y_operador_alterno(self):
+        """Verifica que Carlos Mendoza sea usuario comercial activo y operador alterno (es_activo=False)."""
+        _, operadores, usuarios = migrador.leer_datos_sqlite()
+        carlos_usr = next((u for u in usuarios if u["id"] == "carlos_mendoza"), None)
+        self.assertIsNotNone(carlos_usr, "Carlos Mendoza debe existir en usuarios")
+        self.assertTrue(carlos_usr["activo"], "Carlos Mendoza debe estar activo")
+        self.assertFalse(carlos_usr["es_admin"], "Carlos Mendoza debe tener rol estándar (no admin)")
+
+        carlos_op = next((op for op in operadores if op["id"] == "carlos_mendoza"), None)
+        self.assertIsNotNone(carlos_op, "Carlos Mendoza debe existir en operadores")
+        self.assertFalse(carlos_op["es_activo"], "Carlos Mendoza debe ser operador alterno (es_activo=False)")
+
+    def test_39_guillermo_administrador_nominal_activo_sin_registro_en_operadores(self):
+        """Verifica que Guillermo Cañón sea administrador nominal activo (es_admin=True) sin registro en operadores."""
+        _, operadores, usuarios = migrador.leer_datos_sqlite()
+        guillermo_usr = next((u for u in usuarios if u["id"] == "guillermo_canon" or u["correo"] == "guillermo.canon@iaclatam.com"), None)
+        self.assertIsNotNone(guillermo_usr, "El usuario guillermo_canon debe existir en usuarios")
+        self.assertTrue(guillermo_usr["activo"], "El usuario guillermo_canon debe estar activo")
+        self.assertTrue(guillermo_usr["es_admin"], "El usuario guillermo_canon debe tener rol de administrador (es_admin=True)")
+        self.assertEqual(guillermo_usr["correo"], "guillermo.canon@iaclatam.com")
+
+        # Asegurar que admin genérico admin@iaclatam.com NO exista
+        admin_generico = next((u for u in usuarios if "admin@iaclatam.com" in u["correo"] or u["id"] == "admin"), None)
+        self.assertIsNone(admin_generico, "El correo genérico admin@iaclatam.com no debe existir en usuarios")
+
+        guillermo_op = next((op for op in operadores if op["id"] == "guillermo_canon" or op["correo"] == "guillermo.canon@iaclatam.com"), None)
+        self.assertIsNone(guillermo_op, "El usuario guillermo_canon NO debe tener registro en operadores comerciales")
+
+    def test_40_pepito_mock_excluido_de_usuarios_y_operadores(self):
+        """Verifica que la cuenta de prueba pepito_perez quede 100% excluida de la migración."""
+        _, operadores, usuarios = migrador.leer_datos_sqlite()
+        user_ids = [u["id"] for u in usuarios]
+        user_emails = [u["correo"] for u in usuarios]
+        self.assertNotIn("pepito_perez", user_ids)
+        self.assertFalse(any("pepito" in m for m in user_emails))
+
+        op_ids = [op["id"] for op in operadores]
+        op_emails = [op["correo"] for op in operadores]
+        self.assertNotIn("pepito_perez", op_ids)
+        self.assertFalse(any("pepito" in m for m in op_emails))
+
+    def test_41_autoform_admin_password_sin_default_hardcodeado_ni_token_silencioso(self):
+        """Verifica que AUTOFORM_ADMIN_PASSWORD no posea contraseñas por defecto hardcodeadas ni tokens silenciosos."""
+        import inspect
+        src = inspect.getsource(database.inicializar_db)
+        self.assertNotIn("IAC2026*", src, "No deben existir contraseñas por defecto hardcodeadas en inicializar_db")
+        self.assertNotIn("token_urlsafe", src, "No se deben generar tokens aleatorios silenciosos para la cuenta admin")
+
+    def test_42_inicializar_db_falla_si_autoform_admin_password_no_definida(self):
+        """Verifica que inicializar_db falle con RuntimeError si AUTOFORM_ADMIN_PASSWORD no está definida."""
+        with patch.dict(os.environ, {"AUTOFORM_ADMIN_PASSWORD": ""}):
+            with patch("core.database.usar_supabase", return_value=False):
+                with patch("core.database.obtener_conexion") as mock_conn:
+                    mock_cursor = MagicMock()
+                    mock_cursor.fetchone.side_effect = [
+                        {"total": 1},  # operadores ya sembrados
+                        {"total": 0},  # total_usuarios == 0
+                    ]
+                    mock_cursor.fetchall.return_value = []
+                    mock_conn.return_value.__enter__.return_value.cursor.return_value = mock_cursor
+                    with self.assertRaises(RuntimeError) as ctx:
+                        database.inicializar_db()
+                    self.assertIn("AUTOFORM_ADMIN_PASSWORD", str(ctx.exception))
+                    self.assertIn("Error de configuración", str(ctx.exception))
+
+    def test_43_migrador_aborta_si_usuario_existe_en_auth(self):
+        """Verifica que ejecutar_migracion aborte inmediatamente si un correo corporativo ya existe en auth.users."""
+        mock_client = MagicMock()
+        mock_existing_user = MagicMock()
+        mock_existing_user.email = "guillermo.canon@iaclatam.com"
+        mock_client.auth.admin.list_users.return_value = [mock_existing_user]
+
+        perfiles = [{"slug": "principal", "nombre_empresa": "IAC", "es_activa": True, "datos_json": {}}]
+        operadores = []
+        usuarios = [{"correo": "guillermo.canon@iaclatam.com", "nombre": "Guillermo Cañón", "es_admin": True, "activo": True}]
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_URL": "https://staging-valido.supabase.co",
+                "SUPABASE_SECRET_KEY": "secret_key_valida",
+                "AUTOFORM_EXCEL_STAGING_PROJECT_REF": "staging-valido",
+            },
+        ):
+            with patch("scripts.migrate_sqlite_to_supabase.verificar_identidad_despliegue"):
+                with self.assertRaises(RuntimeError) as ctx:
+                    migrador.ejecutar_migracion(
+                        perfiles, operadores, usuarios, confirm_project="staging-valido", client=mock_client
+                    )
+                self.assertIn("Migración abortada", str(ctx.exception))
+                self.assertIn("auth.users", str(ctx.exception))
+
+    def test_44_migrador_asigna_app_metadata_segura_y_vacia_user_metadata(self):
+        """Verifica que el migrador asigne rol en app_metadata segura y user_metadata vacía."""
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = []
+        mock_invite_res = MagicMock()
+        mock_invite_res.user.id = "auth-uuid-test-123"
+        mock_client.auth.admin.invite_user_by_email.return_value = mock_invite_res
+
+        perfiles = []
+        operadores = []
+        usuarios = [
+            {"id": "guillermo_canon", "nombre": "Guillermo Cañón", "correo": "guillermo.canon@iaclatam.com", "es_admin": True, "activo": True, "cargo": "", "cedula": "", "telefono": "", "direccion": "", "ciudad": ""},
+        ]
+
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_URL": "https://staging-valido.supabase.co",
+                "SUPABASE_SECRET_KEY": "secret_key_valida",
+                "AUTOFORM_EXCEL_STAGING_PROJECT_REF": "staging-valido",
+            },
+        ):
+            with patch("scripts.migrate_sqlite_to_supabase.verificar_identidad_despliegue"):
+                migrador.ejecutar_migracion(
+                    perfiles, operadores, usuarios, confirm_project="staging-valido", enviar_invitaciones=True, client=mock_client
+                )
+                mock_client.auth.admin.update_user_by_id.assert_called_with(
+                    "auth-uuid-test-123",
+                    {
+                        "app_metadata": {
+                            "es_admin": True,
+                            "role": "administrador",
+                            "rol": "administrador",
+                        },
+                        "user_metadata": {},
+                    },
+                )
+
+    def test_45_migrador_bloquea_redireccion_hacia_proyectos_pdf(self):
+        """Verifica que el migrador bloquee URLs de redirección que apunten a proyectos PDF prohibidos."""
+        mock_client = MagicMock()
+        mock_client.auth.admin.list_users.return_value = []
+
+        perfiles = []
+        operadores = []
+        usuarios = [
+            {"id": "guillermo_canon", "nombre": "Guillermo Cañón", "correo": "guillermo.canon@iaclatam.com", "es_admin": True, "activo": True, "cargo": "", "cedula": "", "telefono": "", "direccion": "", "ciudad": ""},
+        ]
+
+        # Intentar redirigir hacia AutoForm PDF Producción
+        with patch.dict(
+            os.environ,
+            {
+                "SUPABASE_URL": "https://staging-valido.supabase.co",
+                "SUPABASE_SECRET_KEY": "secret_key_valida",
+                "AUTOFORM_EXCEL_STAGING_PROJECT_REF": "staging-valido",
+                "AUTOFORM_EXCEL_REDIRECT_URL": "https://tnhedxwbpqihlqbtzudt.supabase.co",
+            },
+        ):
+            with patch("scripts.migrate_sqlite_to_supabase.verificar_identidad_despliegue"):
+                with self.assertRaises(RuntimeError) as ctx:
+                    migrador.ejecutar_migracion(
+                        perfiles, operadores, usuarios, confirm_project="staging-valido", enviar_invitaciones=True, client=mock_client
+                    )
+                self.assertIn("PDF prohibido", str(ctx.exception))
+
+    def test_46_staging_exige_supabase_y_credenciales_validas(self):
+        """Verifica que APP_ENVIRONMENT=staging exija Supabase y falle si faltan credenciales."""
+        with patch.dict(os.environ, {"APP_ENVIRONMENT": "staging", "SUPABASE_URL": "", "SUPABASE_PUBLISHABLE_KEY": ""}):
+            with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+                database.usar_supabase()
+            self.assertIn("staging", str(ctx.exception).lower())
+
+    def test_47_staging_bloquea_sqlite_y_cualquier_fallback(self):
+        """Verifica que APP_ENVIRONMENT=staging bloquee SQLite tajantemente aunque USE_SQLITE=true."""
+        with patch.dict(os.environ, {"APP_ENVIRONMENT": "staging", "USE_SQLITE": "true"}):
+            with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+                database.obtener_conexion()
+            self.assertIn("bloqueado en el entorno 'staging'", str(ctx.exception))
+
+    def test_48_staging_exige_deployment_identity_autoform_excel_y_staging(self):
+        """Verifica que validar_identidad_despliegue exija application_code=autoform-excel y environment=staging."""
+        mock_client = MagicMock()
+
+        # Caso 1: Válido
+        mock_client.table.return_value.select.return_value.execute.return_value.data = [
+            {"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "nfaxkncrpfrsvzfgczny"}
+        ]
+        with patch.dict(os.environ, {"AUTOFORM_EXCEL_STAGING_PROJECT_REF": "nfaxkncrpfrsvzfgczny", "SUPABASE_URL": "https://nfaxkncrpfrsvzfgczny.supabase.co"}):
+            rec = database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
+            self.assertEqual(rec["application_code"], "autoform-excel")
+            self.assertEqual(rec["environment"], "staging")
+
+        # Caso 2: Discrepancia en application_code
+        mock_client.table.return_value.select.return_value.execute.return_value.data = [
+            {"singleton_id": 1, "application_code": "autoform-pdf", "environment": "staging", "project_ref": "nfaxkncrpfrsvzfgczny"}
+        ]
+        with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+            database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
+        self.assertIn("autoform-pdf", str(ctx.exception))
+
+        # Caso 3: Discrepancia en environment
+        mock_client.table.return_value.select.return_value.execute.return_value.data = [
+            {"singleton_id": 1, "application_code": "autoform-excel", "environment": "production", "project_ref": "nfaxkncrpfrsvzfgczny"}
+        ]
+        with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+            database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
+        self.assertIn("production", str(ctx.exception))
+
+        # Caso 4: Violación de singleton (2 filas)
+        mock_client.table.return_value.select.return_value.execute.return_value.data = [
+            {"singleton_id": 1, "application_code": "autoform-excel", "environment": "staging", "project_ref": "nfaxkncrpfrsvzfgczny"},
+            {"singleton_id": 2, "application_code": "autoform-excel", "environment": "staging", "project_ref": "nfaxkncrpfrsvzfgczny"},
+        ]
+        with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+            database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
+        self.assertIn("singleton", str(ctx.exception).lower())
+
+    def test_49_staging_bloquea_refs_pdf(self):
+        """Verifica que validar_identidad_despliegue bloquee URLs apuntando a proyectos PDF prohibidos."""
+        mock_client = MagicMock()
+        with patch.dict(os.environ, {"SUPABASE_URL": "https://tnhedxwbpqihlqbtzudt.supabase.co"}):
+            with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+                database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
+            self.assertIn("AutoForm PDF", str(ctx.exception))
 
 
 if __name__ == "__main__":

@@ -110,8 +110,15 @@ def _safe_rerun():
 
 # Verificación de configuración y conectividad de persistencia canónica (ADR-0010 / Q4)
 try:
-    from core.database import usar_supabase, ConfiguracionInvalidaError
+    from core.database import (
+        usar_supabase,
+        es_modo_staging,
+        validar_identidad_despliegue,
+        ConfiguracionInvalidaError,
+    )
     _ = usar_supabase()
+    if es_modo_staging():
+        validar_identidad_despliegue(entorno_esperado="staging")
 except ConfiguracionInvalidaError as _conf_err:
     st.error(f"🔒 **Acceso Bloqueado por Seguridad**: {_conf_err}")
     st.stop()
@@ -122,8 +129,9 @@ except Exception as _db_err:
 
 # 1. Configuración de pantalla con el Sistema de Diseño IAC
 logo_favicon_path = Path("assets") / "favicon_iac.png"
+page_title_app = "AutoForm EXCEL [STAGING] | IAC Latam" if es_modo_staging() else "AutoForm EXCEL | IAC Latam"
 st.set_page_config(
-    page_title="AutoForm EXCEL | IAC Latam",
+    page_title=page_title_app,
     page_icon=str(logo_favicon_path) if logo_favicon_path.exists() else "⚡",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -441,9 +449,16 @@ if not st.session_state.get("usuario_activo"):
         else:
             st.markdown("## 🏢 **IAC Latam**")
 
-        st.markdown("""
+        staging_badge_html = (
+            '<span style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; '
+            'font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 9999px; '
+            'margin-left: 0.5rem; letter-spacing: 0.05em; vertical-align: middle;">🟡 STAGING</span>'
+            if es_modo_staging() else ""
+        )
+
+        st.markdown(f"""
             <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 5px solid #1E3A8A; border-radius: 12px; padding: 1.4rem 1.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.06); margin-top: 1rem; margin-bottom: 1.25rem;">
-                <h3 style="color: #0F172A; margin-bottom: 0.25rem; font-family: 'Montserrat', sans-serif;">⚡ AutoForm <span style="color: #FF6B00;">EXCEL</span></h3>
+                <h3 style="color: #0F172A; margin-bottom: 0.25rem; font-family: 'Montserrat', sans-serif;">⚡ AutoForm <span style="color: #FF6B00;">EXCEL</span>{staging_badge_html}</h3>
                 <p style="color: #64748B; font-size: 0.88rem; margin: 0;">Plataforma de Diligenciamiento Inteligente de Formularios Oficiales.</p>
                 <div style="margin-top: 0.75rem; font-size: 0.78rem; background: #F8FAFC; border: 1px solid #E2E8F0; padding: 0.45rem 0.75rem; border-radius: 6px; color: #475569;">
                     🔒 Acceso restringido exclusivamente al personal corporativo de IAC Latam.
@@ -529,7 +544,7 @@ try:
         st.session_state["usuario_activo"].update(_u_fresco)
         usuario_actual = st.session_state["usuario_activo"]
 except Exception as _sync_err:
-    if profile_manager.database.usar_supabase() and profile_manager.database.es_modo_produccion():
+    if profile_manager.database.usar_supabase() and profile_manager.database.es_entorno_estricto():
         auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
         st.session_state.clear()
         st.error("🔒 Error validando credenciales de sesión activa. Sesión cerrada por seguridad.")
@@ -541,10 +556,17 @@ rol_badge_label = "🛡️ Administrador" if es_admin_usuario else "💼 Asesor 
 nombre_despliegue = os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME") or os.getenv("OPENAI_MODEL", "gpt-4.1-mini")
 motor_label = f"AZURE OPENAI ({nombre_despliegue.upper()}) ACTIVE" if (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")) else f"OPENAI {nombre_despliegue.upper()} ACTIVE"
 
+header_staging_badge = (
+    '<span style="background: #FEF3C7; color: #92400E; border: 1px solid #FCD34D; '
+    'font-size: 0.72rem; font-weight: 700; padding: 0.15rem 0.55rem; border-radius: 9999px; '
+    'margin-left: 0.5rem; letter-spacing: 0.05em; vertical-align: middle;">🟡 STAGING</span>'
+    if es_modo_staging() else ""
+)
+
 st.markdown(f"""
     <div class="iac-header">
         <div>
-            <h1 class="iac-title">⚡ AutoForm <span>EXCEL</span></h1>
+            <h1 class="iac-title">⚡ AutoForm <span>EXCEL</span>{header_staging_badge}</h1>
             <div class="iac-subtitle">Plataforma Inteligente de Diligenciamiento de Formularios Oficiales — IAC Latam</div>
         </div>
         <div class="iac-badge">
@@ -557,8 +579,15 @@ st.markdown(f"""
 col_ses_info, col_ses_cache, col_ses_btn = st.columns([4, 1.2, 1])
 with col_ses_info:
     color_rol = "#1E3A8A" if es_admin_usuario else "#059669"
+    staging_pill_sesion = (
+        '<span style="color: #92400E; font-weight: 700; font-size: 0.75rem; background: #FEF3C7; '
+        'padding: 0.15rem 0.45rem; border-radius: 4px; border: 1px solid #FCD34D;">🟡 STAGING</span>'
+        '<span style="color: #CBD5E1;">|</span>'
+        if es_modo_staging() else ""
+    )
     st.markdown(f"""
         <div style="font-size: 0.84rem; color: #475569; padding: 0.35rem 0.75rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
+            {staging_pill_sesion}
             <span>👤 Sesión: <strong>{usuario_actual['nombre']}</strong></span>
             <span style="color: #CBD5E1;">|</span>
             <span style="color: {color_rol}; font-weight: 700;">{rol_badge_label}</span>

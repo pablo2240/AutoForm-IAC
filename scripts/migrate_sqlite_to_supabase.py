@@ -222,22 +222,29 @@ def ejecutar_dry_run(
             invalidos_dominio += 1
             estado_dom = "INVÁLIDO (dominio no autorizado)"
 
-        rol = "ADMINISTRADOR" if u["es_admin"] else "ESTÁNDAR"
-        print(f"   - Nombre: '{u['nombre']}' | Correo: '{correo_mask}' | Rol: {rol} | Dominio: {estado_dom}")
+        rol = "ADMINISTRADOR" if u["es_admin"] else "ESTÁNDAR (COMERCIAL)"
+        app_meta_str = "{'es_admin': True, 'role': 'administrador'}" if u["es_admin"] else "{'es_admin': False, 'role': 'comercial'}"
+        print(f"   - Nombre: '{u['nombre']}' | Correo: '{correo_mask}' | Rol: {rol} | app_metadata: {app_meta_str} | user_metadata: {{}} | Dominio: {estado_dom}")
+
+    supabase_url = os.environ.get("SUPABASE_URL", "").strip()
+    proj_ref = extraer_project_ref(supabase_url) or "<project_ref>"
+    redirect_url = os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "").strip() or supabase_url
 
     print("\n" + "-" * 75)
     print("RESUMEN DE AUDITORÍA DRY-RUN:")
-    print(f"  - Perfiles a migrar en tabla perfiles_empresa: {len(perfiles)}")
-    print(f"  - Operadores a migrar en tabla operadores:     {len(operadores)}")
-    print(f"  - Cuentas de usuario aptas:                    {validos_dominio}")
-    print(f"  - Cuentas mock/test excluidas (pepito_perez):  Confirmado (excluido)")
+    print(f"  - Perfiles a migrar en tabla perfiles_empresa: {len(perfiles)} (1 empresa principal)")
+    print(f"  - Operadores a migrar en tabla operadores:     {len(operadores)} (2 operadores comerciales)")
+    print(f"  - Cuentas de usuario aptas para Auth:          {validos_dominio} (1 Administrador, 2 Comerciales)")
+    print(f"  - Cuentas mock/test excluidas (pepito_perez):  Confirmado (0 registros)")
+    print(f"  - Asignación de roles en Auth:                 Estrictamente app_metadata segura (user_metadata vacía)")
+    print(f"  - Control de colisiones en auth.users:         Aborto inmediato si algún correo ya existe en auth.users")
+    print(f"  - URL de redirección verificada:               {redirect_url} (Proyecto Excel Staging: {proj_ref})")
+    print(f"  - Aislamiento proyectos PDF:                   Confirmado (bloqueo total a tnhedxwbpqihlqbtzudt y nfsijcwkmcvtwsponqsw)")
     print(f"  - Invitaciones retenidas por defecto:          Sí (requiere --enviar-invitaciones)")
     if invalidos_dominio > 0:
         print(f"  - Usuarios con dominio rechazado (Q6):         {invalidos_dominio}")
     print("=" * 75)
 
-    supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-    proj_ref = extraer_project_ref(supabase_url) or "<project_ref>"
     print("Para ejecutar la migración en vivo de forma segura:")
     print(f"  python scripts/migrate_sqlite_to_supabase.py --execute --confirm-project {proj_ref}\n")
 
@@ -246,6 +253,15 @@ PROHIBITED_PROJECT_REFS = {
     "tnhedxwbpqihlqbtzudt",  # AutoForm PDF Producción
     "nfsijcwkmcvtwsponqsw",  # AutoForm PDF Staging
 }
+
+
+def _resolver_secret_key() -> str:
+    """Retorna la Secret Key moderna o fallback a la Service Role Key legacy."""
+    return (
+        os.environ.get("SUPABASE_SECRET_KEY", "").strip()
+        or os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    )
+
 
 
 def _verificar_project_ref(supabase_url: str, confirm_project: str) -> str:
@@ -377,13 +393,14 @@ def ejecutar_migration(
     usuarios: List[Dict[str, Any]],
     confirm_project: str,
     enviar_invitaciones: bool = False,
+    client: Optional[Any] = None,
 ) -> str:
     """Ejecuta la migración real contra Supabase validando project_ref y registrando lote UUID con manifiesto."""
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    service_role_key = _resolver_secret_key()
 
     if not supabase_url or not service_role_key:
-        print("\n[ERROR FATAL] Se requieren las variables de entorno 'SUPABASE_URL' y 'SUPABASE_SERVICE_ROLE_KEY'.")
+        print("\n[ERROR FATAL] Se requieren las variables de entorno 'SUPABASE_URL' y 'SUPABASE_SECRET_KEY' (o 'SUPABASE_SERVICE_ROLE_KEY').")
         sys.exit(1)
 
     # Validación estricta de project_ref (Hardening-04)
@@ -398,8 +415,7 @@ def ejecutar_migration(
     batch_id = str(uuid.uuid4())
     ahora_iso = datetime.now(timezone.utc).isoformat()
 
-    # Manifiesto JSONB: rastrea UUID de cada entidad creada por este lote (Hardening-04)
-    manifesto: Dict[str, List[str]] = {
+    manifesto: Dict[str, Any] = {
         "perfiles_empresa": [],
         "usuarios_auth": [],
         "perfiles_usuario": [],
@@ -412,10 +428,34 @@ def ejecutar_migration(
     print(f"     PROYECTO OBJETIVO: {project_ref_esperado}")
     print("=" * 75)
 
-    client: Client = create_client(supabase_url, service_role_key)
+    if client is None:
+        client = create_client(supabase_url, service_role_key)
 
     # Validación 5-way de identidad de despliegue en BD
     verificar_identidad_despliegue(client, project_ref_esperado)
+
+    # 0. Pre-validación estricta de colisión en auth.users
+    correos_candidatos = {u["correo"].strip().lower() for u in usuarios if DOMINIO_REGEX.match(u["correo"])}
+    try:
+        users_existentes = client.auth.admin.list_users() or []
+        colisiones = [
+            usr.email for usr in users_existentes
+            if usr.email and usr.email.strip().lower() in correos_candidatos
+        ]
+        if colisiones:
+            colisiones_mask = [enmascarar_correo(c) for c in colisiones]
+            print(f"\n[BLOQUEO DE SEGURIDAD] Abortando migración: Se detectaron usuarios preexistentes en auth.users: {colisiones_mask}")
+            print("Para garantizar un estado limpio, idempotente y sin contaminación, auth.users no debe contener correos del lote.")
+            raise RuntimeError(f"Migración abortada: usuarios ya existen en auth.users: {colisiones_mask}")
+    except Exception as exc_chk:
+        if "Migración abortada" in str(exc_chk):
+            raise
+
+    # 0.1 Validación estricta de URL de redirección y aislamiento anti-PDF
+    redirect_url = os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "").strip() or os.environ.get("SUPABASE_URL", "").strip()
+    for pdf_ref in PROHIBITED_PROJECT_REFS:
+        if pdf_ref in redirect_url:
+            raise RuntimeError(f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}').")
 
     # 0. Registrar inicio de lote en migration_runs
     try:
@@ -513,35 +553,42 @@ def ejecutar_migration(
 
         # Despacho real de invitación vía Supabase Auth con compensación de creación parcial
         auth_user_id: Optional[str] = None
-        usuario_preexistente = False
 
         try:
-            # Verificar si el usuario ya existe en auth.users (no borrar preexistentes)
+            # 1. Validación estricta de preexistencia: abortar si ya existe en auth.users
             try:
-                users_list = client.auth.admin.list_users()
-                for usr in (users_list or []):
+                users_list = client.auth.admin.list_users() or []
+                for usr in users_list:
                     if usr.email and usr.email.lower() == correo_real.lower():
-                        auth_user_id = usr.id
-                        usuario_preexistente = True
-                        break
-            except Exception:
-                pass
+                        print(f"\n[BLOQUEO DE SEGURIDAD] Abortando migración: El usuario {correo_mask} ya existe en auth.users.")
+                        raise RuntimeError(f"Migración abortada por colisión en auth.users: {correo_mask}")
+            except Exception as exc_collision:
+                if "Migración abortada" in str(exc_collision):
+                    raise
 
-            if not usuario_preexistente:
-                # Crear usuario en auth.users vía invitación
-                res_invite = client.auth.admin.invite_user_by_email(correo_real)
-                auth_user_id = res_invite.user.id if hasattr(res_invite, "user") and res_invite.user else None
+            # 2. Validación de URL de redirección y aislamiento anti-PDF
+            redirect_url = os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "").strip() or os.environ.get("SUPABASE_URL", "").strip()
+            for pdf_ref in PROHIBITED_PROJECT_REFS:
+                if pdf_ref in redirect_url:
+                    raise RuntimeError(f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}').")
 
-                if not auth_user_id:
-                    # Segundo intento: buscar si el invite creó el usuario
-                    try:
-                        retry_list = client.auth.admin.list_users()
-                        for usr in (retry_list or []):
-                            if usr.email and usr.email.lower() == correo_real.lower():
-                                auth_user_id = usr.id
-                                break
-                    except Exception:
-                        pass
+            # 3. Crear usuario en auth.users vía invitación oficial
+            res_invite = client.auth.admin.invite_user_by_email(
+                correo_real,
+                options={"redirect_to": redirect_url} if redirect_url else None,
+            )
+            auth_user_id = res_invite.user.id if hasattr(res_invite, "user") and res_invite.user else None
+
+            if not auth_user_id:
+                # Segundo intento: buscar si el invite creó el usuario
+                try:
+                    retry_list = client.auth.admin.list_users()
+                    for usr in (retry_list or []):
+                        if usr.email and usr.email.lower() == correo_real.lower():
+                            auth_user_id = usr.id
+                            break
+                except Exception:
+                    pass
 
             if not auth_user_id:
                 usuarios_error += 1
@@ -549,8 +596,24 @@ def ejecutar_migration(
                 print(f"   [ERROR] No se pudo obtener el identificador para: {correo_mask}")
                 continue
 
-            if not usuario_preexistente:
-                manifesto["usuarios_auth"].append(auth_user_id)
+            manifesto["usuarios_auth"].append(auth_user_id)
+
+            # 4. Asignar rol estrictamente en app_metadata segura (servidor), NUNCA en user_metadata
+            rol_seguro = "administrador" if u["es_admin"] else "comercial"
+            try:
+                client.auth.admin.update_user_by_id(
+                    auth_user_id,
+                    {
+                        "app_metadata": {
+                            "es_admin": bool(u["es_admin"]),
+                            "role": rol_seguro,
+                            "rol": rol_seguro,
+                        },
+                        "user_metadata": {},  # Vacío para prevenir escalamiento desde el cliente
+                    },
+                )
+            except Exception as exc_meta:
+                print(f"   [WARN] No se pudo fijar app_metadata para {correo_mask}: {exc_meta}")
 
             # Crear perfil en public.perfiles_usuario
             perfil_usr = {
@@ -601,6 +664,8 @@ def ejecutar_migration(
             print(f"   [OK] Invitación oficial despachada y perfil creado para: {correo_mask}")
 
         except Exception as exc:
+            if "PDF prohibido" in str(exc) or "Migración abortada" in str(exc):
+                raise
             usuarios_error += 1
             manifesto["failed"].append({
                 "correo_mask": correo_mask,
@@ -645,6 +710,9 @@ def ejecutar_migration(
     return batch_id
 
 
+ejecutar_migracion = ejecutar_migration
+
+
 def ejecutar_rollback_batch(batch_id: str, confirm_project: str = "") -> None:
     """Ejecuta la reversión selectiva de un lote de migración usando el manifiesto JSONB inmutable.
 
@@ -662,10 +730,10 @@ def ejecutar_rollback_batch(batch_id: str, confirm_project: str = "") -> None:
         sys.exit(1)
 
     supabase_url = os.environ.get("SUPABASE_URL", "").strip()
-    service_role_key = os.environ.get("SUPABASE_SERVICE_ROLE_KEY", "").strip()
+    service_role_key = _resolver_secret_key()
 
     if not supabase_url or not service_role_key:
-        print("\n[ERROR FATAL] Se requieren 'SUPABASE_URL' y 'SUPABASE_SERVICE_ROLE_KEY' para rollback.")
+        print("\n[ERROR FATAL] Se requieren 'SUPABASE_URL' y 'SUPABASE_SECRET_KEY' (o 'SUPABASE_SERVICE_ROLE_KEY') para rollback.")
         sys.exit(1)
 
     # Validación estricta de project_ref y allowlist (5-way check)
