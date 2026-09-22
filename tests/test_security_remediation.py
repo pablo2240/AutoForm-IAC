@@ -1236,6 +1236,41 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 options={"redirect_to": "https://autoform-iac-excel.streamlit.app"},
             )
 
+    def test_59_restablecer_password_comercial_admin(self):
+        """Verifica que restablecer_password_comercial_admin valide privilegios de admin y actualice la contraseña."""
+        # 1. Contraseña corta rechazada
+        ok, msg = auth_manager.restablecer_password_comercial_admin("uid-1", "corta", access_token_solicitante="token")
+        self.assertFalse(ok)
+        self.assertIn("8 caracteres", msg.lower())
+
+        # 2. Rechazado si solicitante no es admin
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(False, "No es admin", None)):
+            ok, msg = auth_manager.restablecer_password_comercial_admin("uid-1", "NuevaPasswordSegura123!", access_token_solicitante="bad_token")
+            self.assertFalse(ok)
+            self.assertIn("autorización rechazada", msg.lower())
+
+        # 3. Actualización exitosa en Supabase Auth
+        mock_admin = MagicMock()
+        mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[{"id": "uid-comercial-1", "nombre": "Antonio Prieto", "correo": "antonio.prieto@iaclatam.com"}]
+        )
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+            ok, msg = auth_manager.restablecer_password_comercial_admin(
+                "uid-comercial-1",
+                "NuevaPasswordSegura123!",
+                access_token_solicitante="token_admin",
+            )
+            self.assertTrue(ok)
+            self.assertIn("exitosa", msg.lower())
+            mock_admin.auth.admin.update_user_by_id.assert_called_once_with(
+                "uid-comercial-1",
+                {"password": "NuevaPasswordSegura123!"},
+            )
+
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

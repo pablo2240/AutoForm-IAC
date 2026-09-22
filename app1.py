@@ -1224,41 +1224,60 @@ with st.sidebar:
             _safe_rerun()
 
     if es_admin_usuario:
-        with st.expander("💾 Respaldar / Cargar Perfil (JSON)", expanded=False):
-            st.caption("Exporta tus datos para guardarlos en tu equipo o impórtalos en la nube (Streamlit Cloud):")
-            json_descarga = profile_manager.obtener_perfil_para_descarga(ruta_perfil_activo)
-            st.download_button(
-                label="📥 Descargar Perfil Activo (JSON)",
-                data=json_descarga,
-                file_name=f"{slug_perfil}_datos_empresa.json",
-                mime="application/json",
-                use_container_width=True,
-                help="Descarga este perfil en tu equipo para conservarlo o importarlo en la versión web."
-            )
-            st.markdown("---")
-            archivo_perfil_subido = st.file_uploader(
-                "📤 Importar Perfil desde JSON:",
-                type=["json"],
-                key="uploader_perfil_json",
-                help="Sube un archivo JSON previamente exportado para restaurar o cargar una nueva empresa."
-            )
-            if archivo_perfil_subido is not None:
-                if st.button("Restaurar y Activar Perfil", key="btn_importar_perfil_json", use_container_width=True):
-                    contenido = archivo_perfil_subido.getvalue().decode("utf-8")
-                    nombre_base = archivo_perfil_subido.name.replace(".json", "").replace("datos_empresa_", "").replace("_", " ").title()
-                    exito, ruta_imp, etiq_imp = profile_manager.importar_perfil_json(contenido, nombre_sugerido=nombre_base)
-                    if exito:
-                        st.session_state["perfil_activo_nombre"] = etiq_imp
-                        profile_manager.guardar_perfil_activo_seleccionado(etiq_imp)
-                        st.success(f"✅ Perfil '{etiq_imp}' importado y activado exitosamente.")
-                        _safe_rerun()
+        _ses_actual = st.session_state.get("supabase_session", {})
+        _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
+
+        with st.expander("🔑 Cambiar Clave Comercial", expanded=False):
+            st.caption("Actualiza directamente la contraseña de acceso de un asesor comercial:")
+            todos_los_usuarios = profile_manager.listar_usuarios()
+            # Filtrar comerciales o listar colaboradores disponibles
+            comerciales_disponibles = [u for u in todos_los_usuarios if not u.get("es_admin")]
+            if not comerciales_disponibles:
+                comerciales_disponibles = todos_los_usuarios
+
+            if not comerciales_disponibles:
+                st.info("No hay usuarios comerciales registrados para actualizar.")
+            else:
+                opciones_comerciales = {
+                    f"{u.get('nombre', 'Sin nombre')} ({u.get('correo', '')})": u
+                    for u in comerciales_disponibles
+                }
+                comercial_etiqueta = st.selectbox(
+                    "Selecciona el Comercial:",
+                    options=list(opciones_comerciales.keys()),
+                    key="sb_cambiar_clave_comercial",
+                    help="Elige al colaborador al que deseas asignarle una nueva contraseña",
+                )
+                comercial_sel = opciones_comerciales[comercial_etiqueta]
+
+                with st.form("form_cambiar_clave_comercial", clear_on_submit=True):
+                    pwd_nueva = st.text_input("Nueva Contraseña * (mínimo 8 caracteres)", type="password", key=f"inp_pwd_nueva_{comercial_sel['id']}")
+                    pwd_conf = st.text_input("Confirmar Nueva Contraseña *", type="password", key=f"inp_pwd_conf_{comercial_sel['id']}")
+                    btn_cambiar_pwd = st.form_submit_button("🔑 Restablecer Contraseña", type="primary", use_container_width=True)
+
+                if btn_cambiar_pwd:
+                    p1 = str(pwd_nueva or "")
+                    p2 = str(pwd_conf or "")
+                    if not p1:
+                        st.warning("Por favor ingresa la nueva contraseña.")
+                    elif len(p1) < 8:
+                        st.error("La contraseña debe tener al menos 8 caracteres.")
+                    elif p1 != p2:
+                        st.error("Las contraseñas no coinciden.")
                     else:
-                        st.error("❌ El archivo JSON no tiene un formato válido.")
+                        with st.spinner(f"Actualizando contraseña para {comercial_sel.get('nombre')}..."):
+                            ok_ch, msg_ch = auth_manager.restablecer_password_comercial_admin(
+                                usuario_id=comercial_sel["id"],
+                                nueva_password=p1,
+                                access_token_solicitante=_acc_token,
+                            )
+                        if ok_ch:
+                            st.success(f"✅ {msg_ch}")
+                        else:
+                            st.error(f"❌ {msg_ch}")
 
         with st.expander("👥 Directorio y Gestión de Usuarios Corporativos", expanded=False):
             st.caption("Gestiona los accesos, roles y colaboraciones de la plataforma:")
-            _ses_actual = st.session_state.get("supabase_session", {})
-            _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
 
             tab_directorio, tab_invitar = st.tabs([
                 "👥 Directorio de Colaboradores",

@@ -840,4 +840,19 @@ def listar_solicitudes_pendientes(
     )
 
 
+def restablecer_password_comercial_admin(
+    usuario_id: str,
+    nueva_password: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Actualiza directamente la contraseña de un colaborador comercial."""
+    from core import auth_manager
+    return auth_manager.restablecer_password_comercial_admin(
+        usuario_id=usuario_id,
+        nueva_password=nueva_password,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+
 

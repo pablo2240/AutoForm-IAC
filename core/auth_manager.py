@@ -1051,3 +1051,54 @@ def listar_solicitudes_pendientes(
         return False, f"Error al consultar solicitudes pendientes en SQLite: {exc}"
 
 
+def restablecer_password_comercial_admin(
+    usuario_id: str,
+    nueva_password: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Permite a un administrador activo actualizar directamente la contraseña de un colaborador comercial."""
+    from core import database
+
+    if not nueva_password or len(nueva_password) < 8:
+        return False, "La nueva contraseña debe tener al menos 8 caracteres."
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        try:
+            admin_client = database.obtener_cliente_admin()
+            # 1. Obtener datos del colaborador
+            res_p = admin_client.table("perfiles_usuario").select("id, nombre, correo").eq("id", usuario_id).limit(1).execute()
+            if not res_p.data:
+                return False, f"No se encontró el colaborador con ID: {usuario_id}"
+            u_nom = res_p.data[0].get("nombre") or res_p.data[0].get("correo")
+
+            # 2. Actualizar contraseña directamente en el proveedor de autenticación
+            admin_client.auth.admin.update_user_by_id(usuario_id, {"password": nueva_password})
+            return True, f"Contraseña actualizada exitosamente para '{u_nom}'."
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error al restablecer contraseña de colaborador: {exc}")
+            return False, f"Error al actualizar la contraseña: {exc}"
+
+    # Modo SQLite (Desarrollo local)
+    database.inicializar_db()
+    pwd_hash = hashear_password(nueva_password)
+    try:
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT nombre FROM usuarios WHERE id = ?", (usuario_id,))
+            row = cursor.fetchone()
+            if not row:
+                return False, f"No se encontró el colaborador '{usuario_id}' en SQLite."
+            u_nom = row["nombre"]
+            cursor.execute("UPDATE usuarios SET password_hash = ? WHERE id = ?", (pwd_hash, usuario_id))
+            conn.commit()
+        return True, f"Contraseña actualizada exitosamente para '{u_nom}'."
+    except Exception as exc:
+        print(f"[AutoForm AI Auth] Error actualizando contraseña en SQLite: {exc}")
+        return False, f"Error al actualizar contraseña en SQLite: {exc}"
+
+
+
