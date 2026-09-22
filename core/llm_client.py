@@ -138,9 +138,11 @@ Recibes un objeto JSON con:
   * Rótulos de Lugar o Ciudad de Expedición del documento -> "lugar_expedicion" (ciudad/lugar, ej. "Envigado").
   * Rótulos de Lugar de Nacimiento, Ciudad de Nacimiento, Municipio de Nacimiento -> "lugar_nacimiento" (ej. "Popayán").
   * Rótulos de Ciudad de Residencia, Municipio de Residencia, Ciudad Domicilio, Lugar de Residencia, Domicilio del Representante -> "ciudad_residencia" (ej. "Medellín").
-  * Rótulos de Teléfono, Celular, "Teléfono Celular", "Teléfono/Celular", "Tel/Cel", Teléfono Móvil, Móvil, No. Celular -> "celular" (prioridad siempre a celular móvil).
+  * Rótulos de Correo, Email, "Correo Electrónico", "E-mail" del Representante Legal -> "correo" (correo del representante legal, guillermo.canon@iaclatam.com).
+  * Si el rótulo solicita explícitamente "E-mail contacto:", "Email contacto", "Correo contacto" o "Correo de contacto" (aún dentro del bloque de persona natural / representante legal) -> "responsable_correo" (correo del comercial/contacto activo en sesión).
 
 - Si la sección o el rótulo hace referencia a CONTACTO COMERCIAL / INFORMACIÓN DE CONTACTO / PERSONAL DE CONTACTO / ASESOR / RESPONSABLE DEL DILIGENCIAMIENTO (ADR-0009):
+  * CUALQUIER rótulo de Área ("Área", "Area") dentro de este bloque -> OBLIGATORIO "responsable_area" (valor "Comercial").
   * CUALQUIER rótulo de Nombre ("Nombre", "Nombre Completo", "Nombres y Apellidos", "Contacto", "Persona de Contacto", "Nombre Encargado de Ventas", "Encargado de Ventas") dentro de este bloque -> OBLIGATORIO "responsable_nombre" (NUNCA "representante_legal" ni "razon_social").
   * CUALQUIER rótulo de Cargo ("Cargo", "Posición", "Rol") dentro de este bloque -> OBLIGATORIO "responsable_cargo".
   * CUALQUIER rótulo de Documento ("Cédula", "Identificación", "Documento") dentro de este bloque -> OBLIGATORIO "responsable_cedula".

@@ -377,6 +377,14 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if campo in ("razon_social", "empresa", "responsable_nombre", "contacto", "representante_nombres") or not campo:
             return "representante_legal", "Rótulo 'Nombre' en contexto de Firma / Representante Legal → corregido a 'representante_legal' (persona natural firmante)."
 
+    # 2c. Correo en sección de Representante Legal -> correo (del representante legal) o responsable_correo si pide contacto
+    if any(t in rotulo_normalizado for t in ("email", "e-mail", "correo")) and any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL):
+        if not any(t in seccion_normalizada for t in ("contacto comercial", "asesor", "operacion", "operativo")):
+            if "contacto" in rotulo_normalizado:
+                return "responsable_correo", "Rótulo de contacto en sección de Representante Legal → asignado a 'responsable_correo'."
+            if campo != "correo":
+                return "correo", "Rótulo de correo en sección de Representante Legal → asignado a 'correo'."
+
     # 3. Nombre Comercial -> razon_social
     if "nombre comercial" in rotulo_normalizado:
         if campo != "razon_social":
@@ -638,6 +646,7 @@ def validar_item_mapeo(
             and not es_sec_rep_legal
         )
     )
+    es_rotulo_email_contacto = "contacto" in rotulo_norm and any(t in rotulo_norm for t in ("email", "e-mail", "mail", "correo"))
     es_rotulo_sede_principal = any(t in rotulo_norm for t in (
         "oficina principal", "sede principal", "domicilio principal",
         "direccion principal", "dirección principal"
@@ -645,13 +654,13 @@ def validar_item_mapeo(
     es_fila_sede = bool(plan_item.get("es_fila_sede_principal")) or es_rotulo_sede_principal
     es_fila_cont = bool(plan_item.get("es_fila_contacto"))
 
-    if es_fila_sede:
+    if es_fila_sede or (es_sec_rep_legal and not es_rotulo_email_contacto):
         es_sec_contacto = False
         es_rotulo_contacto = False
-    elif es_fila_cont:
+    elif es_fila_cont or es_rotulo_email_contacto:
         es_rotulo_contacto = True
 
-    es_contacto = (es_sec_contacto or es_rotulo_contacto) and not es_fila_sede
+    es_contacto = (es_sec_contacto or es_rotulo_contacto) and not es_fila_sede and (not es_sec_rep_legal or es_rotulo_email_contacto)
 
     if es_contacto:
         tiene_datos_op = bool(datos_planos.get("responsable_nombre") or datos_planos.get("responsable_correo"))
@@ -734,6 +743,10 @@ def validar_item_mapeo(
             campo_original = "responsable_nombre"
             resultado["campo_final"] = "responsable_nombre"
             resultado["motivo"] = "Context-First (ADR-0009): Asignado a nombre del responsable comercial."
+        elif any(t in rotulo_norm for t in ("area", "área")) and datos_planos.get("responsable_area"):
+            campo_original = "responsable_area"
+            resultado["campo_final"] = "responsable_area"
+            resultado["motivo"] = "Context-First (ADR-0009): Asignado a área del responsable comercial."
         else:
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
@@ -834,9 +847,10 @@ def validar_item_mapeo(
             return resultado
 
     # ADR-0007: Barrera estricta - El Responsable Comercial NUNCA entra a Representante Legal, Junta Directiva ni PEP
+    # Salvo cuando el rótulo solicita explícitamente el correo de contacto ("E-mail contacto:")
     if campo_original in _CAMPOS_RESPONSABLE_COMERCIAL:
         es_sec_prohibida = any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente", "junta", "directiv", "administra", "organo", "pep", "beneficiario"))
-        if es_sec_prohibida or not es_contacto:
+        if (es_sec_prohibida and not es_rotulo_email_contacto) or not es_contacto:
             resultado["estado"] = EstadoMapeo.DESCARTADO
             resultado["campo_final"] = ""
             resultado["motivo"] = f"Domain Isolation (ADR-0007): Datos de Responsable Comercial '{campo_original}' prohibidos en sección legal, directiva o fuera de contacto comercial ('{seccion}')."
@@ -965,6 +979,10 @@ def validar_plan_mapeo(
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
         r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        sec_txt = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
+        es_sec_rep_it = any(t in sec_txt for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in sec_txt)
+        if es_sec_rep_it:
+            continue
         if any(t in r_txt for t in ("oficina principal", "sede principal", "domicilio principal", "direccion principal", "dirección principal")):
             filas_sede_principal.add((h, f))
         elif not re.search(r"\bcontacto\s+(?:en\s+\w+|del?\s+cliente)\b", r_txt) and (
@@ -981,8 +999,11 @@ def validar_plan_mapeo(
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
         r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        sec_it = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
+        es_sec_rep_it = any(t in sec_it for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in sec_it)
+        if es_sec_rep_it:
+            continue
         if (h, f) not in filas_sede_principal:
-            sec_it = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
             es_sec_expl_cont = any(t in sec_it for t in _TOKENS_CONTACTO_COMERCIAL)
             if es_sec_expl_cont:
                 aplica_contiguo = any(abs(f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)

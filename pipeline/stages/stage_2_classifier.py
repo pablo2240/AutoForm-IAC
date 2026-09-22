@@ -307,15 +307,21 @@ def clasificar_elementos_formulario(
             # Safe Passivity & Operadores (ADR-0004 / ADR-0007): Contacto comercial o asesor
             sec_norm = seccion_actual.lower()
             rot_norm = rotulo.lower()
+            es_sec_rep = any(k in sec_norm for k in ("representante", "rep legal", "firmante"))
             es_contacto_comercial = bool(
-                PATRON_CONTACTO_COMERCIAL.search(rotulo)
-                or (
-                    any(k in sec_norm for k in ("contacto", "asesor", "comercial", "ejecutivo", "operativo", "responsable", "diligenciado"))
-                    and any(k in rot_norm for k in ("nombre", "cargo", "celular", "email", "correo", "tel", "fijo", "firma", "cedula", "documento"))
-                    and not any(k in sec_norm for k in ("representante", "rep legal", "firmante", "empresa", "banco", "tributari", "junta", "directiv", "pep"))
+                not es_sec_rep
+                and tipo_clasif != ClasificacionElemento.TITULO_SECCION
+                and not es_titulo_seccion(rotulo)
+                and (
+                    PATRON_CONTACTO_COMERCIAL.search(rotulo)
+                    or (
+                        any(k in sec_norm for k in ("contacto", "asesor", "comercial", "ejecutivo", "operativo", "responsable", "diligenciado"))
+                        and any(k in rot_norm for k in ("nombre", "cargo", "celular", "email", "correo", "tel", "fijo", "firma", "cedula", "documento", "area", "área"))
+                        and not any(k in sec_norm for k in ("empresa", "banco", "tributari", "junta", "directiv", "pep"))
+                    )
                 )
             )
-            if es_contacto_comercial:
+            if es_contacto_comercial and tipo_clasif != ClasificacionElemento.TITULO_SECCION and not es_titulo_seccion(rotulo):
                 tiene_op = bool(
                     datos_empresa and (
                         datos_empresa.get("responsable_nombre")

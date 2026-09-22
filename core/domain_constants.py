@@ -40,7 +40,7 @@ ROTULOS_GENERICOS_BLOQUEADOS: Set[str] = {
     "pep", "si", "no", "s", "n", "na", "n/a", "opcion", "opciones", "seleccione",
     "declaracion", "firma", "huella", "fecha", "dia", "mes", "ano", "año",
     "tipo 1", "tipo 2", "tipo 3", "tipo 4", "tipo 5",
-    "area", "área", "comercial", "cartera", "contabilidad", "calidad",
+    "comercial", "cartera", "contabilidad", "calidad",
     "seleccionado por", "aprobado por", "evaluado por", "calificado por",
     "concepto comercial", "concepto", "concepto final",
 }
@@ -85,9 +85,11 @@ CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
     "responsable_nombre", "responsable_cargo", "responsable_cedula",
     "responsable_telefono", "responsable_celular", "responsable_correo",
     "responsable_direccion", "responsable_ciudad", "responsable_departamento",
+    "responsable_area",
     # Aliases
     "contacto_nombre", "contacto_cargo", "contacto_telefono", "contacto_correo",
     "contacto_direccion", "contacto_ciudad", "contacto_departamento",
+    "contacto_area",
 }
 
 CAMPOS_EMPRESA: Set[str] = {
@@ -241,6 +243,8 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "municipio": "responsable_ciudad",
     "departamento": "responsable_departamento",
     "depto": "responsable_departamento",
+    "area": "responsable_area",
+    "área": "responsable_area",
 }
 
 # ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
@@ -262,6 +266,8 @@ CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
     "direccion": "responsable_direccion",
     "ciudad": "responsable_ciudad",
     "departamento": "responsable_departamento",
+    "area": "responsable_area",
+    "área": "responsable_area",
 }
 
 

@@ -503,7 +503,10 @@ def clasificar_tipo_elemento(texto: str, propiedades: Optional[Dict[str, Any]] =
 
     # 2b. Rótulos fijos de categoría de tabla (Área, Comercial, Cartera, etc.)
     if _PATRON_CATEGORIAS_TABLA_DECORATIVAS.match(txt):
-        return TipoElemento.DECORATIVE
+        if propiedades and (propiedades.get("abajoVacia") or propiedades.get("abajoEsMerge")):
+            pass
+        else:
+            return TipoElemento.DECORATIVE
 
     # 3. Uso exclusivo
     if _PATRON_USO_EXCLUSIVO.search(txt):
@@ -583,26 +586,13 @@ def clasificar_seccion_contacto(
         )
 
     if es_referencias and es_contacto:
-        # Título ambiguo ("Contacto y Referencias") -> desambiguar por estructura
-        filas_lista = filas or []
-        textos_elementos = [
-            _normalizar(e.texto)
-            for f in filas_lista
-            for e in f.elementos
-            if e.texto
-        ]
-        tiene_grilla_terceros = (
-            len(filas_lista) >= 2
-            and any("razon social" in t or "razón social" in t or "empresa" in t for t in textos_elementos)
-        )
-        if tiene_grilla_terceros:
-            return (
-                PertinenciaSeccion.OMITIR_TERCEROS,
-                "Grilla repetitiva de referencias de terceros con empresas externas (Safe Passivity ADR-0009)",
-            )
+        # Título mixto ("8. REFERENCIAS COMERCIALES E INFORMACIÓN DE CONTACTO")
+        # Se clasifica como CONTACTO_COMERCIAL para permitir procesar la sub-tabla interna
+        # de contacto con los datos del operador activo en sesión.
+        # Safe Passivity y las reglas de filtrado de terceros protegen la sub-tabla de referencias externas.
         return (
             PertinenciaSeccion.CONTACTO_COMERCIAL,
-            "Bloque de contacto comercial con mención de referencias (ADR-0009)",
+            "Sección mixta de referencias comerciales y contacto comercial (ADR-0009)",
         )
 
     return PertinenciaSeccion.PROCESAR, "Sección procesable"

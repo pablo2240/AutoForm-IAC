@@ -672,6 +672,7 @@ def fusionar_operador_en_datos_empresa(
         c_op = str(operador.get("ciudad") or "Bogotá").strip()
         copia["responsable_ciudad"] = c_op
         copia["responsable_departamento"] = "Cundinamarca" if any(b in c_op.lower() for b in ("bogota", "bogotá")) else "Antioquia"
+        copia["responsable_area"] = "Comercial"
         copia["operador"] = dict(operador)
 
     return copia

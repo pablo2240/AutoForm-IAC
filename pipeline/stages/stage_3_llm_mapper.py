@@ -160,6 +160,15 @@ def _construir_lotes_secciones_desde_ir(
             textos_fila = [e.texto.strip() for e in fila.elementos if e.texto and e.texto.strip()]
             contexto_fila = " | ".join(textos_fila)
 
+            # Safe Passivity (ADR-0009): En secciones de contacto, omitir sub-bloques de referencias a terceros (ej. Empresa, clientes externos)
+            if seccion.pertinencia == PertinenciaSeccion.CONTACTO_COMERCIAL:
+                es_fila_terceros = any(
+                    any(k in e.texto.lower() for k in ("empresa", "referencia", "nexsys", "cliente", "razon social de la referencia"))
+                    for e in fila.elementos if e.texto
+                )
+                if es_fila_terceros:
+                    continue
+
             for elem in fila.elementos:
                 if elem.tipo_elemento not in tipos_viables:
                     continue
@@ -286,7 +295,8 @@ def _ejecutar_diff_loop_seccion(
             continue
         if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
             continue
-        es_rotulo_contacto = bool(PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto)
+        es_rotulo_email_cont = "contacto" in rotulo_txt.lower() and any(t in rotulo_txt.lower() for t in ("email", "e-mail", "mail", "correo"))
+        es_rotulo_contacto = bool((PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto) and (not es_sec_rep_legal or es_rotulo_email_cont))
         if es_rotulo_contacto and not tiene_datos_op:
             continue
 
@@ -332,8 +342,10 @@ def _ejecutar_diff_loop_seccion(
                 candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_REP_LEGAL]
             if es_sec_contacto:
                 candidatos_disponibles = [k for k in candidatos_disponibles if k in CAMPOS_RESPONSABLE_COMERCIAL] if tiene_datos_op else []
-            else:
+            elif not es_sec_rep_legal:
                 candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_RESPONSABLE_COMERCIAL]
+            elif es_sec_rep_legal and tiene_datos_op:
+                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_RESPONSABLE_COMERCIAL or k == "responsable_correo"]
 
             for id_pend in sorted(ids_pendientes):
                 c_info = ids_viables[id_pend]
@@ -343,7 +355,8 @@ def _ejecutar_diff_loop_seccion(
                     continue
                 if rot_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
                     continue
-                es_rot_contacto_pend = bool(PATRON_CONTACTO_COMERCIAL.search(rot_txt))
+                es_rot_contacto_email = "contacto" in rot_txt.lower() and any(t in rot_txt.lower() for t in ("email", "e-mail", "mail", "correo"))
+                es_rot_contacto_pend = bool(PATRON_CONTACTO_COMERCIAL.search(rot_txt) and (not es_sec_rep_legal or es_rot_contacto_email))
                 if es_rot_contacto_pend and not tiene_datos_op:
                     continue
 

@@ -109,6 +109,12 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_REP_LEGAL,
+        re.compile(r"^\s*(?:e-?mail|correo)\s+(?:de\s+)?contacto\s*:?\s*$", re.IGNORECASE),
+        "responsable_correo",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_REP_LEGAL,
         re.compile(r"^\s*(?:email|e-mail|correo|correo\s+electr[oó]nico)\s*$", re.IGNORECASE),
         "correo",
         "derecha",
