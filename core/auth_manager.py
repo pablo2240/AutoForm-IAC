@@ -573,18 +573,37 @@ def registrar_solicitud_corporativa(
                     user_id = res_create.user.id
             except Exception as exc_auth:
                 msg_auth = str(exc_auth).lower()
+                # Si el usuario ya existe en auth.users pero no tenía perfil en perfiles_usuario (p.ej. por fallo previo al insertar),
+                # intentamos recuperar su user_id y sincronizar credenciales para completar la solicitud pendiente.
                 if "already registered" in msg_auth or "already exists" in msg_auth:
-                    return False, "Ya existe una cuenta registrada con este correo corporativo en el proveedor de identidad."
-                # Fallback: intentar encontrar el user_id si ya había sido creado
-                try:
-                    users_list = admin_client.auth.admin.list_users()
-                    for u in (users_list or []):
-                        if u.email and u.email.lower() == correo_limpio:
-                            user_id = u.id
-                            break
-                except Exception:
-                    pass
-                if not user_id:
+                    try:
+                        users_list = admin_client.auth.admin.list_users()
+                        for u in (users_list or []):
+                            if u.email and u.email.lower() == correo_limpio:
+                                user_id = u.id
+                                break
+                    except Exception:
+                        pass
+                    if user_id:
+                        try:
+                            admin_client.auth.admin.update_user_by_id(
+                                user_id,
+                                {
+                                    "password": password,
+                                    "user_metadata": {"nombre": nombre_limpio},
+                                    "app_metadata": {
+                                        "es_admin": False,
+                                        "role": "comercial",
+                                        "rol": "comercial",
+                                        "estado": "pendiente",
+                                    },
+                                },
+                            )
+                        except Exception:
+                            pass
+                    else:
+                        return False, "Ya existe una cuenta registrada con este correo corporativo en el proveedor de identidad."
+                else:
                     print(f"[AutoForm AI Auth] Error creando usuario en Supabase Auth: {exc_auth}")
                     return False, f"Error al procesar la identidad: {exc_auth}"
 

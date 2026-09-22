@@ -1029,6 +1029,34 @@ class TestSecurityRemediationSuite(unittest.TestCase):
             self.assertEqual(call_upsert["estado_aprobacion"], "pendiente")
             self.assertEqual(call_upsert["es_admin"], False)
 
+    def test_53b_auto_registro_recupera_usuario_huerfano_auth_users(self):
+        """Verifica que si create_user falla por usuario preexistente en auth.users sin perfil, se recupere y complete."""
+        mock_admin = MagicMock()
+        # No existe en perfiles_usuario
+        mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
+        # create_user lanza excepción de usuario ya registrado
+        mock_admin.auth.admin.create_user.side_effect = Exception("User already registered")
+        # list_users encuentra al usuario huérfano
+        mock_huerfano = MagicMock(id="user-huerfano-456", email="pedro.gomez@iaclatam.com")
+        mock_admin.auth.admin.list_users.return_value = [mock_huerfano]
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+            ok, msg = auth_manager.registrar_solicitud_corporativa(
+                nombre="Pedro Gómez",
+                correo="pedro.gomez@iaclatam.com",
+                password="PasswordSeguro456!",
+                cargo="Comercial",
+            )
+            self.assertTrue(ok)
+            self.assertIn("pendiente de aprobación", msg.lower())
+            mock_admin.auth.admin.update_user_by_id.assert_called_once()
+            call_upsert = mock_admin.table().upsert.call_args[0][0]
+            self.assertEqual(call_upsert["id"], "user-huerfano-456")
+            self.assertEqual(call_upsert["correo"], "pedro.gomez@iaclatam.com")
+            self.assertEqual(call_upsert["estado_aprobacion"], "pendiente")
+            self.assertEqual(call_upsert["activo"], False)
+
     def test_54_login_bloqueado_si_cuenta_pendiente_o_inactiva(self):
         """Verifica que iniciar_sesion bloquee usuarios con estado pendiente, rechazado o inactivo."""
         mock_pub = MagicMock()
