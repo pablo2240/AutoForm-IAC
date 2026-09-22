@@ -724,28 +724,10 @@ def registrar_usuario(
     )
 
 
-def registrar_usuario_corporativo(
-    nombre: str,
-    correo: str,
-    password: str,
-    cargo: str = "",
-    cedula: str = "",
-    telefono: str = "",
-    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
-    ciudad: str = "Bogotá",
-) -> Tuple[bool, str]:
-    """Registra una cuenta corporativa en la plataforma (Auto-Registro / Sign Up)."""
+def solicitar_recuperacion_password(correo: str) -> Tuple[bool, str]:
+    """Inicia el proceso de recuperación de contraseña vía correo oficial."""
     from core import auth_manager
-    return auth_manager.registrar_usuario_corporativo(
-        nombre=nombre,
-        correo=correo,
-        password=password,
-        cargo=cargo,
-        cedula=cedula,
-        telefono=telefono,
-        direccion=direccion,
-        ciudad=ciudad,
-    )
+    return auth_manager.solicitar_recuperacion_password(correo=correo)
 
 
 def listar_usuarios() -> List[Dict[str, Any]]:

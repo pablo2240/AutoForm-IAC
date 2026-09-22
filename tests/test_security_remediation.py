@@ -29,7 +29,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from core import auth_manager, database
+from core import auth_manager, database, profile_manager
 from scripts import migrate_sqlite_to_supabase as migrador
 
 
@@ -909,74 +909,74 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
             self.assertIn("AutoForm PDF", str(ctx.exception))
 
-    def test_50_auto_registro_valida_dominio_y_longitud_password(self):
-        """Verifica que registrar_usuario_corporativo rechace dominios externos y claves cortas."""
-        # 1. Nombre vacío
-        ok, msg = auth_manager.registrar_usuario_corporativo("", "usuario@iaclatam.com", "Password123*")
+    def test_50_cero_llamados_a_sign_up_y_cero_auto_registro(self):
+        """Verifica que no exista ningún llamado a sign_up ni flujo de auto-registro en el código."""
+        # 1. Verificar que auth_manager no expone registrar_usuario_corporativo
+        self.assertFalse(hasattr(auth_manager, "registrar_usuario_corporativo"))
+
+        # 2. Verificar que profile_manager no expone registrar_usuario_corporativo
+        self.assertFalse(hasattr(profile_manager, "registrar_usuario_corporativo"))
+
+        # 3. Inspeccionar el código de app1.py, core/auth_manager.py, core/database.py, core/profile_manager.py
+        archivos_a_inspeccionar = [
+            PROJECT_ROOT / "app1.py",
+            PROJECT_ROOT / "core" / "auth_manager.py",
+            PROJECT_ROOT / "core" / "database.py",
+            PROJECT_ROOT / "core" / "profile_manager.py",
+        ]
+        for ruta in archivos_a_inspeccionar:
+            with open(ruta, "r", encoding="utf-8") as f:
+                contenido = f.read()
+                # No debe existir ningún llamado o referencia a sign_up
+                self.assertNotIn("sign_up", contenido.lower(), f"Se encontró 'sign_up' en {ruta.name}")
+                # No debe existir la función registrar_usuario_corporativo
+                self.assertNotIn("registrar_usuario_corporativo", contenido, f"Se encontró 'registrar_usuario_corporativo' en {ruta.name}")
+
+        # 4. Verificar que app1.py no contenga la pestaña "Registrarse"
+        with open(PROJECT_ROOT / "app1.py", "r", encoding="utf-8") as f:
+            contenido_app = f.read()
+            self.assertNotIn("📝 Registrarse", contenido_app)
+            self.assertNotIn("gate_register_form", contenido_app)
+            self.assertIn("🔄 Recuperar Contraseña", contenido_app)
+
+    def test_51_recuperacion_password_valida_dominio_corporativo(self):
+        """Verifica que solicitar_recuperacion_password valide el dominio y llame a reset_password_for_email."""
+        # 1. Correo vacío
+        ok, msg = auth_manager.solicitar_recuperacion_password("")
         self.assertFalse(ok)
-        self.assertIn("nombre", msg.lower())
+        self.assertIn("correo", msg.lower())
 
-        # 2. Dominio no corporativo (ej. Gmail / Pepito)
-        ok, msg = auth_manager.registrar_usuario_corporativo("Pepito Pérez", "pepito@gmail.com", "Password123*")
+        # 2. Correo de dominio externo (ej. Gmail / Pepito)
+        ok, msg = auth_manager.solicitar_recuperacion_password("pepito@gmail.com")
         self.assertFalse(ok)
-        self.assertIn("restringido", msg.lower())
+        self.assertIn("no autorizada", msg.lower())
 
-        # 3. Contraseña menor a 8 caracteres
-        ok, msg = auth_manager.registrar_usuario_corporativo("Diana Gómez", "diana.gomez@iaclatam.com", "1234567")
+        # 3. Correo con formato inválido
+        ok, msg = auth_manager.solicitar_recuperacion_password("correo_invalido")
         self.assertFalse(ok)
-        self.assertIn("8 caracteres", msg.lower())
+        self.assertIn("no es válido", msg.lower())
 
-    def test_51_auto_registro_asigna_rol_admin_a_guillermo_y_comercial_a_otros(self):
-        """Verifica asignación de rol administrador a Guillermo y comercial a otros en Supabase."""
-        mock_admin = MagicMock()
-        mock_admin.auth.admin.list_users.return_value = []
-        mock_create = MagicMock()
-        mock_create.user.id = "uuid-guillermo-test"
-        mock_admin.auth.admin.create_user.return_value = mock_create
-
+        # 4. Correo corporativo válido en Supabase
+        mock_pub = MagicMock()
         with patch("core.database.usar_supabase", return_value=True):
-            with patch("core.database.obtener_cliente_admin", return_value=mock_admin):
-                # 1. Registro de Guillermo Cañón (Admin nominal)
-                ok, msg = auth_manager.registrar_usuario_corporativo(
-                    "Guillermo Cañón", "guillermo.canon@iaclatam.com", "ClaveSegura2026*"
-                )
-                self.assertTrue(ok)
-                mock_admin.auth.admin.create_user.assert_called_with({
-                    "email": "guillermo.canon@iaclatam.com",
-                    "password": "ClaveSegura2026*",
-                    "email_confirm": True,
-                    "app_metadata": {
-                        "es_admin": True,
-                        "role": "administrador",
-                        "rol": "administrador",
-                    },
-                    "user_metadata": {
-                        "nombre": "Guillermo Cañón",
-                    },
-                })
-
-                # 2. Registro de Antonio Prieto (Comercial)
-                mock_create.user.id = "uuid-antonio-test"
-                with patch("core.database.guardar_operador_db") as mock_save_op:
-                    ok2, msg2 = auth_manager.registrar_usuario_corporativo(
-                        "Antonio Prieto", "antonio.prieto@iaclatam.com", "ClaveSegura2026*"
+            with patch("core.database.obtener_cliente_publico", return_value=mock_pub):
+                with patch.dict(os.environ, {"AUTOFORM_EXCEL_REDIRECT_URL": "https://autoform-iac-excel.streamlit.app"}):
+                    ok, msg = auth_manager.solicitar_recuperacion_password("guillermo.canon@iaclatam.com")
+                    self.assertTrue(ok)
+                    mock_pub.auth.reset_password_for_email.assert_called_once_with(
+                        "guillermo.canon@iaclatam.com",
+                        options={"redirect_to": "https://autoform-iac-excel.streamlit.app"},
                     )
-                    self.assertTrue(ok2)
-                    mock_admin.auth.admin.create_user.assert_called_with({
-                        "email": "antonio.prieto@iaclatam.com",
-                        "password": "ClaveSegura2026*",
-                        "email_confirm": True,
-                        "app_metadata": {
-                            "es_admin": False,
-                            "role": "comercial",
-                            "rol": "comercial",
-                        },
-                        "user_metadata": {
-                            "nombre": "Antonio Prieto",
-                        },
-                    })
-                    mock_save_op.assert_called_once()
+
+    def test_52_recuperacion_password_bloquea_refs_pdf(self):
+        """Verifica que solicitar_recuperacion_password bloquee URLs apuntando a proyectos PDF prohibidos."""
+        with patch("core.database.usar_supabase", return_value=True):
+            with patch.dict(os.environ, {"AUTOFORM_EXCEL_REDIRECT_URL": "https://tnhedxwbpqihlqbtzudt.supabase.co"}):
+                with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+                    auth_manager.solicitar_recuperacion_password("antonio.prieto@iaclatam.com")
+                self.assertIn("PDF prohibido", str(ctx.exception))
 
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+

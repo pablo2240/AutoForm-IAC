@@ -466,7 +466,7 @@ if not st.session_state.get("usuario_activo"):
             </div>
         """, unsafe_allow_html=True)
 
-        tab_login, tab_register, tab_info = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse", "ℹ️ Ayuda"])
+        tab_login, tab_recovery, tab_info = st.tabs(["🔑 Iniciar Sesión", "🔄 Recuperar Contraseña", "ℹ️ Registro e Invitaciones"])
 
         with tab_login:
             st.markdown("##### Ingreso con Credenciales Corporativas")
@@ -489,80 +489,40 @@ if not st.session_state.get("usuario_activo"):
                 else:
                     st.warning("Ingresa tu correo y contraseña.")
 
-        with tab_register:
-            st.markdown("##### Registro de Cuenta Corporativa")
-            st.caption("Acceso exclusivo para colaboradores con correo oficial @iaclatam.com o @iac.com.co")
-            with st.form("gate_register_form", clear_on_submit=False):
-                reg_nombre = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez", key="gate_reg_nombre")
-                reg_correo = st.text_input("Correo Corporativo*", placeholder="usuario@iaclatam.com", key="gate_reg_correo")
-                reg_col1, reg_col2 = st.columns(2)
-                with reg_col1:
-                    reg_pwd = st.text_input("Contraseña*", type="password", key="gate_reg_pwd", help="Mínimo 8 caracteres")
-                with reg_col2:
-                    reg_pwd2 = st.text_input("Confirmar Contraseña*", type="password", key="gate_reg_pwd2")
+        with tab_recovery:
+            st.markdown("##### Restablecimiento de Credenciales Corporativas")
+            st.caption("Ingresa tu correo oficial para recibir un enlace de recuperación seguro.")
+            with st.form("gate_recovery_form", clear_on_submit=False):
+                rec_correo = st.text_input(
+                    "Correo Corporativo (@iaclatam.com o @iac.com.co)",
+                    placeholder="usuario@iaclatam.com",
+                    key="gate_rec_correo",
+                )
+                btn_recovery = st.form_submit_button("Enviar Enlace de Recuperación", type="primary", use_container_width=True)
 
-                reg_col3, reg_col4 = st.columns(2)
-                with reg_col3:
-                    reg_cargo = st.text_input("Cargo / Rol (Opcional)", placeholder="Ej: Consultor Comercial", key="gate_reg_cargo")
-                with reg_col4:
-                    reg_tel = st.text_input("Teléfono / Celular (Opcional)", placeholder="Ej: 3101234567", key="gate_reg_tel")
-
-                btn_register = st.form_submit_button("Crear Cuenta e Ingresar", type="primary", use_container_width=True)
-
-            if btn_register:
-                nombre_v = str(reg_nombre or st.session_state.get("gate_reg_nombre") or "").strip()
-                correo_v = str(reg_correo or st.session_state.get("gate_reg_correo") or "").strip().lower()
-                pwd_v = str(reg_pwd or st.session_state.get("gate_reg_pwd") or "")
-                pwd2_v = str(reg_pwd2 or st.session_state.get("gate_reg_pwd2") or "")
-                cargo_v = str(reg_cargo or st.session_state.get("gate_reg_cargo") or "").strip()
-                tel_v = str(reg_tel or st.session_state.get("gate_reg_tel") or "").strip()
-
-                if not nombre_v:
-                    st.error("El nombre completo es obligatorio.")
-                elif not correo_v:
-                    st.error("El correo corporativo es obligatorio.")
-                elif not auth_manager.validar_dominio_corporativo(correo_v):
-                    st.error("Registro restringido: Debes usar un correo oficial (@iaclatam.com o @iac.com.co).")
-                elif len(pwd_v) < 8:
-                    st.error("La contraseña debe contener al menos 8 caracteres.")
-                elif pwd_v != pwd2_v:
-                    st.error("Las contraseñas no coinciden.")
+            if btn_recovery:
+                correo_rec_val = str(rec_correo or st.session_state.get("gate_rec_correo") or "").strip().lower()
+                if not correo_rec_val:
+                    st.warning("Por favor ingresa tu correo corporativo.")
+                elif not auth_manager.validar_dominio_corporativo(correo_rec_val):
+                    st.error("Acceso restringido: Utiliza un correo oficial @iaclatam.com o @iac.com.co.")
                 else:
-                    with st.spinner("Registrando cuenta corporativa..."):
-                        ok_reg, msg_reg = auth_manager.registrar_usuario_corporativo(
-                            nombre=nombre_v,
-                            correo=correo_v,
-                            password=pwd_v,
-                            cargo=cargo_v,
-                            telefono=tel_v,
-                        )
-                    if ok_reg:
-                        st.success(f"✅ {msg_reg}")
-                        # Autenticar automáticamente al usuario recién registrado
-                        user_auth = profile_manager.autenticar_usuario(correo_v, pwd_v)
-                        if user_auth:
-                            st.session_state["usuario_activo"] = user_auth
-                            st.toast(f"¡Bienvenido, {user_auth['nombre']}!", icon="🚀")
-                            time.sleep(1)
-                            _safe_rerun()
-                        else:
-                            st.info("Ingresa en la pestaña '🔑 Iniciar Sesión' con tu correo y contraseña recién creados.")
+                    with st.spinner("Procesando solicitud de recuperación..."):
+                        ok_rec, msg_rec = auth_manager.solicitar_recuperacion_password(correo_rec_val)
+                    if ok_rec:
+                        st.success(f"📩 {msg_rec}")
                     else:
-                        st.error(f"❌ {msg_reg}")
+                        st.error(f"❌ {msg_rec}")
 
         with tab_info:
-            st.markdown("##### Acceso y Asignación de Roles")
+            st.markdown("##### Acceso y Asignación de Cuentas")
             st.markdown("""
                 <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1.2rem; color: #334155; font-size: 0.9rem; line-height: 1.6;">
-                    <p style="margin-top: 0; font-weight: 600; color: #0F172A;">🔒 Políticas de Acceso Corporativo</p>
-                    <p>La plataforma <strong>AutoForm Excel</strong> está protegida y restringida exclusivamente para personal corporativo de <strong>IAC Latam</strong>.</p>
-                    <p><strong>Dominios autorizados:</strong> <code>@iaclatam.com</code> y <code>@iac.com.co</code>.</p>
-                    <p><strong>Roles asignados:</strong></p>
-                    <ul>
-                        <li><strong>Administrador:</strong> <code>guillermo.canon@iaclatam.com</code> (administración y configuración).</li>
-                        <li><strong>Comerciales / Operadores:</strong> Personal comercial vinculado a la operación y firma de formularios.</li>
-                    </ul>
-                    <p style="margin-bottom: 0; font-size: 0.8rem; color: #64748B;">Si eres colaborador y aún no te has registrado, puedes hacerlo directamente desde la pestaña <strong>📝 Registrarse</strong>.</p>
+                    <p style="margin-top: 0; font-weight: 600; color: #0F172A;">🔒 Registro corporativo restringido (ADR-0010)</p>
+                    <p>Por políticas de seguridad corporativa y control de acceso de <strong>IAC Latam</strong>, no existe auto-registro público abierto.</p>
+                    <p>La creación de cuentas se realiza <strong>exclusivamente mediante invitación administrativa oficial</strong> gestionada por los administradores del sistema.</p>
+                    <p><strong>Administrador responsable:</strong> <code>guillermo.canon@iaclatam.com</code>.</p>
+                    <p style="margin-bottom: 0; font-size: 0.8rem; color: #64748B;">Si eres colaborador y aún no cuentas con credenciales, solicita tu vinculación formal al administrador.</p>
                 </div>
             """, unsafe_allow_html=True)
 

@@ -420,175 +420,55 @@ def invitar_usuario_corporativo(
         return False, f"Error al procesar la invitación: {exc}"
 
 
-def registrar_usuario_corporativo(
-    nombre: str,
-    correo: str,
-    password: str,
-    cargo: str = "",
-    cedula: str = "",
-    telefono: str = "",
-    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
-    ciudad: str = "Bogotá",
-) -> Tuple[bool, str]:
-    """Registra una nueva cuenta corporativa en la plataforma (Auto-Registro / Sign Up).
+def solicitar_recuperacion_password(correo: str) -> Tuple[bool, str]:
+    """Inicia el proceso de recuperación de contraseña vía correo oficial de Supabase Auth.
 
-    Valida:
-    1. Nombre completo obligatorio.
-    2. Formato y dominio corporativo estricto (@iaclatam.com o @iac.com.co).
-    3. Contraseña de al menos 8 caracteres.
-    4. Determinación de rol:
-       - 'guillermo.canon@iaclatam.com' (o AUTOFORM_ADMIN_EMAIL): es_admin=True, rol='administrador'.
-       - Otros colaboradores: es_admin=False, rol='comercial'.
-    5. En Supabase:
-       - Usa admin_client.auth.admin.create_user con email_confirm=True para acceso inmediato.
-       - Inserta el perfil en public.perfiles_usuario con activo=True.
-       - Si es comercial, registra operador en public.operadores.
-    6. En SQLite local:
-       - Inserta usuario en usuarios con hash PBKDF2 y operador si aplica.
-
-    Returns:
-        Tuple[exito: bool, mensaje: str]
+    Reglas de seguridad:
+    1. Valida estrictamente el dominio corporativo (@iaclatam.com o @iac.com.co).
+    2. Bloquea URLs de redirección que contengan identificadores de proyectos PDF prohibidos.
+    3. Respuesta homogénea para evitar ataques de enumeración de usuarios.
     """
-    from core import database
-
-    nombre_limpio = nombre.strip()
     correo_limpio = correo.strip().lower()
-    pwd = password.strip() if password else ""
+    if not correo_limpio:
+        return False, "Ingresa tu correo corporativo."
 
-    if not nombre_limpio:
-        return False, "El nombre completo es obligatorio."
     if not validar_formato_correo(correo_limpio):
         return False, "El formato de correo no es válido."
-    if not validar_dominio_corporativo(correo_limpio):
-        return False, "Registro restringido: Utiliza un correo corporativo oficial (@iaclatam.com o @iac.com.co)."
-    if not pwd or len(pwd) < 8:
-        return False, "La contraseña debe contener al menos 8 caracteres."
 
-    # Determinación segura del rol corporativo
-    admin_env = os.environ.get("AUTOFORM_ADMIN_EMAIL", "").strip().lower()
-    es_admin = (correo_limpio == ADMIN_CORPORATIVO_NOMINAL.lower()) or bool(admin_env and correo_limpio == admin_env)
-    rol_seguro = "administrador" if es_admin else "comercial"
+    if not validar_dominio_corporativo(correo_limpio):
+        return False, "Operación no autorizada: Solo se permite la recuperación para correos @iaclatam.com o @iac.com.co."
+
+    from core import database
 
     if database.usar_supabase():
+        redirect_url = os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "").strip() or os.environ.get("SUPABASE_URL", "").strip()
+        for pdf_ref in database.PROHIBITED_PROJECT_REFS:
+            if pdf_ref in redirect_url:
+                raise database.ConfiguracionInvalidaError(
+                    f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}')."
+                )
+
         try:
-            admin_client = database.obtener_cliente_admin()
-
-            # 1. Comprobar si ya existe en auth.users
-            user_id: Optional[str] = None
-            try:
-                users_list = admin_client.auth.admin.list_users() or []
-                for u in users_list:
-                    if u.email and u.email.lower() == correo_limpio:
-                        user_id = u.id
-                        break
-            except Exception:
-                pass
-
-            if user_id:
-                # Comprobar si ya tiene perfil activo
-                perfil_existente = database.obtener_usuario_por_correo_db(correo_limpio, client=admin_client)
-                if perfil_existente and perfil_existente.get("activo"):
-                    return False, "Esta cuenta ya está registrada y activa. Puedes iniciar sesión directamente."
-                # Actualizar credenciales y confirmación
-                try:
-                    admin_client.auth.admin.update_user_by_id(
-                        user_id,
-                        {
-                            "password": pwd,
-                            "email_confirm": True,
-                            "app_metadata": {
-                                "es_admin": es_admin,
-                                "role": rol_seguro,
-                                "rol": rol_seguro,
-                            },
-                            "user_metadata": {
-                                "nombre": nombre_limpio,
-                            },
-                        },
-                    )
-                except Exception as exc_up:
-                    return False, f"La cuenta ya existe pero no se pudo actualizar: {exc_up}"
-            else:
-                # Crear nuevo usuario con email_confirm=True para acceso directo
-                create_attrs = {
-                    "email": correo_limpio,
-                    "password": pwd,
-                    "email_confirm": True,
-                    "app_metadata": {
-                        "es_admin": es_admin,
-                        "role": rol_seguro,
-                        "rol": rol_seguro,
-                    },
-                    "user_metadata": {
-                        "nombre": nombre_limpio,
-                    },
-                }
-                res_create = admin_client.auth.admin.create_user(create_attrs)
-                user_id = res_create.user.id if hasattr(res_create, "user") and res_create.user else None
-
-                if not user_id:
-                    # Segundo intento: buscar por si se creó
-                    try:
-                        retry_users = admin_client.auth.admin.list_users() or []
-                        for u in retry_users:
-                            if u.email and u.email.lower() == correo_limpio:
-                                user_id = u.id
-                                break
-                    except Exception:
-                        pass
-
-            if not user_id:
-                return False, "No fue posible registrar la cuenta en el servicio de autenticación corporativa."
-
-            # 2. Registrar o actualizar perfil en public.perfiles_usuario
-            perfil_payload = {
-                "id": user_id,
-                "nombre": nombre_limpio,
-                "cargo": cargo.strip(),
-                "cedula": cedula.strip(),
-                "telefono": telefono.strip(),
-                "correo": correo_limpio,
-                "direccion": direccion.strip() or "Carrera 63 B # 32 E -25 OFC 206",
-                "ciudad": ciudad.strip() or "Bogotá",
-                "es_admin": bool(es_admin),
-                "activo": True,
-            }
-            admin_client.table("perfiles_usuario").upsert(perfil_payload, on_conflict="id").execute()
-
-            # 3. Si es operador comercial, registrar en public.operadores
-            if not es_admin:
-                slug_op = re.sub(r"[^\w]+", "_", correo_limpio.split("@")[0]).strip("_")
-                try:
-                    database.guardar_operador_db(
-                        id_operador=slug_op,
-                        nombre=nombre_limpio,
-                        cargo=cargo.strip(),
-                        cedula=cedula.strip(),
-                        telefono=telefono.strip(),
-                        correo=correo_limpio,
-                        direccion=direccion.strip() or "Carrera 63 B # 32 E -25 OFC 206",
-                        ciudad=ciudad.strip() or "Bogotá",
-                        client=admin_client,
-                        usuario_id=user_id,
-                    )
-                except Exception as exc_op:
-                    print(f"[AutoForm AI Auth] Registro de operador no crítico: {exc_op}")
-
-            return True, "¡Cuenta registrada exitosamente! Ya puedes iniciar sesión con tus credenciales."
-
+            client_pub = database.obtener_cliente_publico()
+            options = {"redirect_to": redirect_url} if redirect_url else None
+            client_pub.auth.reset_password_for_email(correo_limpio, options=options)
+            return (
+                True,
+                "Si tu cuenta está registrada en la plataforma corporativa, recibirás un enlace de recuperación en tu correo.",
+            )
         except Exception as exc:
-            print(f"[AutoForm AI Auth] Error registrando usuario corporativo en Supabase: {exc}")
-            return False, f"Error al registrar la cuenta: {exc}"
+            if "PDF" in str(exc) or "ConfiguracionInvalidaError" in str(type(exc)):
+                raise
+            print(f"[AutoForm AI Auth] Error en reset_password_for_email: {exc}")
+            return (
+                True,
+                "Si tu cuenta está registrada en la plataforma corporativa, recibirás un enlace de recuperación en tu correo.",
+            )
 
-    # Modo SQLite Local (Desarrollo)
-    return database.crear_usuario_db(
-        nombre=nombre_limpio,
-        correo=correo_limpio,
-        password=pwd,
-        cargo=cargo.strip(),
-        cedula=cedula.strip(),
-        telefono=telefono.strip(),
-        direccion=direccion.strip(),
-        ciudad=ciudad.strip(),
-        es_admin=int(es_admin),
-    )
+    # Modo SQLite (Desarrollo local)
+    usuario = database.obtener_usuario_por_correo_db(correo_limpio)
+    if not usuario:
+        return True, "Si tu cuenta está registrada en la plataforma corporativa, recibirás un enlace de recuperación en tu correo."
+
+    return True, "En desarrollo local con SQLite, solicita al administrador reiniciar tu contraseña directamente."
+
