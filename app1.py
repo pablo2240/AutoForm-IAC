@@ -495,10 +495,10 @@ if not st.session_state.get("usuario_activo"):
             st.markdown("##### Solicitud de Registro Corporativo")
             st.caption("Exclusivo para colaboradores. Toda cuenta nueva requiere aprobación administrativa previa.")
             with st.form("gate_register_form", clear_on_submit=False):
-                reg_nombre = st.text_input("Nombre Completo *", key="gate_reg_nombre")
+                reg_nombre = st.text_input("Nombre Completo *", placeholder="Ej: Carlos Mendoza", key="gate_reg_nombre")
                 reg_correo = st.text_input("Correo Corporativo *", key="gate_reg_correo")
-                reg_cargo = st.text_input("Cargo / Rol Funcional", key="gate_reg_cargo")
-                reg_tel = st.text_input("Teléfono / Celular Corporativo", key="gate_reg_tel")
+                reg_cargo = st.text_input("Cargo / Rol Funcional", placeholder="Ej: Especialista Comercial", key="gate_reg_cargo")
+                reg_tel = st.text_input("Teléfono / Celular Corporativo", placeholder="Ej: 3001234567", key="gate_reg_tel")
                 col_p1, col_p2 = st.columns(2)
                 with col_p1:
                     reg_pwd = st.text_input("Contraseña * (mínimo 8 caracteres)", type="password", key="gate_reg_pwd")
@@ -1400,12 +1400,12 @@ with st.sidebar:
                 with st.form("form_invitar_usuario", clear_on_submit=True):
                     col_inv1, col_inv2 = st.columns(2)
                     with col_inv1:
-                        inv_nom = st.text_input("Nombre Completo*")
+                        inv_nom = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez")
                         inv_cor = st.text_input("Correo Corporativo*")
-                        inv_car = st.text_input("Cargo / Rol")
+                        inv_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones")
                     with col_inv2:
-                        inv_tel = st.text_input("Teléfono / Celular")
-                        inv_ced = st.text_input("Cédula / Documento")
+                        inv_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567")
+                        inv_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050")
                         inv_es_admin = st.checkbox("Asignar rol de Administrador", value=False)
 
                     btn_enviar_inv = st.form_submit_button("✉️ Enviar Invitación Oficial", type="primary", use_container_width=True)
