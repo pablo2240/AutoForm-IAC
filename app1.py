@@ -471,7 +471,7 @@ if not st.session_state.get("usuario_activo"):
         with tab_login:
             st.markdown("##### Ingreso con Credenciales Corporativas")
             with st.form("gate_login_form", clear_on_submit=False):
-                login_correo = st.text_input("Correo Corporativo", placeholder="usuario@iaclatam.com", key="gate_login_correo")
+                login_correo = st.text_input("Correo Corporativo", key="gate_login_correo")
                 login_pwd = st.text_input("Contraseña", type="password", key="gate_login_pwd")
                 btn_login = st.form_submit_button("Ingresar a la Plataforma", type="primary", use_container_width=True)
 
@@ -493,12 +493,12 @@ if not st.session_state.get("usuario_activo"):
 
         with tab_register:
             st.markdown("##### Solicitud de Registro Corporativo")
-            st.caption("Exclusivo para colaboradores (@iaclatam.com o @iac.com.co). Toda cuenta nueva requiere aprobación administrativa previa.")
+            st.caption("Exclusivo para colaboradores. Toda cuenta nueva requiere aprobación administrativa previa.")
             with st.form("gate_register_form", clear_on_submit=False):
-                reg_nombre = st.text_input("Nombre Completo *", placeholder="Ej: Carlos Mendoza", key="gate_reg_nombre")
-                reg_correo = st.text_input("Correo Corporativo * (@iaclatam.com o @iac.com.co)", placeholder="carlos.mendoza@iaclatam.com", key="gate_reg_correo")
-                reg_cargo = st.text_input("Cargo / Rol Funcional", placeholder="Ej: Especialista Comercial", key="gate_reg_cargo")
-                reg_tel = st.text_input("Teléfono / Celular Corporativo", placeholder="Ej: 3001234567", key="gate_reg_tel")
+                reg_nombre = st.text_input("Nombre Completo *", key="gate_reg_nombre")
+                reg_correo = st.text_input("Correo Corporativo *", key="gate_reg_correo")
+                reg_cargo = st.text_input("Cargo / Rol Funcional", key="gate_reg_cargo")
+                reg_tel = st.text_input("Teléfono / Celular Corporativo", key="gate_reg_tel")
                 col_p1, col_p2 = st.columns(2)
                 with col_p1:
                     reg_pwd = st.text_input("Contraseña * (mínimo 8 caracteres)", type="password", key="gate_reg_pwd")
@@ -517,7 +517,7 @@ if not st.session_state.get("usuario_activo"):
                 if not n_val or not c_val or not p_val:
                     st.warning("Completa los campos obligatorios (*).")
                 elif not auth_manager.validar_dominio_corporativo(c_val):
-                    st.error("Acceso restringido: Solo se admiten correos corporativos @iaclatam.com o @iac.com.co.")
+                    st.error("Acceso restringido: Solo se admiten correos corporativos autorizados.")
                 elif len(p_val) < 8:
                     st.error("La contraseña debe tener al menos 8 caracteres.")
                 elif p_val != pc_val:
@@ -542,8 +542,7 @@ if not st.session_state.get("usuario_activo"):
             st.caption("Ingresa tu correo oficial para recibir un enlace de recuperación seguro.")
             with st.form("gate_recovery_form", clear_on_submit=False):
                 rec_correo = st.text_input(
-                    "Correo Corporativo (@iaclatam.com o @iac.com.co)",
-                    placeholder="usuario@iaclatam.com",
+                    "Correo Corporativo",
                     key="gate_rec_correo",
                 )
                 btn_recovery = st.form_submit_button("Enviar Enlace de Recuperación", type="primary", use_container_width=True)
@@ -1401,12 +1400,12 @@ with st.sidebar:
                 with st.form("form_invitar_usuario", clear_on_submit=True):
                     col_inv1, col_inv2 = st.columns(2)
                     with col_inv1:
-                        inv_nom = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez")
-                        inv_cor = st.text_input("Correo Corporativo (@iaclatam.com o @iac.com.co)*", placeholder="diana.gomez@iaclatam.com")
-                        inv_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones")
+                        inv_nom = st.text_input("Nombre Completo*")
+                        inv_cor = st.text_input("Correo Corporativo*")
+                        inv_car = st.text_input("Cargo / Rol")
                     with col_inv2:
-                        inv_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567")
-                        inv_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050")
+                        inv_tel = st.text_input("Teléfono / Celular")
+                        inv_ced = st.text_input("Cédula / Documento")
                         inv_es_admin = st.checkbox("Asignar rol de Administrador", value=False)
 
                     btn_enviar_inv = st.form_submit_button("✉️ Enviar Invitación Oficial", type="primary", use_container_width=True)
