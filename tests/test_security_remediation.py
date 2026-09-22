@@ -909,6 +909,74 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
             self.assertIn("AutoForm PDF", str(ctx.exception))
 
+    def test_50_auto_registro_valida_dominio_y_longitud_password(self):
+        """Verifica que registrar_usuario_corporativo rechace dominios externos y claves cortas."""
+        # 1. Nombre vacío
+        ok, msg = auth_manager.registrar_usuario_corporativo("", "usuario@iaclatam.com", "Password123*")
+        self.assertFalse(ok)
+        self.assertIn("nombre", msg.lower())
+
+        # 2. Dominio no corporativo (ej. Gmail / Pepito)
+        ok, msg = auth_manager.registrar_usuario_corporativo("Pepito Pérez", "pepito@gmail.com", "Password123*")
+        self.assertFalse(ok)
+        self.assertIn("restringido", msg.lower())
+
+        # 3. Contraseña menor a 8 caracteres
+        ok, msg = auth_manager.registrar_usuario_corporativo("Diana Gómez", "diana.gomez@iaclatam.com", "1234567")
+        self.assertFalse(ok)
+        self.assertIn("8 caracteres", msg.lower())
+
+    def test_51_auto_registro_asigna_rol_admin_a_guillermo_y_comercial_a_otros(self):
+        """Verifica asignación de rol administrador a Guillermo y comercial a otros en Supabase."""
+        mock_admin = MagicMock()
+        mock_admin.auth.admin.list_users.return_value = []
+        mock_create = MagicMock()
+        mock_create.user.id = "uuid-guillermo-test"
+        mock_admin.auth.admin.create_user.return_value = mock_create
+
+        with patch("core.database.usar_supabase", return_value=True):
+            with patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+                # 1. Registro de Guillermo Cañón (Admin nominal)
+                ok, msg = auth_manager.registrar_usuario_corporativo(
+                    "Guillermo Cañón", "guillermo.canon@iaclatam.com", "ClaveSegura2026*"
+                )
+                self.assertTrue(ok)
+                mock_admin.auth.admin.create_user.assert_called_with({
+                    "email": "guillermo.canon@iaclatam.com",
+                    "password": "ClaveSegura2026*",
+                    "email_confirm": True,
+                    "app_metadata": {
+                        "es_admin": True,
+                        "role": "administrador",
+                        "rol": "administrador",
+                    },
+                    "user_metadata": {
+                        "nombre": "Guillermo Cañón",
+                    },
+                })
+
+                # 2. Registro de Antonio Prieto (Comercial)
+                mock_create.user.id = "uuid-antonio-test"
+                with patch("core.database.guardar_operador_db") as mock_save_op:
+                    ok2, msg2 = auth_manager.registrar_usuario_corporativo(
+                        "Antonio Prieto", "antonio.prieto@iaclatam.com", "ClaveSegura2026*"
+                    )
+                    self.assertTrue(ok2)
+                    mock_admin.auth.admin.create_user.assert_called_with({
+                        "email": "antonio.prieto@iaclatam.com",
+                        "password": "ClaveSegura2026*",
+                        "email_confirm": True,
+                        "app_metadata": {
+                            "es_admin": False,
+                            "role": "comercial",
+                            "rol": "comercial",
+                        },
+                        "user_metadata": {
+                            "nombre": "Antonio Prieto",
+                        },
+                    })
+                    mock_save_op.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
