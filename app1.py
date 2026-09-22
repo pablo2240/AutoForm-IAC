@@ -654,16 +654,18 @@ with col_ses_info:
         '<span style="color: #CBD5E1;">|</span>'
         if es_modo_staging() else ""
     )
-    st.markdown(f"""
-        <div style="font-size: 0.84rem; color: #475569; padding: 0.35rem 0.75rem; background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">
-            {staging_pill_sesion}
-            <span>👤 Sesión: <strong>{usuario_actual['nombre']}</strong></span>
-            <span style="color: #CBD5E1;">|</span>
-            <span style="color: {color_rol}; font-weight: 700;">{rol_badge_label}</span>
-            <span style="color: #CBD5E1;">|</span>
-            <span><code>{usuario_actual['correo']}</code></span>
-        </div>
-    """, unsafe_allow_html=True)
+    sesion_html = (
+        f'<div style="font-size: 0.84rem; color: #475569; padding: 0.35rem 0.75rem; background: #F8FAFC; '
+        f'border: 1px solid #E2E8F0; border-radius: 6px; display: inline-flex; align-items: center; gap: 0.6rem; margin-bottom: 0.75rem;">'
+        f'{staging_pill_sesion}'
+        f'<span>👤 Sesión: <strong>{usuario_actual["nombre"]}</strong></span>'
+        f'<span style="color: #CBD5E1;">|</span>'
+        f'<span style="color: {color_rol}; font-weight: 700;">{rol_badge_label}</span>'
+        f'<span style="color: #CBD5E1;">|</span>'
+        f'<span><code>{usuario_actual["correo"]}</code></span>'
+        f'</div>'
+    )
+    st.markdown(sesion_html, unsafe_allow_html=True)
 with col_ses_cache:
     if st.button("🧹 Limpiar Caché", key="btn_limpiar_cache_top", use_container_width=True, help="Elimina el contexto del formulario en memoria, resetea plantillas y recarga los perfiles"):
         for k in list(st.session_state.keys()):
@@ -755,14 +757,16 @@ with st.sidebar:
     except Exception:
         pass
 
-    st.markdown(f"""
-        <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">
-            <div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Operador de la Cuenta</div>
-            <div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual['nombre']}</div>
-            <div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get('cargo') or 'Asesor Comercial'}</div>
-            <div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual['correo']}</div>
-        </div>
-    """, unsafe_allow_html=True)
+    operador_html = (
+        f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; '
+        f'border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">'
+        f'<div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Operador de la Cuenta</div>'
+        f'<div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual["nombre"]}</div>'
+        f'<div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get("cargo") or "Asesor Comercial"}</div>'
+        f'<div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual["correo"]}</div>'
+        f'</div>'
+    )
+    st.markdown(operador_html, unsafe_allow_html=True)
 
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
@@ -1281,28 +1285,47 @@ with st.sidebar:
                         color_rol = "#1E3A8A" if u_admin else "#059669"
 
                         with st.container():
-                            st.markdown(f"""
-                                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
-                                    <div style="display: flex; justify-content: space-between; align-items: center;">
-                                        <div>
-                                            <strong>{u_nom}</strong> &nbsp;
-                                            <span style="font-size: 0.8rem; color: {color_rol}; font-weight: 700;">[{badge_rol}]</span>
-                                            <br>
-                                            <span style="font-size: 0.82rem; color: #64748B;"><code>{u_cor}</code> | {u_car}</span>
-                                        </div>
-                                        <div>
-                                            {badge_estado}
-                                        </div>
-                                    </div>
-                                </div>
-                            """, unsafe_allow_html=True)
+                            user_card_html = (
+                                f'<div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; '
+                                f'padding: 0.65rem 0.85rem; margin-bottom: 0.5rem; box-shadow: 0 1px 3px rgba(0,0,0,0.04);">'
+                                f'<div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 0.4rem;">'
+                                f'<div>'
+                                f'<div style="font-weight: 700; font-size: 0.92rem; color: #0F172A;">{u_nom}</div>'
+                                f'<div style="font-size: 0.78rem; color: {color_rol}; font-weight: 700; margin-top: 2px;">[{badge_rol}]</div>'
+                                f'</div>'
+                                f'<div>{badge_estado}</div>'
+                                f'</div>'
+                                f'<div style="font-size: 0.8rem; color: #64748B; margin-top: 0.35rem; word-break: break-all;">'
+                                f'<code>{u_cor}</code>'
+                                f'</div>'
+                                f'<div style="font-size: 0.76rem; color: #94A3B8; margin-top: 1px;">{u_car}</div>'
+                                f'</div>'
+                            )
+                            st.markdown(user_card_html, unsafe_allow_html=True)
 
-                            col_act1, col_act2, col_act3 = st.columns([1.6, 2.2, 2.2])
+                            # Rol del Colaborador (ancho completo para evitar truncamiento del texto)
+                            rol_actual_idx = 1 if u_admin else 0
+                            rol_seleccionado = st.selectbox(
+                                "Rol del Colaborador:",
+                                options=["comercial", "administrador"],
+                                index=rol_actual_idx,
+                                key=f"sel_rol_{u_id}",
+                                help="Asignar rol de Comercial o Administrador",
+                            )
+                            if (rol_seleccionado == "administrador") != u_admin:
+                                if st.button(f"💾 Guardar como {rol_seleccionado.title()}", key=f"btn_save_rol_{u_id}", type="primary", use_container_width=True):
+                                    ok_r, msg_r = auth_manager.cambiar_rol_usuario(u_id, rol_seleccionado, _acc_token)
+                                    if ok_r:
+                                        st.success(f"✅ {msg_r}")
+                                        _safe_rerun()
+                                    else:
+                                        st.error(f"❌ {msg_r}")
 
-                            # Toggle Activo/Inactivo
-                            with col_act1:
+                            # Acciones de Estado y Recuperación (2 columnas equilibradas y legibles)
+                            col_btn1, col_btn2 = st.columns(2)
+                            with col_btn1:
                                 if u_activo:
-                                    if st.button("⏸️ Desactivar", key=f"btn_toggle_desact_{u_id}", use_container_width=True):
+                                    if st.button("⏸️ Desactivar", key=f"btn_toggle_desact_{u_id}", use_container_width=True, help="Suspender acceso temporalmente"):
                                         ok_t, msg_t = auth_manager.conmutar_estado_activo_usuario(u_id, False, _acc_token)
                                         if ok_t:
                                             st.warning(f"⚠️ {msg_t}")
@@ -1310,7 +1333,7 @@ with st.sidebar:
                                         else:
                                             st.error(f"❌ {msg_t}")
                                 else:
-                                    if st.button("▶️ Activar", key=f"btn_toggle_act_{u_id}", use_container_width=True):
+                                    if st.button("▶️ Activar", key=f"btn_toggle_act_{u_id}", type="primary", use_container_width=True, help="Habilitar acceso a la plataforma"):
                                         ok_t, msg_t = auth_manager.conmutar_estado_activo_usuario(u_id, True, _acc_token)
                                         if ok_t:
                                             st.success(f"✅ {msg_t}")
@@ -1318,36 +1341,16 @@ with st.sidebar:
                                         else:
                                             st.error(f"❌ {msg_t}")
 
-                            # Conmutar Rol (comercial <-> administrador)
-                            with col_act2:
-                                rol_actual_idx = 1 if u_admin else 0
-                                rol_seleccionado = st.selectbox(
-                                    "Rol",
-                                    options=["comercial", "administrador"],
-                                    index=rol_actual_idx,
-                                    key=f"sel_rol_{u_id}",
-                                    label_visibility="collapsed",
-                                )
-                                if (rol_seleccionado == "administrador") != u_admin:
-                                    if st.button("💾 Guardar Rol", key=f"btn_save_rol_{u_id}", use_container_width=True):
-                                        ok_r, msg_r = auth_manager.cambiar_rol_usuario(u_id, rol_seleccionado, _acc_token)
-                                        if ok_r:
-                                            st.success(f"✅ {msg_r}")
-                                            _safe_rerun()
-                                        else:
-                                            st.error(f"❌ {msg_r}")
-
-                            # Reenviar Enlace de Recuperación
-                            with col_act3:
-                                if st.button("🔑 Enviar Recuperación", key=f"btn_recup_adm_{u_id}", use_container_width=True):
-                                    with st.spinner(f"Enviando enlace a {u_cor}..."):
+                            with col_btn2:
+                                if st.button("🔑 Restablecer", key=f"btn_recup_adm_{u_id}", use_container_width=True, help="Enviar enlace de recuperación de contraseña a este correo"):
+                                    with st.spinner("Enviando..."):
                                         ok_rc, msg_rc = auth_manager.reenviar_recuperacion_admin(u_cor, access_token_solicitante=_acc_token)
                                     if ok_rc:
-                                        st.success(f"📩 {msg_rc}")
+                                        st.success("📩 Correo enviado")
                                     else:
                                         st.error(f"❌ {msg_rc}")
 
-                            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+                            st.markdown("<hr style='margin: 0.85rem 0; border: none; border-top: 1px solid #E2E8F0;' />", unsafe_allow_html=True)
 
             # ── 3. INVITACIÓN DIRECTA ─────────────────────────────────────────
             with tab_invitar:
