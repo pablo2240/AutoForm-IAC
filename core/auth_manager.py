@@ -137,13 +137,6 @@ def iniciar_sesion(
                 return False, None, None, "Credenciales incorrectas o cuenta no registrada."
 
             estado_aprobacion = str(usuario_perfil.get("estado_aprobacion") or "aprobado").lower()
-            if estado_aprobacion == "pendiente":
-                try:
-                    client_auth.auth.sign_out()
-                except Exception:
-                    pass
-                return False, None, None, "Tu cuenta está pendiente de aprobación por el administrador corporativo."
-
             if estado_aprobacion == "rechazado":
                 try:
                     client_auth.auth.sign_out()
@@ -178,8 +171,6 @@ def iniciar_sesion(
 
     if verificar_password(password, usuario.get("password_hash", "")):
         estado_aprobacion = str(usuario.get("estado_aprobacion") or "aprobado").lower()
-        if estado_aprobacion == "pendiente":
-            return False, None, None, "Tu cuenta está pendiente de aprobación por el administrador corporativo."
         if estado_aprobacion == "rechazado":
             return False, None, None, "Tu solicitud de acceso fue rechazada. Contacta al administrador corporativo."
         if not usuario.get("activo"):
@@ -566,7 +557,7 @@ def registrar_solicitud_corporativa(
                         "es_admin": False,
                         "role": "comercial",
                         "rol": "comercial",
-                        "estado": "pendiente",
+                        "estado": "aprobado",
                     },
                 })
                 if hasattr(res_create, "user") and res_create.user:
@@ -574,7 +565,7 @@ def registrar_solicitud_corporativa(
             except Exception as exc_auth:
                 msg_auth = str(exc_auth).lower()
                 # Si el usuario ya existe en auth.users pero no tenía perfil en perfiles_usuario (p.ej. por fallo previo al insertar),
-                # intentamos recuperar su user_id y sincronizar credenciales para completar la solicitud pendiente.
+                # intentamos recuperar su user_id y sincronizar credenciales para completar el registro activo.
                 if "already registered" in msg_auth or "already exists" in msg_auth:
                     try:
                         users_list = admin_client.auth.admin.list_users()
@@ -595,7 +586,7 @@ def registrar_solicitud_corporativa(
                                         "es_admin": False,
                                         "role": "comercial",
                                         "rol": "comercial",
-                                        "estado": "pendiente",
+                                        "estado": "aprobado",
                                     },
                                 },
                             )
@@ -610,7 +601,7 @@ def registrar_solicitud_corporativa(
             if not user_id:
                 return False, "No fue posible registrar la identidad en el proveedor corporativo."
 
-            # 3. Registrar fila en perfiles_usuario: inactivo y pendiente forzados
+            # 3. Registrar fila en perfiles_usuario: comercial activo y aprobado de inmediato
             perfil_payload = {
                 "id": user_id,
                 "nombre": nombre_limpio,
@@ -621,13 +612,32 @@ def registrar_solicitud_corporativa(
                 "direccion": direccion.strip(),
                 "ciudad": ciudad.strip(),
                 "es_admin": False,
-                "activo": False,
-                "estado_aprobacion": "pendiente",
+                "activo": True,
+                "estado_aprobacion": "aprobado",
             }
             admin_client.table("perfiles_usuario").upsert(perfil_payload, on_conflict="id").execute()
+
+            # 4. Sincronizar catálogo de operadores inmediatamente para uso en la app
+            slug_op = re.sub(r"[^\w]+", "_", correo_limpio.split("@")[0]).strip("_")
+            try:
+                database.guardar_operador_db(
+                    id_operador=slug_op,
+                    nombre=nombre_limpio,
+                    cargo=cargo.strip() or "Asesor Comercial",
+                    cedula="",
+                    telefono=telefono.strip(),
+                    correo=correo_limpio,
+                    direccion=direccion.strip() or "Carrera 63 B # 32 E -25 OFC 206",
+                    ciudad=ciudad.strip() or "Bogotá",
+                    client=admin_client,
+                    usuario_id=user_id,
+                )
+            except Exception as exc_op:
+                print(f"[AutoForm AI Auth] Advertencia al sincronizar operador en registro: {exc_op}")
+
             return (
                 True,
-                "Solicitud de registro enviada con éxito. Tu cuenta ha sido registrada y se encuentra pendiente de aprobación administrativa.",
+                "Registro exitoso. Tu cuenta corporativa ha sido creada y se encuentra activa.",
             )
         except Exception as exc:
             print(f"[AutoForm AI Auth] Error en registrar_solicitud_corporativa: {exc}")
@@ -645,15 +655,32 @@ def registrar_solicitud_corporativa(
             cursor.execute(
                 """
                 INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, creado_en)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'pendiente', ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1, 'aprobado', ?)
                 """,
                 (slug_id, nombre_limpio, cargo.strip(), "", telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, ahora_iso),
             )
             conn.commit()
-            return (
-                True,
-                "Solicitud de registro enviada con éxito. Tu cuenta ha sido registrada y se encuentra pendiente de aprobación administrativa.",
+
+        # Sincronizar operador en SQLite
+        try:
+            database.guardar_operador_db(
+                id_operador=slug_id,
+                nombre=nombre_limpio,
+                cargo=cargo.strip() or "Asesor Comercial",
+                cedula="",
+                telefono=telefono.strip(),
+                correo=correo_limpio,
+                direccion=direccion.strip() or "Carrera 63 B # 32 E -25 OFC 206",
+                ciudad=ciudad.strip() or "Bogotá",
+                usuario_id=slug_id,
             )
+        except Exception as exc_op:
+            print(f"[AutoForm AI Auth] Advertencia al sincronizar operador en SQLite: {exc_op}")
+
+        return (
+            True,
+            "Registro exitoso. Tu cuenta corporativa ha sido creada y se encuentra activa.",
+        )
     except sqlite3.IntegrityError:
         return False, "Ya existe una cuenta o solicitud registrada con este correo electrónico."
     except Exception as exc:

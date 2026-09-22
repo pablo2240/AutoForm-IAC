@@ -504,7 +504,7 @@ if not st.session_state.get("usuario_activo"):
                     reg_pwd = st.text_input("Contraseña * (mínimo 8 caracteres)", type="password", key="gate_reg_pwd")
                 with col_p2:
                     reg_pwd_conf = st.text_input("Confirmar Contraseña *", type="password", key="gate_reg_pwd_conf")
-                btn_reg = st.form_submit_button("Enviar Solicitud de Registro", type="primary", use_container_width=True)
+                btn_reg = st.form_submit_button("Crear Cuenta Corporativa", type="primary", use_container_width=True)
 
             if btn_reg:
                 n_val = str(reg_nombre or "").strip()
@@ -523,7 +523,7 @@ if not st.session_state.get("usuario_activo"):
                 elif p_val != pc_val:
                     st.error("Las contraseñas no coinciden.")
                 else:
-                    with st.spinner("Registrando solicitud corporativa..."):
+                    with st.spinner("Creando cuenta corporativa y accediendo a AutoForm..."):
                         ok_reg, msg_reg = auth_manager.registrar_solicitud_corporativa(
                             nombre=n_val,
                             correo=c_val,
@@ -532,8 +532,16 @@ if not st.session_state.get("usuario_activo"):
                             telefono=t_val,
                         )
                     if ok_reg:
-                        st.success(f"✅ {msg_reg}")
-                        st.info("ℹ️ Tu cuenta ha sido registrada y está en espera de revisión. Una vez el administrador apruebe tu solicitud, podrás ingresar a la plataforma.")
+                        # Auto-login directo e inmediato
+                        ok_log, usr_data, tok_data, _ = auth_manager.iniciar_sesion(c_val, p_val)
+                        if ok_log and usr_data:
+                            st.session_state["usuario_activo"] = usr_data
+                            st.session_state["supabase_session"] = tok_data
+                            st.success(f"🎉 ¡Bienvenido a AutoForm AI, {usr_data.get('nombre', n_val)}!")
+                            _safe_rerun()
+                        else:
+                            st.success(f"✅ {msg_reg}")
+                            st.info("ℹ️ Tu cuenta está activa. Ahora puedes ingresar desde la pestaña 'Iniciar Sesión'.")
                     else:
                         st.error(f"❌ {msg_reg}")
 
@@ -1237,69 +1245,17 @@ with st.sidebar:
                     else:
                         st.error("❌ El archivo JSON no tiene un formato válido.")
 
-        with st.expander("👥 Administración de Usuarios y Solicitudes de Registro", expanded=False):
-            st.caption("Gestiona las solicitudes de acceso corporativo, roles y estado de los colaboradores:")
+        with st.expander("👥 Directorio y Gestión de Usuarios Corporativos", expanded=False):
+            st.caption("Gestiona los accesos, roles y colaboraciones de la plataforma:")
             _ses_actual = st.session_state.get("supabase_session", {})
             _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
 
-            tab_solicitudes, tab_directorio, tab_invitar = st.tabs([
-                "📋 Solicitudes Pendientes",
+            tab_directorio, tab_invitar = st.tabs([
                 "👥 Directorio de Colaboradores",
                 "✉️ Invitar Directamente",
             ])
 
-            # ── 1. SOLICITUDES PENDIENTES ─────────────────────────────────────
-            with tab_solicitudes:
-                st.markdown("##### Solicitudes de Auto-Registro Corporativo")
-                ok_sol, sol_list = auth_manager.listar_solicitudes_pendientes(_acc_token)
-                if not ok_sol:
-                    st.error(f"Error cargando solicitudes: {sol_list}")
-                elif not sol_list:
-                    st.info("ℹ️ No hay solicitudes de registro pendientes de aprobación.")
-                else:
-                    st.caption(f"Hay **{len(sol_list)}** solicitud(es) pendiente(s) de revisión:")
-                    for sol in sol_list:
-                        s_id = sol["id"]
-                        s_nom = sol.get("nombre", "Sin Nombre")
-                        s_cor = sol.get("correo", "")
-                        s_car = sol.get("cargo") or "Sin cargo especificado"
-                        s_tel = sol.get("telefono") or "Sin teléfono"
-                        s_fec = (sol.get("created_at") or "")[:10]
-
-                        st.markdown(f"""
-                            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid #F59E0B; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.6rem;">
-                                <div style="display: flex; justify-content: space-between; align-items: center;">
-                                    <strong>👤 {s_nom}</strong>
-                                    <span style="font-size: 0.78rem; background: #FEF3C7; color: #92400E; padding: 0.15rem 0.5rem; border-radius: 9999px; font-weight: 600;">⏳ Pendiente</span>
-                                </div>
-                                <div style="font-size: 0.84rem; color: #475569; margin-top: 0.25rem;">
-                                    ✉️ <code>{s_cor}</code> | 💼 {s_car} | 📞 {s_tel} | 📅 Solicitud: {s_fec}
-                                </div>
-                            </div>
-                        """, unsafe_allow_html=True)
-
-                        c_btn_ap, c_btn_rec, _ = st.columns([1.5, 1.5, 3])
-                        with c_btn_ap:
-                            if st.button("✅ Aprobar Acceso", key=f"btn_aprobar_{s_id}", type="primary", use_container_width=True):
-                                with st.spinner(f"Aprobando a {s_nom}..."):
-                                    ok_ap, msg_ap = auth_manager.aprobar_solicitud_registro(s_id, _acc_token)
-                                if ok_ap:
-                                    st.success(f"✅ {msg_ap}")
-                                    _safe_rerun()
-                                else:
-                                    st.error(f"❌ {msg_ap}")
-                        with c_btn_rec:
-                            if st.button("❌ Rechazar", key=f"btn_rechazar_{s_id}", use_container_width=True):
-                                with st.spinner(f"Rechazando a {s_nom}..."):
-                                    ok_rec, msg_rec = auth_manager.rechazar_solicitud_registro(s_id, _acc_token)
-                                if ok_rec:
-                                    st.warning(f"🚫 {msg_rec}")
-                                    _safe_rerun()
-                                else:
-                                    st.error(f"❌ {msg_rec}")
-                        st.markdown("---")
-
-            # ── 2. DIRECTORIO DE COLABORADORES ────────────────────────────────
+            # ── 1. DIRECTORIO DE COLABORADORES ────────────────────────────────
             with tab_directorio:
                 st.markdown("##### Directorio de Cuentas y Control de Acceso")
                 usuarios_bd = profile_manager.listar_usuarios()

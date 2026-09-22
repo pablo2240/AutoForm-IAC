@@ -1004,7 +1004,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
         mock_admin.auth.admin.create_user.return_value = mock_admin_res
 
         with patch("core.database.usar_supabase", return_value=True), \
-             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin), \
+             patch("core.database.guardar_operador_db") as mock_guardar_op:
             ok, msg = auth_manager.registrar_solicitud_corporativa(
                 nombre="Carlos Mendoza",
                 correo="carlos.mendoza@iaclatam.com",
@@ -1012,25 +1013,29 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 cargo="Comercial Junior",
             )
             self.assertTrue(ok)
-            self.assertIn("pendiente de aprobación", msg.lower())
+            self.assertIn("activa", msg.lower())
 
-            # Verificar app_metadata fija en servidor
+            # Verificar app_metadata fija en servidor como comercial aprobado
             call_create = mock_admin.auth.admin.create_user.call_args[0][0]
             self.assertEqual(call_create["email"], "carlos.mendoza@iaclatam.com")
             self.assertEqual(call_create["app_metadata"]["es_admin"], False)
             self.assertEqual(call_create["app_metadata"]["role"], "comercial")
-            self.assertEqual(call_create["app_metadata"]["estado"], "pendiente")
+            self.assertEqual(call_create["app_metadata"]["estado"], "aprobado")
 
-            # Verificar perfiles_usuario upsert forzado
+            # Verificar perfiles_usuario upsert forzado como activo y aprobado
             mock_admin.table.assert_any_call("perfiles_usuario")
             call_upsert = mock_admin.table().upsert.call_args[0][0]
             self.assertEqual(call_upsert["id"], "nuevo-user-uuid-789")
-            self.assertEqual(call_upsert["activo"], False)
-            self.assertEqual(call_upsert["estado_aprobacion"], "pendiente")
+            self.assertEqual(call_upsert["activo"], True)
+            self.assertEqual(call_upsert["estado_aprobacion"], "aprobado")
             self.assertEqual(call_upsert["es_admin"], False)
 
+            # Verificar sincronización inmediata con catálogo de operadores
+            mock_guardar_op.assert_called_once()
+            self.assertEqual(mock_guardar_op.call_args[1]["nombre"], "Carlos Mendoza")
+
     def test_53b_auto_registro_recupera_usuario_huerfano_auth_users(self):
-        """Verifica que si create_user falla por usuario preexistente en auth.users sin perfil, se recupere y complete."""
+        """Verifica que si create_user falla por usuario preexistente en auth.users sin perfil, se recupere y active de inmediato."""
         mock_admin = MagicMock()
         # No existe en perfiles_usuario
         mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
@@ -1041,7 +1046,8 @@ class TestSecurityRemediationSuite(unittest.TestCase):
         mock_admin.auth.admin.list_users.return_value = [mock_huerfano]
 
         with patch("core.database.usar_supabase", return_value=True), \
-             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin), \
+             patch("core.database.guardar_operador_db"):
             ok, msg = auth_manager.registrar_solicitud_corporativa(
                 nombre="Pedro Gómez",
                 correo="pedro.gomez@iaclatam.com",
@@ -1049,16 +1055,16 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 cargo="Comercial",
             )
             self.assertTrue(ok)
-            self.assertIn("pendiente de aprobación", msg.lower())
+            self.assertIn("activa", msg.lower())
             mock_admin.auth.admin.update_user_by_id.assert_called_once()
             call_upsert = mock_admin.table().upsert.call_args[0][0]
             self.assertEqual(call_upsert["id"], "user-huerfano-456")
             self.assertEqual(call_upsert["correo"], "pedro.gomez@iaclatam.com")
-            self.assertEqual(call_upsert["estado_aprobacion"], "pendiente")
-            self.assertEqual(call_upsert["activo"], False)
+            self.assertEqual(call_upsert["estado_aprobacion"], "aprobado")
+            self.assertEqual(call_upsert["activo"], True)
 
-    def test_54_login_bloqueado_si_cuenta_pendiente_o_inactiva(self):
-        """Verifica que iniciar_sesion bloquee usuarios con estado pendiente, rechazado o inactivo."""
+    def test_54_login_bloqueado_si_cuenta_inactiva_o_rechazada(self):
+        """Verifica que iniciar_sesion bloquee cuentas inactivas o rechazadas y permita acceso directo a cuentas activas."""
         mock_pub = MagicMock()
         mock_auth_res = MagicMock()
         mock_auth_res.session = MagicMock(access_token="tok_test", refresh_token="ref_test", expires_at=1900000000)
@@ -1071,27 +1077,26 @@ class TestSecurityRemediationSuite(unittest.TestCase):
              patch("core.database.obtener_cliente_publico", return_value=mock_pub), \
              patch("core.database.obtener_cliente_usuario", return_value=mock_user_client):
 
-            # Caso 1: estado_aprobacion = 'pendiente'
-            perfil_pendiente = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "pendiente"}
-            with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_pendiente):
-                ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
-                self.assertFalse(ok)
-                self.assertIn("pendiente de aprobación", msg.lower())
-                mock_user_client.auth.sign_out.assert_called()
-
-            # Caso 2: estado_aprobacion = 'rechazado'
+            # Caso 1: estado_aprobacion = 'rechazado'
             perfil_rechazado = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "rechazado"}
             with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_rechazado):
                 ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
                 self.assertFalse(ok)
                 self.assertIn("fue rechazada", msg.lower())
 
-            # Caso 3: estado_aprobacion = 'aprobado' pero activo = False
+            # Caso 2: cuenta inactiva (activo = False)
             perfil_inactivo = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "aprobado"}
             with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_inactivo):
                 ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
                 self.assertFalse(ok)
                 self.assertIn("se encuentra inactiva", msg.lower())
+
+            # Caso 3: cuenta activa y aprobada tras registro -> acceso directo permitido
+            perfil_activo = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": True, "estado_aprobacion": "aprobado"}
+            with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_activo):
+                ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
+                self.assertTrue(ok)
+                self.assertIn("bienvenido", msg.lower())
 
     def test_55_admin_aprueba_solicitud_y_sincroniza_operador(self):
         """Verifica que aprobar_solicitud_registro active la cuenta, actualice app_metadata y guarde el operador."""

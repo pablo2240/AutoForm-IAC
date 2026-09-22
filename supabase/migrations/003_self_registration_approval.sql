@@ -16,9 +16,9 @@ ALTER TABLE public.perfiles_usuario
 ADD CONSTRAINT check_estado_aprobacion 
 CHECK (estado_aprobacion IN ('pendiente', 'aprobado', 'rechazado'));
 
--- 3. Modificar valor por defecto de 'activo' a false para nuevos registros
+-- 3. Modificar valor por defecto de 'activo' a true para nuevos registros
 ALTER TABLE public.perfiles_usuario 
-ALTER COLUMN activo SET DEFAULT false;
+ALTER COLUMN activo SET DEFAULT true;
 
 -- 4. Índice para optimizar consultas de solicitudes pendientes y directorio
 CREATE INDEX IF NOT EXISTS idx_perfiles_usuario_estado
