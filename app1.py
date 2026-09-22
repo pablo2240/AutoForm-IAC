@@ -493,12 +493,16 @@ if not st.session_state.get("usuario_activo"):
 
         with tab_register:
             st.markdown("##### Solicitud de Registro Corporativo")
-            st.caption("Exclusivo para colaboradores. Toda cuenta nueva requiere aprobación administrativa previa.")
+            st.caption("Exclusivo para colaboradores de IAC Latam. Diligencia tus datos para acceder directamente a la plataforma.")
             with st.form("gate_register_form", clear_on_submit=False):
                 reg_nombre = st.text_input("Nombre Completo *", placeholder="Ej: Carlos Mendoza", key="gate_reg_nombre")
                 reg_correo = st.text_input("Correo Corporativo *", key="gate_reg_correo")
                 reg_cargo = st.text_input("Cargo / Rol Funcional", placeholder="Ej: Especialista Comercial", key="gate_reg_cargo")
-                reg_tel = st.text_input("Teléfono / Celular Corporativo", placeholder="Ej: 3001234567", key="gate_reg_tel")
+                col_reg_tel, col_reg_ciu = st.columns(2)
+                with col_reg_tel:
+                    reg_tel = st.text_input("Teléfono / Celular Corporativo", placeholder="Ej: 3001234567", key="gate_reg_tel")
+                with col_reg_ciu:
+                    reg_ciudad = st.text_input("Ciudad", placeholder="Ej: Bogotá", key="gate_reg_ciudad")
                 col_p1, col_p2 = st.columns(2)
                 with col_p1:
                     reg_pwd = st.text_input("Contraseña * (mínimo 8 caracteres)", type="password", key="gate_reg_pwd")
@@ -513,6 +517,7 @@ if not st.session_state.get("usuario_activo"):
                 pc_val = str(reg_pwd_conf or "")
                 cg_val = str(reg_cargo or "").strip()
                 t_val = str(reg_tel or "").strip()
+                ci_val = str(reg_ciudad or "").strip() or "Bogotá"
 
                 if not n_val or not c_val or not p_val:
                     st.warning("Completa los campos obligatorios (*).")
@@ -530,6 +535,7 @@ if not st.session_state.get("usuario_activo"):
                             password=p_val,
                             cargo=cg_val,
                             telefono=t_val,
+                            ciudad=ci_val,
                         )
                     if ok_reg:
                         # Auto-login directo e inmediato
