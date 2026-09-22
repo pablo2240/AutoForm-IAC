@@ -466,7 +466,7 @@ if not st.session_state.get("usuario_activo"):
             </div>
         """, unsafe_allow_html=True)
 
-        tab_login, tab_recovery, tab_info = st.tabs(["🔑 Iniciar Sesión", "🔄 Recuperar Contraseña", "ℹ️ Registro e Invitaciones"])
+        tab_login, tab_register, tab_recovery = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse", "🔄 Recuperar Contraseña"])
 
         with tab_login:
             st.markdown("##### Ingreso con Credenciales Corporativas")
@@ -479,15 +479,63 @@ if not st.session_state.get("usuario_activo"):
                 correo_val = str(login_correo or st.session_state.get("gate_login_correo") or "").strip()
                 pwd_val = str(login_pwd or st.session_state.get("gate_login_pwd") or "")
                 if correo_val and pwd_val:
-                    user_auth = profile_manager.autenticar_usuario(correo_val, pwd_val)
-                    if user_auth:
+                    ok_login, user_auth, tokens, msg_login = auth_manager.iniciar_sesion(correo_val, pwd_val)
+                    if ok_login and user_auth:
                         st.session_state["usuario_activo"] = user_auth
-                        st.success(f"✅ ¡Bienvenido, {user_auth['nombre']}!")
+                        if tokens:
+                            st.session_state["supabase_session"] = tokens
+                        st.success(f"✅ {msg_login}")
                         _safe_rerun()
                     else:
-                        st.error("Credenciales incorrectas o usuario no autorizado.")
+                        st.error(msg_login or "Credenciales incorrectas o usuario no autorizado.")
                 else:
                     st.warning("Ingresa tu correo y contraseña.")
+
+        with tab_register:
+            st.markdown("##### Solicitud de Registro Corporativo")
+            st.caption("Exclusivo para colaboradores (@iaclatam.com o @iac.com.co). Toda cuenta nueva requiere aprobación administrativa previa.")
+            with st.form("gate_register_form", clear_on_submit=False):
+                reg_nombre = st.text_input("Nombre Completo *", placeholder="Ej: Carlos Mendoza", key="gate_reg_nombre")
+                reg_correo = st.text_input("Correo Corporativo * (@iaclatam.com o @iac.com.co)", placeholder="carlos.mendoza@iaclatam.com", key="gate_reg_correo")
+                reg_cargo = st.text_input("Cargo / Rol Funcional", placeholder="Ej: Especialista Comercial", key="gate_reg_cargo")
+                reg_tel = st.text_input("Teléfono / Celular Corporativo", placeholder="Ej: 3001234567", key="gate_reg_tel")
+                col_p1, col_p2 = st.columns(2)
+                with col_p1:
+                    reg_pwd = st.text_input("Contraseña * (mínimo 8 caracteres)", type="password", key="gate_reg_pwd")
+                with col_p2:
+                    reg_pwd_conf = st.text_input("Confirmar Contraseña *", type="password", key="gate_reg_pwd_conf")
+                btn_reg = st.form_submit_button("Enviar Solicitud de Registro", type="primary", use_container_width=True)
+
+            if btn_reg:
+                n_val = str(reg_nombre or "").strip()
+                c_val = str(reg_correo or "").strip().lower()
+                p_val = str(reg_pwd or "")
+                pc_val = str(reg_pwd_conf or "")
+                cg_val = str(reg_cargo or "").strip()
+                t_val = str(reg_tel or "").strip()
+
+                if not n_val or not c_val or not p_val:
+                    st.warning("Completa los campos obligatorios (*).")
+                elif not auth_manager.validar_dominio_corporativo(c_val):
+                    st.error("Acceso restringido: Solo se admiten correos corporativos @iaclatam.com o @iac.com.co.")
+                elif len(p_val) < 8:
+                    st.error("La contraseña debe tener al menos 8 caracteres.")
+                elif p_val != pc_val:
+                    st.error("Las contraseñas no coinciden.")
+                else:
+                    with st.spinner("Registrando solicitud corporativa..."):
+                        ok_reg, msg_reg = auth_manager.registrar_solicitud_corporativa(
+                            nombre=n_val,
+                            correo=c_val,
+                            password=p_val,
+                            cargo=cg_val,
+                            telefono=t_val,
+                        )
+                    if ok_reg:
+                        st.success(f"✅ {msg_reg}")
+                        st.info("ℹ️ Tu cuenta ha sido registrada y está en espera de revisión. Una vez el administrador apruebe tu solicitud, podrás ingresar a la plataforma.")
+                    else:
+                        st.error(f"❌ {msg_reg}")
 
         with tab_recovery:
             st.markdown("##### Restablecimiento de Credenciales Corporativas")
@@ -513,18 +561,6 @@ if not st.session_state.get("usuario_activo"):
                         st.success(f"📩 {msg_rec}")
                     else:
                         st.error(f"❌ {msg_rec}")
-
-        with tab_info:
-            st.markdown("##### Acceso y Asignación de Cuentas")
-            st.markdown("""
-                <div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 8px; padding: 1.2rem; color: #334155; font-size: 0.9rem; line-height: 1.6;">
-                    <p style="margin-top: 0; font-weight: 600; color: #0F172A;">🔒 Registro corporativo restringido (ADR-0010)</p>
-                    <p>Por políticas de seguridad corporativa y control de acceso de <strong>IAC Latam</strong>, no existe auto-registro público abierto.</p>
-                    <p>La creación de cuentas se realiza <strong>exclusivamente mediante invitación administrativa oficial</strong> gestionada por los administradores del sistema.</p>
-                    <p><strong>Administrador responsable:</strong> <code>guillermo.canon@iaclatam.com</code>.</p>
-                    <p style="margin-bottom: 0; font-size: 0.8rem; color: #64748B;">Si eres colaborador y aún no cuentas con credenciales, solicita tu vinculación formal al administrador.</p>
-                </div>
-            """, unsafe_allow_html=True)
 
     st.stop()
 
@@ -1202,45 +1238,198 @@ with st.sidebar:
                     else:
                         st.error("❌ El archivo JSON no tiene un formato válido.")
 
-        with st.expander("👥 Gestión e Invitación de Usuarios (Supabase Auth)", expanded=False):
-            st.caption("Invita formalmente a nuevos colaboradores de IAC Latam para que configuren su acceso:")
-            with st.form("form_invitar_usuario", clear_on_submit=True):
-                col_inv1, col_inv2 = st.columns(2)
-                with col_inv1:
-                    inv_nom = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez")
-                    inv_cor = st.text_input("Correo Corporativo (@iaclatam.com o @iac.com.co)*", placeholder="diana.gomez@iaclatam.com")
-                    inv_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones")
-                with col_inv2:
-                    inv_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567")
-                    inv_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050")
-                    inv_es_admin = st.checkbox("Asignar rol de Administrador", value=False)
+        with st.expander("👥 Administración de Usuarios y Solicitudes de Registro", expanded=False):
+            st.caption("Gestiona las solicitudes de acceso corporativo, roles y estado de los colaboradores:")
+            _ses_actual = st.session_state.get("supabase_session", {})
+            _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
 
-                btn_enviar_inv = st.form_submit_button("✉️ Enviar Invitación Oficial", type="primary", use_container_width=True)
+            tab_solicitudes, tab_directorio, tab_invitar = st.tabs([
+                "📋 Solicitudes Pendientes",
+                "👥 Directorio de Colaboradores",
+                "✉️ Invitar Directamente",
+            ])
 
-            if btn_enviar_inv:
-                if not inv_nom.strip() or not inv_cor.strip():
-                    st.error("El nombre completo y correo corporativo son obligatorios.")
-                elif not auth_manager.validar_dominio_corporativo(inv_cor.strip()):
-                    st.error("Acceso denegado: El correo debe pertenecer a @iaclatam.com o @iac.com.co (ADR-0010).")
+            # ── 1. SOLICITUDES PENDIENTES ─────────────────────────────────────
+            with tab_solicitudes:
+                st.markdown("##### Solicitudes de Auto-Registro Corporativo")
+                ok_sol, sol_list = auth_manager.listar_solicitudes_pendientes(_acc_token)
+                if not ok_sol:
+                    st.error(f"Error cargando solicitudes: {sol_list}")
+                elif not sol_list:
+                    st.info("ℹ️ No hay solicitudes de registro pendientes de aprobación.")
                 else:
-                    # Hardening-01: Se pasa el access_token real del solicitante.
-                    # La verificación de admin se realiza contra public.perfiles_usuario
-                    # usando el JWT, no desde st.session_state["usuario_activo"]["es_admin"].
-                    _ses_actual = st.session_state.get("supabase_session", {})
-                    _acc_token = _ses_actual.get("access_token", "") if isinstance(_ses_actual, dict) else ""
-                    ok_inv, msg_inv = auth_manager.invitar_usuario_corporativo(
-                        correo=inv_cor.strip(),
-                        nombre=inv_nom.strip(),
-                        cargo=inv_car.strip(),
-                        cedula=inv_ced.strip(),
-                        telefono=inv_tel.strip(),
-                        es_admin=inv_es_admin,
-                        access_token_solicitante=_acc_token,
-                    )
-                    if ok_inv:
-                        st.success(f"✅ {msg_inv}")
+                    st.caption(f"Hay **{len(sol_list)}** solicitud(es) pendiente(s) de revisión:")
+                    for sol in sol_list:
+                        s_id = sol["id"]
+                        s_nom = sol.get("nombre", "Sin Nombre")
+                        s_cor = sol.get("correo", "")
+                        s_car = sol.get("cargo") or "Sin cargo especificado"
+                        s_tel = sol.get("telefono") or "Sin teléfono"
+                        s_fec = (sol.get("created_at") or "")[:10]
+
+                        st.markdown(f"""
+                            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid #F59E0B; border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 0.6rem;">
+                                <div style="display: flex; justify-content: space-between; align-items: center;">
+                                    <strong>👤 {s_nom}</strong>
+                                    <span style="font-size: 0.78rem; background: #FEF3C7; color: #92400E; padding: 0.15rem 0.5rem; border-radius: 9999px; font-weight: 600;">⏳ Pendiente</span>
+                                </div>
+                                <div style="font-size: 0.84rem; color: #475569; margin-top: 0.25rem;">
+                                    ✉️ <code>{s_cor}</code> | 💼 {s_car} | 📞 {s_tel} | 📅 Solicitud: {s_fec}
+                                </div>
+                            </div>
+                        """, unsafe_allow_html=True)
+
+                        c_btn_ap, c_btn_rec, _ = st.columns([1.5, 1.5, 3])
+                        with c_btn_ap:
+                            if st.button("✅ Aprobar Acceso", key=f"btn_aprobar_{s_id}", type="primary", use_container_width=True):
+                                with st.spinner(f"Aprobando a {s_nom}..."):
+                                    ok_ap, msg_ap = auth_manager.aprobar_solicitud_registro(s_id, _acc_token)
+                                if ok_ap:
+                                    st.success(f"✅ {msg_ap}")
+                                    _safe_rerun()
+                                else:
+                                    st.error(f"❌ {msg_ap}")
+                        with c_btn_rec:
+                            if st.button("❌ Rechazar", key=f"btn_rechazar_{s_id}", use_container_width=True):
+                                with st.spinner(f"Rechazando a {s_nom}..."):
+                                    ok_rec, msg_rec = auth_manager.rechazar_solicitud_registro(s_id, _acc_token)
+                                if ok_rec:
+                                    st.warning(f"🚫 {msg_rec}")
+                                    _safe_rerun()
+                                else:
+                                    st.error(f"❌ {msg_rec}")
+                        st.markdown("---")
+
+            # ── 2. DIRECTORIO DE COLABORADORES ────────────────────────────────
+            with tab_directorio:
+                st.markdown("##### Directorio de Cuentas y Control de Acceso")
+                usuarios_bd = profile_manager.listar_usuarios()
+                if not usuarios_bd:
+                    st.info("No hay usuarios registrados en el sistema.")
+                else:
+                    for usr in usuarios_bd:
+                        u_id = usr["id"]
+                        u_nom = usr.get("nombre", "")
+                        u_cor = usr.get("correo", "")
+                        u_car = usr.get("cargo") or "Sin cargo"
+                        u_admin = bool(usr.get("es_admin", False))
+                        u_activo = bool(usr.get("activo", False))
+                        u_est = str(usr.get("estado_aprobacion") or "aprobado").lower()
+
+                        badge_estado = '<span style="background: #DCFCE7; color: #166534; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🟢 Activo</span>' if u_activo else '<span style="background: #FEE2E2; color: #991B1B; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🔴 Inactivo</span>'
+                        if u_est == "pendiente":
+                            badge_estado = '<span style="background: #FEF3C7; color: #92400E; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">⏳ Pendiente</span>'
+                        elif u_est == "rechazado":
+                            badge_estado = '<span style="background: #F1F5F9; color: #475569; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🚫 Rechazado</span>'
+
+                        badge_rol = "🛡️ Administrador" if u_admin else "💼 Comercial"
+                        color_rol = "#1E3A8A" if u_admin else "#059669"
+
+                        with st.container():
+                            st.markdown(f"""
+                                <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.5rem;">
+                                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                                        <div>
+                                            <strong>{u_nom}</strong> &nbsp;
+                                            <span style="font-size: 0.8rem; color: {color_rol}; font-weight: 700;">[{badge_rol}]</span>
+                                            <br>
+                                            <span style="font-size: 0.82rem; color: #64748B;"><code>{u_cor}</code> | {u_car}</span>
+                                        </div>
+                                        <div>
+                                            {badge_estado}
+                                        </div>
+                                    </div>
+                                </div>
+                            """, unsafe_allow_html=True)
+
+                            col_act1, col_act2, col_act3 = st.columns([1.6, 2.2, 2.2])
+
+                            # Toggle Activo/Inactivo
+                            with col_act1:
+                                if u_activo:
+                                    if st.button("⏸️ Desactivar", key=f"btn_toggle_desact_{u_id}", use_container_width=True):
+                                        ok_t, msg_t = auth_manager.conmutar_estado_activo_usuario(u_id, False, _acc_token)
+                                        if ok_t:
+                                            st.warning(f"⚠️ {msg_t}")
+                                            _safe_rerun()
+                                        else:
+                                            st.error(f"❌ {msg_t}")
+                                else:
+                                    if st.button("▶️ Activar", key=f"btn_toggle_act_{u_id}", use_container_width=True):
+                                        ok_t, msg_t = auth_manager.conmutar_estado_activo_usuario(u_id, True, _acc_token)
+                                        if ok_t:
+                                            st.success(f"✅ {msg_t}")
+                                            _safe_rerun()
+                                        else:
+                                            st.error(f"❌ {msg_t}")
+
+                            # Conmutar Rol (comercial <-> administrador)
+                            with col_act2:
+                                rol_actual_idx = 1 if u_admin else 0
+                                rol_seleccionado = st.selectbox(
+                                    "Rol",
+                                    options=["comercial", "administrador"],
+                                    index=rol_actual_idx,
+                                    key=f"sel_rol_{u_id}",
+                                    label_visibility="collapsed",
+                                )
+                                if (rol_seleccionado == "administrador") != u_admin:
+                                    if st.button("💾 Guardar Rol", key=f"btn_save_rol_{u_id}", use_container_width=True):
+                                        ok_r, msg_r = auth_manager.cambiar_rol_usuario(u_id, rol_seleccionado, _acc_token)
+                                        if ok_r:
+                                            st.success(f"✅ {msg_r}")
+                                            _safe_rerun()
+                                        else:
+                                            st.error(f"❌ {msg_r}")
+
+                            # Reenviar Enlace de Recuperación
+                            with col_act3:
+                                if st.button("🔑 Enviar Recuperación", key=f"btn_recup_adm_{u_id}", use_container_width=True):
+                                    with st.spinner(f"Enviando enlace a {u_cor}..."):
+                                        ok_rc, msg_rc = auth_manager.reenviar_recuperacion_admin(u_cor, access_token_solicitante=_acc_token)
+                                    if ok_rc:
+                                        st.success(f"📩 {msg_rc}")
+                                    else:
+                                        st.error(f"❌ {msg_rc}")
+
+                            st.markdown("<div style='height: 8px;'></div>", unsafe_allow_html=True)
+
+            # ── 3. INVITACIÓN DIRECTA ─────────────────────────────────────────
+            with tab_invitar:
+                st.markdown("##### Invitar Directamente a un Colaborador")
+                st.caption("Crea y despacha una invitación directa a un correo oficial de IAC Latam:")
+                with st.form("form_invitar_usuario", clear_on_submit=True):
+                    col_inv1, col_inv2 = st.columns(2)
+                    with col_inv1:
+                        inv_nom = st.text_input("Nombre Completo*", placeholder="Ej: Diana Gómez")
+                        inv_cor = st.text_input("Correo Corporativo (@iaclatam.com o @iac.com.co)*", placeholder="diana.gomez@iaclatam.com")
+                        inv_car = st.text_input("Cargo / Rol", placeholder="Ej: Consultora de Aplicaciones")
+                    with col_inv2:
+                        inv_tel = st.text_input("Teléfono / Celular", placeholder="Ej: 3101234567")
+                        inv_ced = st.text_input("Cédula / Documento", placeholder="Ej: 1020304050")
+                        inv_es_admin = st.checkbox("Asignar rol de Administrador", value=False)
+
+                    btn_enviar_inv = st.form_submit_button("✉️ Enviar Invitación Oficial", type="primary", use_container_width=True)
+
+                if btn_enviar_inv:
+                    if not inv_nom.strip() or not inv_cor.strip():
+                        st.error("El nombre completo y correo corporativo son obligatorios.")
+                    elif not auth_manager.validar_dominio_corporativo(inv_cor.strip()):
+                        st.error("Acceso denegado: El correo debe pertenecer a @iaclatam.com o @iac.com.co (ADR-0010).")
                     else:
-                        st.error(f"❌ {msg_inv}")
+                        ok_inv, msg_inv = auth_manager.invitar_usuario_corporativo(
+                            correo=inv_cor.strip(),
+                            nombre=inv_nom.strip(),
+                            cargo=inv_car.strip(),
+                            cedula=inv_ced.strip(),
+                            telefono=inv_tel.strip(),
+                            es_admin=inv_es_admin,
+                            access_token_solicitante=_acc_token,
+                        )
+                        if ok_inv:
+                            st.success(f"✅ {msg_inv}")
+                        else:
+                            st.error(f"❌ {msg_inv}")
 
 
 # ── COMPONENTES HTML REUTILIZABLES ──────────────────────────────────────────

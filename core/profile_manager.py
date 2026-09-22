@@ -742,3 +742,102 @@ def puede_editar_empresa(usuario: Optional[Dict[str, Any]]) -> bool:
     return bool(usuario.get("es_admin", False))
 
 
+def registrar_solicitud_corporativa(
+    nombre: str,
+    correo: str,
+    password: str,
+    cargo: str = "",
+    telefono: str = "",
+    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
+    ciudad: str = "Bogotá",
+) -> Tuple[bool, str]:
+    """Registra una solicitud de registro corporativo con aprobación administrativa."""
+    from core import auth_manager
+    return auth_manager.registrar_solicitud_corporativa(
+        nombre=nombre,
+        correo=correo,
+        password=password,
+        cargo=cargo,
+        telefono=telefono,
+        direccion=direccion,
+        ciudad=ciudad,
+    )
+
+
+def aprobar_solicitud_registro(
+    usuario_id: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Aprueba una solicitud de registro pendiente."""
+    from core import auth_manager
+    return auth_manager.aprobar_solicitud_registro(
+        usuario_id=usuario_id,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+def rechazar_solicitud_registro(
+    usuario_id: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Rechaza una solicitud de registro pendiente."""
+    from core import auth_manager
+    return auth_manager.rechazar_solicitud_registro(
+        usuario_id=usuario_id,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+def conmutar_estado_activo_usuario(
+    usuario_id: str,
+    nuevo_activo: bool,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Activa o desactiva un usuario aprobado."""
+    from core import auth_manager
+    return auth_manager.conmutar_estado_activo_usuario(
+        usuario_id=usuario_id,
+        nuevo_activo=nuevo_activo,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+def cambiar_rol_usuario(
+    usuario_id: str,
+    nuevo_rol: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Cambia el rol de un usuario entre 'comercial' y 'administrador'."""
+    from core import auth_manager
+    return auth_manager.cambiar_rol_usuario(
+        usuario_id=usuario_id,
+        nuevo_rol=nuevo_rol,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+def reenviar_recuperacion_admin(
+    correo_destino: str,
+    redirect_url: str = "",
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Reenvía enlace de recuperación solicitado por un administrador."""
+    from core import auth_manager
+    return auth_manager.reenviar_recuperacion_admin(
+        correo_destino=correo_destino,
+        redirect_url=redirect_url,
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+def listar_solicitudes_pendientes(
+    access_token_solicitante: str = "",
+) -> Tuple[bool, Union[List[Dict[str, Any]], str]]:
+    """Lista las solicitudes pendientes de aprobación."""
+    from core import auth_manager
+    return auth_manager.listar_solicitudes_pendientes(
+        access_token_solicitante=access_token_solicitante,
+    )
+
+
+

@@ -909,9 +909,9 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 database.validar_identidad_despliegue(client=mock_client, entorno_esperado="staging")
             self.assertIn("AutoForm PDF", str(ctx.exception))
 
-    def test_50_cero_llamados_a_sign_up_y_cero_auto_registro(self):
-        """Verifica que no exista ningún llamado a sign_up ni flujo de auto-registro en el código."""
-        # 1. Verificar que auth_manager no expone registrar_usuario_corporativo
+    def test_50_cero_llamados_a_sign_up_y_cero_auto_registro_inseguro(self):
+        """Verifica que no exista ningún llamado a sign_up ni funciones de auto-registro inseguras."""
+        # 1. Verificar que auth_manager no expone la antigua función insegura registrar_usuario_corporativo
         self.assertFalse(hasattr(auth_manager, "registrar_usuario_corporativo"))
 
         # 2. Verificar que profile_manager no expone registrar_usuario_corporativo
@@ -932,12 +932,12 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 # No debe existir la función registrar_usuario_corporativo
                 self.assertNotIn("registrar_usuario_corporativo", contenido, f"Se encontró 'registrar_usuario_corporativo' en {ruta.name}")
 
-        # 4. Verificar que app1.py no contenga la pestaña "Registrarse"
+        # 4. Verificar que app1.py contenga el formulario controlado de solicitud corporativa
         with open(PROJECT_ROOT / "app1.py", "r", encoding="utf-8") as f:
             contenido_app = f.read()
-            self.assertNotIn("📝 Registrarse", contenido_app)
-            self.assertNotIn("gate_register_form", contenido_app)
-            self.assertIn("🔄 Recuperar Contraseña", contenido_app)
+            self.assertIn("📝 Registrarse", contenido_app)
+            self.assertIn("gate_register_form", contenido_app)
+            self.assertIn("registrar_solicitud_corporativa", contenido_app)
 
     def test_51_recuperacion_password_valida_dominio_corporativo(self):
         """Verifica que solicitar_recuperacion_password valide el dominio y llame a reset_password_for_email."""
@@ -975,6 +975,233 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
                     auth_manager.solicitar_recuperacion_password("antonio.prieto@iaclatam.com")
                 self.assertIn("PDF prohibido", str(ctx.exception))
+
+    def test_53_auto_registro_nace_inactivo_pendiente_y_comercial(self):
+        """Verifica que registrar_solicitud_corporativa obligue dominio y asigne inactivo/pendiente/comercial."""
+        # 1. Dominio no corporativo rechazado
+        ok, msg = auth_manager.registrar_solicitud_corporativa(
+            nombre="Intruso",
+            correo="intruso@gmail.com",
+            password="PasswordSeguro123!",
+        )
+        self.assertFalse(ok)
+        self.assertIn("correo corporativo", msg.lower())
+
+        # 2. Contraseña menor a 8 caracteres rechazada
+        ok, msg = auth_manager.registrar_solicitud_corporativa(
+            nombre="Carlos",
+            correo="carlos@iaclatam.com",
+            password="123",
+        )
+        self.assertFalse(ok)
+        self.assertIn("8 caracteres", msg.lower())
+
+        # 3. Solicitud válida en Supabase
+        mock_admin = MagicMock()
+        mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[])
+        mock_admin_res = MagicMock()
+        mock_admin_res.user = MagicMock(id="nuevo-user-uuid-789")
+        mock_admin.auth.admin.create_user.return_value = mock_admin_res
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+            ok, msg = auth_manager.registrar_solicitud_corporativa(
+                nombre="Carlos Mendoza",
+                correo="carlos.mendoza@iaclatam.com",
+                password="PasswordSeguro123!",
+                cargo="Comercial Junior",
+            )
+            self.assertTrue(ok)
+            self.assertIn("pendiente de aprobación", msg.lower())
+
+            # Verificar app_metadata fija en servidor
+            call_create = mock_admin.auth.admin.create_user.call_args[0][0]
+            self.assertEqual(call_create["email"], "carlos.mendoza@iaclatam.com")
+            self.assertEqual(call_create["app_metadata"]["es_admin"], False)
+            self.assertEqual(call_create["app_metadata"]["role"], "comercial")
+            self.assertEqual(call_create["app_metadata"]["estado"], "pendiente")
+
+            # Verificar perfiles_usuario upsert forzado
+            mock_admin.table.assert_any_call("perfiles_usuario")
+            call_upsert = mock_admin.table().upsert.call_args[0][0]
+            self.assertEqual(call_upsert["id"], "nuevo-user-uuid-789")
+            self.assertEqual(call_upsert["activo"], False)
+            self.assertEqual(call_upsert["estado_aprobacion"], "pendiente")
+            self.assertEqual(call_upsert["es_admin"], False)
+
+    def test_54_login_bloqueado_si_cuenta_pendiente_o_inactiva(self):
+        """Verifica que iniciar_sesion bloquee usuarios con estado pendiente, rechazado o inactivo."""
+        mock_pub = MagicMock()
+        mock_auth_res = MagicMock()
+        mock_auth_res.session = MagicMock(access_token="tok_test", refresh_token="ref_test", expires_at=1900000000)
+        mock_auth_res.user = MagicMock(id="user-123")
+        mock_pub.auth.sign_in_with_password.return_value = mock_auth_res
+
+        mock_user_client = MagicMock()
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.database.obtener_cliente_publico", return_value=mock_pub), \
+             patch("core.database.obtener_cliente_usuario", return_value=mock_user_client):
+
+            # Caso 1: estado_aprobacion = 'pendiente'
+            perfil_pendiente = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "pendiente"}
+            with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_pendiente):
+                ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
+                self.assertFalse(ok)
+                self.assertIn("pendiente de aprobación", msg.lower())
+                mock_user_client.auth.sign_out.assert_called()
+
+            # Caso 2: estado_aprobacion = 'rechazado'
+            perfil_rechazado = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "rechazado"}
+            with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_rechazado):
+                ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
+                self.assertFalse(ok)
+                self.assertIn("fue rechazada", msg.lower())
+
+            # Caso 3: estado_aprobacion = 'aprobado' pero activo = False
+            perfil_inactivo = {"id": "user-123", "nombre": "Carlos", "correo": "carlos@iaclatam.com", "es_admin": False, "activo": False, "estado_aprobacion": "aprobado"}
+            with patch("core.database.obtener_usuario_por_correo_db", return_value=perfil_inactivo):
+                ok, usr, tok, msg = auth_manager.iniciar_sesion("carlos@iaclatam.com", "PasswordSeguro123!")
+                self.assertFalse(ok)
+                self.assertIn("se encuentra inactiva", msg.lower())
+
+    def test_55_admin_aprueba_solicitud_y_sincroniza_operador(self):
+        """Verifica que aprobar_solicitud_registro active la cuenta, actualice app_metadata y guarde el operador."""
+        # 1. Rechazado si solicitante no es admin
+        with patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(False, "No es admin", None)):
+            ok, msg = auth_manager.aprobar_solicitud_registro("target-uuid-1", access_token_solicitante="token_invalido")
+            self.assertFalse(ok)
+            self.assertIn("autorización rechazada", msg.lower())
+
+        # 2. Aprobación exitosa por admin
+        mock_admin = MagicMock()
+        perfil_existente = {
+            "id": "target-uuid-1",
+            "nombre": "Carlos Mendoza",
+            "correo": "carlos.mendoza@iaclatam.com",
+            "cargo": "Asesor Comercial",
+            "cedula": "12345",
+            "telefono": "300123",
+            "direccion": "Calle 100",
+            "ciudad": "Bogotá",
+        }
+        mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(data=[perfil_existente])
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin), \
+             patch("core.database.guardar_operador_db") as mock_guardar_op:
+
+            ok, msg = auth_manager.aprobar_solicitud_registro("target-uuid-1", access_token_solicitante="token_admin")
+            self.assertTrue(ok)
+            self.assertIn("aprobado y activado exitosamente", msg.lower())
+
+            # Verificar update de perfil a aprobado y activo
+            mock_admin.table().update.assert_called_with({
+                "estado_aprobacion": "aprobado",
+                "activo": True,
+                "es_admin": False,
+            })
+
+            # Verificar update de app_metadata
+            mock_admin.auth.admin.update_user_by_id.assert_called_with("target-uuid-1", {
+                "app_metadata": {
+                    "es_admin": False,
+                    "role": "comercial",
+                    "rol": "comercial",
+                    "estado": "aprobado",
+                }
+            })
+
+            # Verificar sincronización con operadores
+            mock_guardar_op.assert_called_once()
+            self.assertEqual(mock_guardar_op.call_args[1]["nombre"], "Carlos Mendoza")
+            self.assertEqual(mock_guardar_op.call_args[1]["correo"], "carlos.mendoza@iaclatam.com")
+
+    def test_56_admin_rechaza_solicitud(self):
+        """Verifica que rechazar_solicitud_registro fije estado_aprobacion=rechazado y activo=False."""
+        mock_admin = MagicMock()
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+
+            ok, msg = auth_manager.rechazar_solicitud_registro("target-uuid-2", access_token_solicitante="token_admin")
+            self.assertTrue(ok)
+            self.assertIn("rechazada exitosamente", msg.lower())
+
+            mock_admin.table().update.assert_called_with({
+                "estado_aprobacion": "rechazado",
+                "activo": False,
+            })
+            mock_admin.auth.admin.update_user_by_id.assert_called_with("target-uuid-2", {
+                "app_metadata": {"estado": "rechazado"}
+            })
+
+    def test_57_cambio_rol_estricto_y_proteccion_ultimo_admin(self):
+        """Verifica que cambiar_rol_usuario solo admita 'comercial'/'administrador' y proteja al último admin."""
+        # 1. Rol no permitido
+        ok, msg = auth_manager.cambiar_rol_usuario("uuid-1", "superadmin", access_token_solicitante="token")
+        self.assertFalse(ok)
+        self.assertIn("rol no permitido", msg.lower())
+
+        mock_admin = MagicMock()
+        mock_admin.table.return_value.select.return_value.eq.return_value.limit.return_value.execute.return_value = MagicMock(
+            data=[{"es_admin": True, "activo": True}]
+        )
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin):
+
+            # 2. Intentar degradar al único admin activo -> debe fallar
+            with patch("core.database.contar_administradores_activos_db", return_value=1):
+                ok, msg = auth_manager.cambiar_rol_usuario("target-uuid-3", "comercial", access_token_solicitante="token_admin")
+                self.assertFalse(ok)
+                self.assertIn("único administrador activo", msg.lower())
+
+            # 3. Degradar cuando hay más de un admin activo -> debe proceder
+            with patch("core.database.contar_administradores_activos_db", return_value=2):
+                ok, msg = auth_manager.cambiar_rol_usuario("target-uuid-3", "comercial", access_token_solicitante="token_admin")
+                self.assertTrue(ok)
+                mock_admin.table().update.assert_called_with({"es_admin": False})
+
+    def test_58_recuperacion_admin_con_proteccion_anti_pdf(self):
+        """Verifica que reenviar_recuperacion_admin valide JWT de admin y bloquee referencias a proyectos PDF."""
+        # 1. Solicitante no admin
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(False, "No es admin", None)):
+            ok, msg = auth_manager.reenviar_recuperacion_admin("carlos@iaclatam.com", access_token_solicitante="bad_token")
+            self.assertFalse(ok)
+            self.assertIn("autorización rechazada", msg.lower())
+
+        # 2. Bloqueo anti-PDF
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")):
+            with self.assertRaises(database.ConfiguracionInvalidaError) as ctx:
+                auth_manager.reenviar_recuperacion_admin(
+                    "carlos@iaclatam.com",
+                    redirect_url="https://tnhedxwbpqihlqbtzudt.supabase.co",
+                    access_token_solicitante="token_admin",
+                )
+            self.assertIn("PDF prohibido", str(ctx.exception))
+
+        # 3. Despacho exitoso con URL limpia
+        mock_pub = MagicMock()
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.auth_manager._verificar_solicitante_es_admin_activo", return_value=(True, "", "admin-uuid")), \
+             patch("core.database.obtener_cliente_publico", return_value=mock_pub):
+            ok, msg = auth_manager.reenviar_recuperacion_admin(
+                "carlos@iaclatam.com",
+                redirect_url="https://autoform-iac-excel.streamlit.app",
+                access_token_solicitante="token_admin",
+            )
+            self.assertTrue(ok)
+            self.assertIn("despachado por supabase", msg.lower())
+            mock_pub.auth.reset_password_for_email.assert_called_once_with(
+                "carlos@iaclatam.com",
+                options={"redirect_to": "https://autoform-iac-excel.streamlit.app"},
+            )
 
 
 if __name__ == "__main__":

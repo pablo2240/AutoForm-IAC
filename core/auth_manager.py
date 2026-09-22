@@ -13,11 +13,14 @@ Hardening-01 (Ronda Final):
 
 from __future__ import annotations
 
+import datetime as dt_module
+from datetime import datetime, timezone
 import hashlib
 import hmac
 import os
 import re
-from typing import Any, Dict, Optional, Set, Tuple
+import sqlite3
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 # Expresión regular canónica aprobada (ADR-0010 / Q6)
 DOMINIO_REGEX = re.compile(r"^[^@\s]+@(iaclatam\.com|iac\.com\.co)$", re.IGNORECASE)
@@ -123,15 +126,37 @@ def iniciar_sesion(
             usuario_perfil = database.obtener_usuario_por_correo_db(correo_limpio, client=client_auth)
 
             # REGLA DE SEGURIDAD ABSOLUTA (Auditoría A-01 / A-02):
-            # 1. El perfil DEBE existir en public.perfiles_usuario y tener activo = true.
+            # 1. El perfil DEBE existir en public.perfiles_usuario y tener activo = true y estado_aprobacion = 'aprobado'.
             # 2. JAMÁS leer es_admin desde user_metadata ni crear perfiles sintéticos con privilegios.
-            # 3. Si no existe o está inactivo, rechazar inmediatamente, revocar sesión y no entregar tokens.
-            if not usuario_perfil or not usuario_perfil.get("activo"):
+            # 3. Si no existe, está pendiente, rechazado o inactivo, rechazar inmediatamente, revocar sesión y no entregar tokens.
+            if not usuario_perfil:
                 try:
                     client_auth.auth.sign_out()
                 except Exception:
                     pass
-                return False, None, None, "Credenciales incorrectas o cuenta inactiva."
+                return False, None, None, "Credenciales incorrectas o cuenta no registrada."
+
+            estado_aprobacion = str(usuario_perfil.get("estado_aprobacion") or "aprobado").lower()
+            if estado_aprobacion == "pendiente":
+                try:
+                    client_auth.auth.sign_out()
+                except Exception:
+                    pass
+                return False, None, None, "Tu cuenta está pendiente de aprobación por el administrador corporativo."
+
+            if estado_aprobacion == "rechazado":
+                try:
+                    client_auth.auth.sign_out()
+                except Exception:
+                    pass
+                return False, None, None, "Tu solicitud de acceso fue rechazada. Contacta al administrador corporativo."
+
+            if not usuario_perfil.get("activo"):
+                try:
+                    client_auth.auth.sign_out()
+                except Exception:
+                    pass
+                return False, None, None, "Tu cuenta se encuentra inactiva. Contacta al administrador."
 
             # Garantizar que es_admin provenga estrictamente de la columna de BD perfiles_usuario
             usuario_perfil["es_admin"] = bool(usuario_perfil.get("es_admin", False))
@@ -149,9 +174,17 @@ def iniciar_sesion(
     # Modo SQLite (Desarrollo local)
     usuario = database.obtener_usuario_por_correo_db(correo_limpio)
     if not usuario:
-        return False, None, None, "Credenciales incorrectas o usuario no autorizado."
+        return False, None, None, "Credenciales incorrectas o usuario no registrado."
 
     if verificar_password(password, usuario.get("password_hash", "")):
+        estado_aprobacion = str(usuario.get("estado_aprobacion") or "aprobado").lower()
+        if estado_aprobacion == "pendiente":
+            return False, None, None, "Tu cuenta está pendiente de aprobación por el administrador corporativo."
+        if estado_aprobacion == "rechazado":
+            return False, None, None, "Tu solicitud de acceso fue rechazada. Contacta al administrador corporativo."
+        if not usuario.get("activo"):
+            return False, None, None, "Tu cuenta se encuentra inactiva. Contacta al administrador."
+
         datos_seguros = dict(usuario)
         datos_seguros.pop("password_hash", None)
         return True, datos_seguros, None, f"¡Bienvenido, {datos_seguros.get('nombre', '')}!"
@@ -471,4 +504,504 @@ def solicitar_recuperacion_password(correo: str) -> Tuple[bool, str]:
         return True, "Si tu cuenta está registrada en la plataforma corporativa, recibirás un enlace de recuperación en tu correo."
 
     return True, "En desarrollo local con SQLite, solicita al administrador reiniciar tu contraseña directamente."
+
+
+# ── AUTO-REGISTRO Y GESTIÓN ADMINISTRATIVA CENTRALIZADA ───────────────────────
+
+def registrar_solicitud_corporativa(
+    nombre: str,
+    correo: str,
+    password: str,
+    cargo: str = "",
+    telefono: str = "",
+    direccion: str = "Carrera 63 B # 32 E -25 OFC 206",
+    ciudad: str = "Bogotá",
+) -> Tuple[bool, str]:
+    """Registra una solicitud de cuenta corporativa pendiente de aprobación administrativa.
+
+    REGLAS DE SEGURIDAD ABSOLUTAS:
+    1. Dominio corporativo obligatorio (@iaclatam.com o @iac.com.co).
+    2. Contraseña mínima de 8 caracteres.
+    3. Cero asignación desde cliente: la cuenta nace estrictamente como rol comercial, inactiva y pendiente.
+    4. En Supabase: crea identidad en Auth Admin con app_metadata de servidor y fila en perfiles_usuario.
+    """
+    from core import database
+
+    nombre_limpio = nombre.strip()
+    correo_limpio = correo.strip().lower()
+
+    if not nombre_limpio:
+        return False, "El nombre completo es obligatorio."
+    if not validar_formato_correo(correo_limpio):
+        return False, "El formato de correo no es válido."
+    if not validar_dominio_corporativo(correo_limpio):
+        return False, "Registro no autorizado. Utiliza un correo corporativo (@iaclatam.com o @iac.com.co)."
+    if not password or len(password) < 8:
+        return False, "La contraseña debe tener al menos 8 caracteres."
+
+    if database.usar_supabase():
+        try:
+            admin_client = database.obtener_cliente_admin()
+
+            # 1. Verificar si ya existe en perfiles_usuario
+            res_exist = (
+                admin_client.table("perfiles_usuario")
+                .select("id, estado_aprobacion, activo")
+                .eq("correo", correo_limpio)
+                .limit(1)
+                .execute()
+            )
+            if res_exist.data:
+                return False, "Ya existe una cuenta o solicitud registrada con este correo electrónico."
+
+            # 2. Crear usuario en auth.users con app_metadata segura fijada en servidor
+            user_id: Optional[str] = None
+            try:
+                res_create = admin_client.auth.admin.create_user({
+                    "email": correo_limpio,
+                    "password": password,
+                    "email_confirm": True,
+                    "user_metadata": {"nombre": nombre_limpio},
+                    "app_metadata": {
+                        "es_admin": False,
+                        "role": "comercial",
+                        "rol": "comercial",
+                        "estado": "pendiente",
+                    },
+                })
+                if hasattr(res_create, "user") and res_create.user:
+                    user_id = res_create.user.id
+            except Exception as exc_auth:
+                msg_auth = str(exc_auth).lower()
+                if "already registered" in msg_auth or "already exists" in msg_auth:
+                    return False, "Ya existe una cuenta registrada con este correo corporativo en el proveedor de identidad."
+                # Fallback: intentar encontrar el user_id si ya había sido creado
+                try:
+                    users_list = admin_client.auth.admin.list_users()
+                    for u in (users_list or []):
+                        if u.email and u.email.lower() == correo_limpio:
+                            user_id = u.id
+                            break
+                except Exception:
+                    pass
+                if not user_id:
+                    print(f"[AutoForm AI Auth] Error creando usuario en Supabase Auth: {exc_auth}")
+                    return False, f"Error al procesar la identidad: {exc_auth}"
+
+            if not user_id:
+                return False, "No fue posible registrar la identidad en el proveedor corporativo."
+
+            # 3. Registrar fila en perfiles_usuario: inactivo y pendiente forzados
+            perfil_payload = {
+                "id": user_id,
+                "nombre": nombre_limpio,
+                "cargo": cargo.strip(),
+                "cedula": "",
+                "telefono": telefono.strip(),
+                "correo": correo_limpio,
+                "direccion": direccion.strip(),
+                "ciudad": ciudad.strip(),
+                "es_admin": False,
+                "activo": False,
+                "estado_aprobacion": "pendiente",
+            }
+            admin_client.table("perfiles_usuario").upsert(perfil_payload, on_conflict="id").execute()
+            return (
+                True,
+                "Solicitud de registro enviada con éxito. Tu cuenta ha sido registrada y se encuentra pendiente de aprobación administrativa.",
+            )
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error en registrar_solicitud_corporativa: {exc}")
+            return False, f"Error al registrar la solicitud corporativa: {exc}"
+
+    # Modo SQLite (Desarrollo local)
+    database.inicializar_db()
+    slug_id = re.sub(r"[^\w]+", "_", correo_limpio.split("@")[0]).strip("_")
+    pwd_hash = hashear_password(password)
+    ahora_iso = datetime.now(timezone.utc).isoformat()
+
+    try:
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO usuarios (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, creado_en)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 0, 'pendiente', ?)
+                """,
+                (slug_id, nombre_limpio, cargo.strip(), "", telefono.strip(), correo_limpio, direccion.strip(), ciudad.strip(), pwd_hash, ahora_iso),
+            )
+            conn.commit()
+            return (
+                True,
+                "Solicitud de registro enviada con éxito. Tu cuenta ha sido registrada y se encuentra pendiente de aprobación administrativa.",
+            )
+    except sqlite3.IntegrityError:
+        return False, "Ya existe una cuenta o solicitud registrada con este correo electrónico."
+    except Exception as exc:
+        return False, f"Error al registrar solicitud en SQLite: {exc}"
+
+
+def aprobar_solicitud_registro(
+    usuario_id: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Aprueba una solicitud de registro pendiente, activa la cuenta y sincroniza el catálogo de operadores."""
+    from core import database
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        try:
+            admin_client = database.obtener_cliente_admin()
+            # 1. Obtener perfil
+            res_p = admin_client.table("perfiles_usuario").select("*").eq("id", usuario_id).limit(1).execute()
+            if not res_p.data:
+                return False, f"No se encontró el perfil de usuario con ID: {usuario_id}"
+            perfil = res_p.data[0]
+
+            # 2. Actualizar perfiles_usuario a aprobado y activo
+            admin_client.table("perfiles_usuario").update({
+                "estado_aprobacion": "aprobado",
+                "activo": True,
+                "es_admin": False,
+            }).eq("id", usuario_id).execute()
+
+            # 3. Actualizar app_metadata en auth.users
+            try:
+                admin_client.auth.admin.update_user_by_id(usuario_id, {
+                    "app_metadata": {
+                        "es_admin": False,
+                        "role": "comercial",
+                        "rol": "comercial",
+                        "estado": "aprobado",
+                    }
+                })
+            except Exception as exc_meta:
+                print(f"[AutoForm AI Auth] Advertencia al actualizar app_metadata en aprobación: {exc_meta}")
+
+            # 4. Sincronizar catálogo de operadores (comercial)
+            slug_op = re.sub(r"[^\w]+", "_", str(perfil.get("correo", "")).split("@")[0]).strip("_")
+            try:
+                database.guardar_operador_db(
+                    id_operador=slug_op,
+                    nombre=str(perfil.get("nombre", "")),
+                    cargo=str(perfil.get("cargo") or "Asesor Comercial"),
+                    cedula=str(perfil.get("cedula") or ""),
+                    telefono=str(perfil.get("telefono") or ""),
+                    correo=str(perfil.get("correo", "")),
+                    direccion=str(perfil.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206"),
+                    ciudad=str(perfil.get("ciudad") or "Bogotá"),
+                    client=admin_client,
+                    usuario_id=usuario_id,
+                )
+            except Exception as exc_op:
+                print(f"[AutoForm AI Auth] Advertencia al sincronizar operador en aprobación: {exc_op}")
+
+            return True, f"Usuario '{perfil.get('nombre')}' aprobado y activado exitosamente."
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error al aprobar solicitud de registro: {exc}")
+            return False, f"Error al aprobar solicitud: {exc}"
+
+    # Modo SQLite
+    ok = database.actualizar_estado_usuario_db(usuario_id, "aprobado", True)
+    if not ok:
+        return False, f"No se pudo actualizar el estado del usuario '{usuario_id}' en SQLite."
+
+    # Sincronizar operador en SQLite
+    try:
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM usuarios WHERE id = ?", (usuario_id,))
+            row = cursor.fetchone()
+            if row:
+                ahora_iso = datetime.now(timezone.utc).isoformat()
+                cursor.execute(
+                    """
+                    INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        nombre = excluded.nombre,
+                        cargo = excluded.cargo,
+                        telefono = excluded.telefono,
+                        correo = excluded.correo,
+                        actualizado_en = excluded.actualizado_en
+                    """,
+                    (row["id"], row["nombre"], row["cargo"] or "Asesor Comercial", row["cedula"] or "", row["telefono"] or "", row["correo"], row["direccion"] or "", row["ciudad"] or "", ahora_iso),
+                )
+                conn.commit()
+    except Exception as exc:
+        print(f"[AutoForm AI Auth] Error sincronizando operador en SQLite: {exc}")
+
+    return True, f"Usuario '{usuario_id}' aprobado y activado exitosamente."
+
+
+def rechazar_solicitud_registro(
+    usuario_id: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Rechaza una solicitud de registro pendiente y mantiene la cuenta inactiva."""
+    from core import database
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        try:
+            admin_client = database.obtener_cliente_admin()
+            admin_client.table("perfiles_usuario").update({
+                "estado_aprobacion": "rechazado",
+                "activo": False,
+            }).eq("id", usuario_id).execute()
+
+            try:
+                admin_client.auth.admin.update_user_by_id(usuario_id, {
+                    "app_metadata": {"estado": "rechazado"}
+                })
+            except Exception as exc_meta:
+                print(f"[AutoForm AI Auth] Advertencia al actualizar app_metadata en rechazo: {exc_meta}")
+
+            return True, "Solicitud de registro rechazada exitosamente."
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error al rechazar solicitud de registro: {exc}")
+            return False, f"Error al rechazar solicitud: {exc}"
+
+    # Modo SQLite
+    ok = database.actualizar_estado_usuario_db(usuario_id, "rechazado", False)
+    if not ok:
+        return False, f"No se pudo rechazar la solicitud del usuario '{usuario_id}' en SQLite."
+    return True, "Solicitud de registro rechazada exitosamente."
+
+
+def conmutar_estado_activo_usuario(
+    usuario_id: str,
+    nuevo_activo: bool,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Activa o suspende una cuenta de usuario aprobada."""
+    from core import database
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, uid_solicitante = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        # Proteger contra la desactivación del único admin activo
+        if not nuevo_activo:
+            admin_client = database.obtener_cliente_admin()
+            res_target = admin_client.table("perfiles_usuario").select("es_admin, activo").eq("id", usuario_id).limit(1).execute()
+            if res_target.data and res_target.data[0].get("es_admin") and res_target.data[0].get("activo"):
+                total_admins = database.contar_administradores_activos_db(client=admin_client)
+                if total_admins <= 1:
+                    return False, "Operación denegada: No puedes desactivar al único administrador activo de la plataforma."
+
+        try:
+            admin_client = database.obtener_cliente_admin()
+            admin_client.table("perfiles_usuario").update({
+                "activo": nuevo_activo,
+            }).eq("id", usuario_id).execute()
+
+            estado_txt = "activado" if nuevo_activo else "desactivado"
+            return True, f"Usuario {estado_txt} exitosamente."
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error al alternar activación de usuario: {exc}")
+            return False, f"Error al actualizar estado del usuario: {exc}"
+
+    # Modo SQLite
+    if not nuevo_activo:
+        total_admins = database.contar_administradores_activos_db()
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT es_admin, activo FROM usuarios WHERE id = ?", (usuario_id,))
+            u_row = cursor.fetchone()
+            if u_row and u_row["es_admin"] and u_row["activo"] and total_admins <= 1:
+                return False, "Operación denegada: No puedes desactivar al único administrador activo de la plataforma."
+
+    ok = database.actualizar_estado_usuario_db(usuario_id, "aprobado", nuevo_activo)
+    if not ok:
+        return False, f"No se pudo cambiar el estado del usuario '{usuario_id}'."
+    estado_txt = "activado" if nuevo_activo else "desactivado"
+    return True, f"Usuario {estado_txt} exitosamente."
+
+
+def cambiar_rol_usuario(
+    usuario_id: str,
+    nuevo_rol: str,
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Cambia el rol de un usuario estrictamente entre 'comercial' y 'administrador'."""
+    from core import database
+
+    rol_limpio = nuevo_rol.strip().lower()
+    if rol_limpio not in ("comercial", "administrador"):
+        return False, "Rol no permitido. El rol debe ser estrictamente 'comercial' o 'administrador'."
+
+    es_admin_nuevo = (rol_limpio == "administrador")
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, uid_solicitante = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        admin_client = database.obtener_cliente_admin()
+
+        # Si se va a degradar un admin a comercial, verificar que no sea el único admin activo
+        if not es_admin_nuevo:
+            res_target = admin_client.table("perfiles_usuario").select("es_admin, activo").eq("id", usuario_id).limit(1).execute()
+            if res_target.data and res_target.data[0].get("es_admin") and res_target.data[0].get("activo"):
+                total_admins = database.contar_administradores_activos_db(client=admin_client)
+                if total_admins <= 1:
+                    return False, "Operación denegada: No puedes revocar los privilegios del único administrador activo."
+
+        try:
+            admin_client.table("perfiles_usuario").update({
+                "es_admin": es_admin_nuevo,
+            }).eq("id", usuario_id).execute()
+
+            try:
+                admin_client.auth.admin.update_user_by_id(usuario_id, {
+                    "app_metadata": {
+                        "es_admin": es_admin_nuevo,
+                        "role": rol_limpio,
+                        "rol": rol_limpio,
+                    }
+                })
+            except Exception as exc_meta:
+                print(f"[AutoForm AI Auth] Advertencia al actualizar app_metadata en cambio de rol: {exc_meta}")
+
+            return True, f"Rol actualizado exitosamente a '{rol_limpio}'."
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error al cambiar rol de usuario en Supabase: {exc}")
+            return False, f"Error al cambiar rol: {exc}"
+
+    # Modo SQLite
+    if not es_admin_nuevo:
+        total_admins = database.contar_administradores_activos_db()
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT es_admin, activo FROM usuarios WHERE id = ?", (usuario_id,))
+            u_row = cursor.fetchone()
+            if u_row and u_row["es_admin"] and u_row["activo"] and total_admins <= 1:
+                return False, "Operación denegada: No puedes revocar los privilegios del único administrador activo."
+
+    ok = database.actualizar_rol_usuario_db(usuario_id, es_admin_nuevo)
+    if not ok:
+        return False, f"No se pudo actualizar el rol del usuario '{usuario_id}' en SQLite."
+    return True, f"Rol actualizado exitosamente a '{rol_limpio}'."
+
+
+def reenviar_recuperacion_admin(
+    correo_destino: str,
+    redirect_url: str = "",
+    access_token_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Despacha un correo oficial de restablecimiento de contraseña solicitado por un administrador."""
+    from core import database
+
+    correo_limpio = correo_destino.strip().lower()
+    if not correo_limpio:
+        return False, "El correo de destino es obligatorio."
+    if not validar_formato_correo(correo_limpio):
+        return False, "El formato de correo no es válido."
+    if not validar_dominio_corporativo(correo_limpio):
+        return False, "Operación no autorizada: Solo se permite restablecer cuentas con dominio @iaclatam.com o @iac.com.co."
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        url_redireccion = (redirect_url or os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "") or os.environ.get("SUPABASE_URL", "")).strip()
+        for pdf_ref in database.PROHIBITED_PROJECT_REFS:
+            if pdf_ref in url_redireccion:
+                raise database.ConfiguracionInvalidaError(
+                    f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}')."
+                )
+
+        try:
+            client_pub = database.obtener_cliente_publico()
+            options = {"redirect_to": url_redireccion} if url_redireccion else None
+            client_pub.auth.reset_password_for_email(correo_limpio, options=options)
+            return True, f"Enlace oficial de restablecimiento despachado por Supabase a {correo_limpio}."
+        except Exception as exc:
+            if "PDF" in str(exc) or "ConfiguracionInvalidaError" in str(type(exc)):
+                raise
+            print(f"[AutoForm AI Auth] Error en reenviar_recuperacion_admin: {exc}")
+            return False, f"Error al despachar enlace de recuperación: {exc}"
+
+    # Modo SQLite
+    return True, f"En desarrollo local SQLite, restablecimiento simulado para {correo_limpio}."
+
+
+def listar_solicitudes_pendientes(
+    access_token_solicitante: str = "",
+) -> Tuple[bool, Union[List[Dict[str, Any]], str]]:
+    """Obtiene la lista de solicitudes de registro pendientes de aprobación."""
+    from core import database
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}"
+
+        try:
+            admin_client = database.obtener_cliente_admin()
+            res = (
+                admin_client.table("perfiles_usuario")
+                .select("*")
+                .eq("estado_aprobacion", "pendiente")
+                .order("created_at", desc=True)
+                .execute()
+            )
+            solicitudes = []
+            for row in (res.data or []):
+                solicitudes.append({
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "correo": str(row.get("correo")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "direccion": str(row.get("direccion") or ""),
+                    "ciudad": str(row.get("ciudad") or ""),
+                    "created_at": str(row.get("created_at")),
+                    "estado_aprobacion": "pendiente",
+                })
+            return True, solicitudes
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error listando solicitudes pendientes en Supabase: {exc}")
+            return False, f"Error al consultar solicitudes pendientes: {exc}"
+
+    # Modo SQLite
+    database.inicializar_db()
+    solicitudes = []
+    try:
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, nombre, correo, cargo, telefono, direccion, ciudad, creado_en
+                FROM usuarios
+                WHERE estado_aprobacion = 'pendiente'
+                ORDER BY creado_en DESC
+                """
+            )
+            for row in cursor.fetchall():
+                solicitudes.append({
+                    "id": str(row["id"]),
+                    "nombre": str(row["nombre"]),
+                    "correo": str(row["correo"]),
+                    "cargo": str(row["cargo"] or ""),
+                    "telefono": str(row["telefono"] or ""),
+                    "direccion": str(row["direccion"] or ""),
+                    "ciudad": str(row["ciudad"] or ""),
+                    "created_at": str(row["creado_en"]),
+                    "estado_aprobacion": "pendiente",
+                })
+        return True, solicitudes
+    except Exception as exc:
+        print(f"[AutoForm AI Auth] Error listando solicitudes pendientes en SQLite: {exc}")
+        return False, f"Error al consultar solicitudes pendientes en SQLite: {exc}"
+
 

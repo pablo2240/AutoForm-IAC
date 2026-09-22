@@ -405,6 +405,7 @@ def inicializar_db() -> None:
                 password_hash TEXT NOT NULL,
                 es_admin INTEGER DEFAULT 0,
                 activo INTEGER DEFAULT 1,
+                estado_aprobacion TEXT DEFAULT 'aprobado',
                 creado_en TEXT NOT NULL
             );
             """
@@ -428,6 +429,8 @@ def inicializar_db() -> None:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN direccion TEXT DEFAULT ''")
         if "ciudad" not in cols_usr:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN ciudad TEXT DEFAULT ''")
+        if "estado_aprobacion" not in cols_usr:
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN estado_aprobacion TEXT DEFAULT 'aprobado'")
 
         cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
         total_usuarios = cursor.fetchone()["total"]
@@ -1147,9 +1150,9 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
     if usar_supabase():
         try:
             cli = _obtener_cliente_activo(client)
-            res = cli.table("perfiles_usuario").select("*").eq("correo", correo_limpio).eq("activo", True).limit(1).execute()
+            res = cli.table("perfiles_usuario").select("*").eq("correo", correo_limpio).limit(1).execute()
             if not res.data and correo_alt:
-                res = cli.table("perfiles_usuario").select("*").eq("correo", correo_alt).eq("activo", True).limit(1).execute()
+                res = cli.table("perfiles_usuario").select("*").eq("correo", correo_alt).limit(1).execute()
 
             if res.data and len(res.data) > 0:
                 row = res.data[0]
@@ -1164,6 +1167,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
                     "ciudad": str(row.get("ciudad") or "Bogotá"),
                     "es_admin": bool(row.get("es_admin")),
                     "activo": bool(row.get("activo")),
+                    "estado_aprobacion": str(row.get("estado_aprobacion") or "aprobado"),
                     "creado_en": str(row.get("created_at")),
                 }
         except SesionNoAutenticadaError:
@@ -1179,15 +1183,17 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, creado_en
                 FROM usuarios
-                WHERE (LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != '')) AND activo = 1
+                WHERE (LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != ''))
                 LIMIT 1
                 """,
                 (correo_limpio, correo_alt, correo_alt),
             )
             row = cursor.fetchone()
             if row:
+                cols = row.keys() if hasattr(row, "keys") else []
+                est_ap = str(row["estado_aprobacion"]) if "estado_aprobacion" in cols else "aprobado"
                 return {
                     "id": str(row["id"]),
                     "nombre": str(row["nombre"]),
@@ -1200,6 +1206,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
                     "password_hash": str(row["password_hash"]),
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
+                    "estado_aprobacion": est_ap,
                     "creado_en": str(row["creado_en"]),
                 }
     except Exception as exc:
@@ -1331,6 +1338,7 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
                     "ciudad": str(row.get("ciudad") or ""),
                     "es_admin": bool(row.get("es_admin")),
                     "activo": bool(row.get("activo")),
+                    "estado_aprobacion": str(row.get("estado_aprobacion") or "aprobado"),
                     "creado_en": str(row.get("created_at")),
                 })
             return users
@@ -1348,12 +1356,14 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_admin, activo, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_admin, activo, estado_aprobacion, creado_en
                 FROM usuarios
                 ORDER BY es_admin DESC, nombre ASC
                 """
             )
             for row in cursor.fetchall():
+                cols = row.keys() if hasattr(row, "keys") else []
+                est_ap = str(row["estado_aprobacion"]) if "estado_aprobacion" in cols else "aprobado"
                 usuarios.append({
                     "id": str(row["id"]),
                     "nombre": str(row["nombre"]),
@@ -1365,8 +1375,128 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
                     "ciudad": str(row["ciudad"] or ""),
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
+                    "estado_aprobacion": est_ap,
                     "creado_en": str(row["creado_en"]),
                 })
     except Exception as exc:
         print(f"[AutoForm AI DB] Error listando usuarios en SQLite: {exc}")
     return usuarios
+
+
+def actualizar_estado_usuario_db(
+    usuario_id: str,
+    nuevo_estado: str,
+    nuevo_activo: bool,
+    client: Optional[Client] = None,
+) -> bool:
+    """Actualiza el estado de aprobación y activación de un usuario en la BD."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = (
+                cli.table("perfiles_usuario")
+                .update({"estado_aprobacion": nuevo_estado, "activo": nuevo_activo})
+                .eq("id", usuario_id)
+                .execute()
+            )
+            return bool(res.data)
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error actualizando estado de usuario en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE usuarios
+                SET estado_aprobacion = ?, activo = ?
+                WHERE id = ?
+                """,
+                (nuevo_estado, 1 if nuevo_activo else 0, usuario_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error actualizando estado de usuario en SQLite: {exc}")
+        return False
+
+
+def actualizar_rol_usuario_db(
+    usuario_id: str,
+    es_admin: bool,
+    client: Optional[Client] = None,
+) -> bool:
+    """Actualiza el rol administrativo de un usuario en la BD."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = (
+                cli.table("perfiles_usuario")
+                .update({"es_admin": es_admin})
+                .eq("id", usuario_id)
+                .execute()
+            )
+            return bool(res.data)
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error actualizando rol de usuario en Supabase: {exc}")
+            return False
+
+    # Modo SQLite
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE usuarios
+                SET es_admin = ?
+                WHERE id = ?
+                """,
+                (1 if es_admin else 0, usuario_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error actualizando rol de usuario en SQLite: {exc}")
+        return False
+
+
+def contar_administradores_activos_db(client: Optional[Client] = None) -> int:
+    """Retorna el número de administradores que se encuentran activos."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = (
+                cli.table("perfiles_usuario")
+                .select("id", count="exact")
+                .eq("es_admin", True)
+                .eq("activo", True)
+                .execute()
+            )
+            if hasattr(res, "count") and res.count is not None:
+                return int(res.count)
+            return len(res.data or [])
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error contando administradores activos en Supabase: {exc}")
+            return 1
+
+    # Modo SQLite
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM usuarios
+                WHERE es_admin = 1 AND activo = 1
+                """
+            )
+            row = cursor.fetchone()
+            return int(row["total"]) if row else 0
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error contando administradores activos en SQLite: {exc}")
+        return 1
