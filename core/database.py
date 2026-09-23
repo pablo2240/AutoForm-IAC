@@ -406,6 +406,7 @@ def inicializar_db() -> None:
                 es_admin INTEGER DEFAULT 0,
                 activo INTEGER DEFAULT 1,
                 estado_aprobacion TEXT DEFAULT 'aprobado',
+                debe_cambiar_password INTEGER DEFAULT 0,
                 creado_en TEXT NOT NULL
             );
             """
@@ -431,6 +432,37 @@ def inicializar_db() -> None:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN ciudad TEXT DEFAULT ''")
         if "estado_aprobacion" not in cols_usr:
             cursor.execute("ALTER TABLE usuarios ADD COLUMN estado_aprobacion TEXT DEFAULT 'aprobado'")
+        if "debe_cambiar_password" not in cols_usr:
+            cursor.execute("ALTER TABLE usuarios ADD COLUMN debe_cambiar_password INTEGER DEFAULT 0")
+
+        # Tabla de auditoría de autenticación y seguridad
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auditoria_autenticacion (
+                id TEXT PRIMARY KEY,
+                tipo_evento TEXT NOT NULL,
+                usuario_id TEXT,
+                correo_objetivo TEXT NOT NULL,
+                admin_id TEXT NOT NULL,
+                admin_correo TEXT NOT NULL,
+                motivo TEXT DEFAULT '',
+                detalles TEXT DEFAULT '',
+                creado_en TEXT NOT NULL
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_auditoria_correo
+            ON auditoria_autenticacion (correo_objetivo);
+            """
+        )
+        cursor.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_auditoria_fecha
+            ON auditoria_autenticacion (creado_en);
+            """
+        )
 
         cursor.execute("SELECT COUNT(*) AS total FROM usuarios")
         total_usuarios = cursor.fetchone()["total"]
@@ -1168,6 +1200,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
                     "es_admin": bool(row.get("es_admin")),
                     "activo": bool(row.get("activo")),
                     "estado_aprobacion": str(row.get("estado_aprobacion") or "aprobado"),
+                    "debe_cambiar_password": bool(row.get("debe_cambiar_password", False)),
                     "creado_en": str(row.get("created_at")),
                 }
         except SesionNoAutenticadaError:
@@ -1183,7 +1216,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, debe_cambiar_password, creado_en
                 FROM usuarios
                 WHERE (LOWER(correo) = ? OR (LOWER(correo) = ? AND ? != ''))
                 LIMIT 1
@@ -1194,6 +1227,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
             if row:
                 cols = row.keys() if hasattr(row, "keys") else []
                 est_ap = str(row["estado_aprobacion"]) if "estado_aprobacion" in cols else "aprobado"
+                debe_cambiar = bool(row["debe_cambiar_password"]) if "debe_cambiar_password" in cols else False
                 return {
                     "id": str(row["id"]),
                     "nombre": str(row["nombre"]),
@@ -1207,6 +1241,7 @@ def obtener_usuario_por_correo_db(correo: str, client: Optional[Client] = None) 
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
                     "estado_aprobacion": est_ap,
+                    "debe_cambiar_password": debe_cambiar,
                     "creado_en": str(row["creado_en"]),
                 }
     except Exception as exc:
@@ -1339,6 +1374,7 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
                     "es_admin": bool(row.get("es_admin")),
                     "activo": bool(row.get("activo")),
                     "estado_aprobacion": str(row.get("estado_aprobacion") or "aprobado"),
+                    "debe_cambiar_password": bool(row.get("debe_cambiar_password", False)),
                     "creado_en": str(row.get("created_at")),
                 })
             return users
@@ -1356,7 +1392,7 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
             cursor = conn.cursor()
             cursor.execute(
                 """
-                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_admin, activo, estado_aprobacion, creado_en
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_admin, activo, estado_aprobacion, debe_cambiar_password, creado_en
                 FROM usuarios
                 ORDER BY es_admin DESC, nombre ASC
                 """
@@ -1364,6 +1400,7 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
             for row in cursor.fetchall():
                 cols = row.keys() if hasattr(row, "keys") else []
                 est_ap = str(row["estado_aprobacion"]) if "estado_aprobacion" in cols else "aprobado"
+                debe_cambiar = bool(row["debe_cambiar_password"]) if "debe_cambiar_password" in cols else False
                 usuarios.append({
                     "id": str(row["id"]),
                     "nombre": str(row["nombre"]),
@@ -1376,6 +1413,7 @@ def listar_usuarios_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
                     "es_admin": bool(row["es_admin"]),
                     "activo": bool(row["activo"]),
                     "estado_aprobacion": est_ap,
+                    "debe_cambiar_password": debe_cambiar,
                     "creado_en": str(row["creado_en"]),
                 })
     except Exception as exc:
@@ -1500,3 +1538,225 @@ def contar_administradores_activos_db(client: Optional[Client] = None) -> int:
     except Exception as exc:
         print(f"[AutoForm AI DB] Error contando administradores activos en SQLite: {exc}")
         return 1
+
+
+def obtener_usuario_por_id_db(usuario_id: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Busca un usuario por su ID primario (UUID o texto) en el almacén activo."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = cli.table("perfiles_usuario").select("*").eq("id", usuario_id).limit(1).execute()
+            if res.data and len(res.data) > 0:
+                row = res.data[0]
+                return {
+                    "id": str(row.get("id")),
+                    "nombre": str(row.get("nombre")),
+                    "cargo": str(row.get("cargo") or ""),
+                    "cedula": str(row.get("cedula") or ""),
+                    "telefono": str(row.get("telefono") or ""),
+                    "correo": str(row.get("correo")),
+                    "direccion": str(row.get("direccion") or "Carrera 63 B # 32 E -25 OFC 206"),
+                    "ciudad": str(row.get("ciudad") or "Bogotá"),
+                    "es_admin": bool(row.get("es_admin")),
+                    "activo": bool(row.get("activo")),
+                    "estado_aprobacion": str(row.get("estado_aprobacion") or "aprobado"),
+                    "debe_cambiar_password": bool(row.get("debe_cambiar_password", False)),
+                    "creado_en": str(row.get("created_at")),
+                }
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error al buscar usuario por ID en Supabase: {exc}")
+        return None
+
+    # Modo SQLite
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, password_hash, es_admin, activo, estado_aprobacion, debe_cambiar_password, creado_en
+                FROM usuarios
+                WHERE id = ?
+                LIMIT 1
+                """,
+                (usuario_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                cols = row.keys() if hasattr(row, "keys") else []
+                est_ap = str(row["estado_aprobacion"]) if "estado_aprobacion" in cols else "aprobado"
+                debe_cambiar = bool(row["debe_cambiar_password"]) if "debe_cambiar_password" in cols else False
+                return {
+                    "id": str(row["id"]),
+                    "nombre": str(row["nombre"]),
+                    "cargo": str(row["cargo"] or ""),
+                    "cedula": str(row["cedula"] or ""),
+                    "telefono": str(row["telefono"] or ""),
+                    "correo": str(row["correo"]),
+                    "direccion": str(row["direccion"] or "Carrera 63 B # 32 E -25 OFC 206"),
+                    "ciudad": str(row["ciudad"] or "Bogotá"),
+                    "password_hash": str(row["password_hash"]),
+                    "es_admin": bool(row["es_admin"]),
+                    "activo": bool(row["activo"]),
+                    "estado_aprobacion": est_ap,
+                    "debe_cambiar_password": debe_cambiar,
+                    "creado_en": str(row["creado_en"]),
+                }
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error al buscar usuario por ID en SQLite: {exc}")
+    return None
+
+
+def actualizar_password_usuario_db(
+    usuario_id: str,
+    nuevo_password_hash: str,
+    debe_cambiar_password: bool = False,
+    client: Optional[Client] = None,
+) -> bool:
+    """Actualiza la contraseña (hash) y el flag de cambio obligatorio."""
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = (
+                cli.table("perfiles_usuario")
+                .update({"debe_cambiar_password": debe_cambiar_password})
+                .eq("id", usuario_id)
+                .execute()
+            )
+            return bool(res.data)
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error actualizando estado de contraseña en Supabase: {exc}")
+            return False
+
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                UPDATE usuarios
+                SET password_hash = ?, debe_cambiar_password = ?
+                WHERE id = ?
+                """,
+                (nuevo_password_hash, 1 if debe_cambiar_password else 0, usuario_id),
+            )
+            conn.commit()
+            return cursor.rowcount > 0
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error actualizando contraseña en SQLite: {exc}")
+        return False
+
+
+def registrar_auditoria_db(
+    tipo_evento: str,
+    correo_objetivo: str,
+    admin_id: str,
+    admin_correo: str,
+    usuario_id: Optional[str] = None,
+    motivo: str = "",
+    detalles: str = "",
+    client: Optional[Client] = None,
+) -> bool:
+    """Registra un evento de seguridad y auditoría de autenticación."""
+    from datetime import datetime, timezone
+    import uuid
+
+    ahora_iso = datetime.now(timezone.utc).isoformat()
+    record_id = str(uuid.uuid4())
+    correo_limpio = (correo_objetivo or "").strip().lower()
+    admin_correo_limpio = (admin_correo or "").strip().lower()
+
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            data = {
+                "id": record_id,
+                "tipo_evento": tipo_evento,
+                "usuario_id": usuario_id,
+                "correo_objetivo": correo_limpio,
+                "admin_id": admin_id,
+                "admin_correo": admin_correo_limpio,
+                "motivo": motivo,
+                "detalles": detalles,
+                "creado_en": ahora_iso,
+            }
+            res = cli.table("auditoria_autenticacion").insert(data).execute()
+            return bool(res.data)
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error registrando auditoría en Supabase: {exc}")
+            return False
+
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO auditoria_autenticacion (
+                    id, tipo_evento, usuario_id, correo_objetivo, admin_id, admin_correo, motivo, detalles, creado_en
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record_id,
+                    tipo_evento,
+                    usuario_id,
+                    correo_limpio,
+                    admin_id,
+                    admin_correo_limpio,
+                    motivo,
+                    detalles,
+                    ahora_iso,
+                ),
+            )
+            conn.commit()
+            return True
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error registrando auditoría en SQLite: {exc}")
+        return False
+
+
+def contar_eventos_auditoria_db(
+    tipo_evento: str,
+    correo_objetivo: str,
+    desde_iso: str,
+    client: Optional[Client] = None,
+) -> int:
+    """Cuenta el número de eventos de auditoría para un usuario y tipo desde una fecha ISO."""
+    correo_limpio = (correo_objetivo or "").strip().lower()
+    if usar_supabase():
+        try:
+            cli = _obtener_cliente_activo(client)
+            res = (
+                cli.table("auditoria_autenticacion")
+                .select("id", count="exact")
+                .eq("tipo_evento", tipo_evento)
+                .eq("correo_objetivo", correo_limpio)
+                .gte("creado_en", desde_iso)
+                .execute()
+            )
+            if hasattr(res, "count") and res.count is not None:
+                return int(res.count)
+            return len(res.data or [])
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Error contando auditoría en Supabase: {exc}")
+            return 0
+
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM auditoria_autenticacion
+                WHERE tipo_evento = ? AND LOWER(correo_objetivo) = ? AND creado_en >= ?
+                """,
+                (tipo_evento, correo_limpio, desde_iso),
+            )
+            row = cursor.fetchone()
+            return int(row["total"]) if row else 0
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error contando auditoría en SQLite: {exc}")
+        return 0

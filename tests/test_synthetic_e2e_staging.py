@@ -352,6 +352,191 @@ class TestSyntheticE2EStaging(unittest.TestCase):
                         access_token_solicitante="fake_token",
                     )
 
+    # =========================================================================
+    # E2E-11: Reenvío de Enlace con Rate Limiting y Auditoría
+    # =========================================================================
+    def test_11_reenvio_recuperacion_con_rate_limiting_y_auditoria(self):
+        """Verifica que el reenvío de recuperación aplique rate limiting (máx 3/hora) y audite cada intento."""
+        correo_test = "colab.rate@iaclatam.com"
+        ok_reg, _ = auth_manager.registrar_solicitud_corporativa(
+            nombre="Colaborador Rate Limit",
+            correo=correo_test,
+            password="PasswordSeguro123!",
+            requiere_aprobacion=False,
+        )
+        self.assertTrue(ok_reg)
+
+        # 0 envíos iniciales
+        self.assertEqual(auth_manager.contar_reenvios_recientes(correo_test), 0)
+
+        # 3 envíos permitidos consecutivamente
+        for i in range(1, 4):
+            ok_envio, msg_envio = auth_manager.reenviar_recuperacion_auditada(
+                correo_destino=correo_test,
+                admin_correo_solicitante=self.admin_correo,
+            )
+            self.assertTrue(ok_envio)
+            self.assertEqual(auth_manager.contar_reenvios_recientes(correo_test), i)
+
+        # 4to intento dentro de la misma hora debe ser bloqueado por rate limiting
+        ok_bloqueo, msg_bloqueo = auth_manager.reenviar_recuperacion_auditada(
+            correo_destino=correo_test,
+            admin_correo_solicitante=self.admin_correo,
+        )
+        self.assertFalse(ok_bloqueo)
+        self.assertIn("límite de solicitudes excedido", msg_bloqueo.lower())
+        self.assertIn("3", msg_bloqueo)
+
+        # Verificar registros en tabla auditoria_autenticacion
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM auditoria_autenticacion
+                WHERE tipo_evento = 'reenvio_recuperacion' AND LOWER(correo_objetivo) = ?
+                """,
+                (correo_test.lower(),),
+            )
+            total_audit = cursor.fetchone()["total"]
+            self.assertEqual(total_audit, 3)
+
+    # =========================================================================
+    # E2E-12: Restablecimiento Manual Excepcional (Validaciones y Secreto)
+    # =========================================================================
+    def test_12_restablecimiento_manual_excepcional(self):
+        """Verifica validaciones estrictas, generación de clave temporal y preservación del secreto."""
+        correo_test = "colab.excepcional@iaclatam.com"
+        ok_reg, _ = auth_manager.registrar_solicitud_corporativa(
+            nombre="Colaborador Excepcional",
+            correo=correo_test,
+            password="PasswordInicial123!",
+            requiere_aprobacion=False,
+        )
+        self.assertTrue(ok_reg)
+        user_row = database.obtener_usuario_por_correo_db(correo_test)
+        u_id = user_row["id"]
+
+        # 1. Fallo: correo de confirmación no coincide
+        ok_bad_c, msg_bad_c, pwd_bad_c = auth_manager.restablecer_manual_excepcional(
+            usuario_id=u_id,
+            correo_confirmacion="otro.correo@iaclatam.com",
+            motivo="El colaborador confirma bloqueo persistente de correo",
+            admin_correo_solicitante=self.admin_correo,
+        )
+        self.assertFalse(ok_bad_c)
+        self.assertIn("no coincide", msg_bad_c.lower())
+        self.assertIsNone(pwd_bad_c)
+
+        # 2. Fallo: motivo justificado menor a 15 caracteres
+        ok_bad_m, msg_bad_m, pwd_bad_m = auth_manager.restablecer_manual_excepcional(
+            usuario_id=u_id,
+            correo_confirmacion=correo_test,
+            motivo="muy corto",
+            admin_correo_solicitante=self.admin_correo,
+        )
+        self.assertFalse(ok_bad_m)
+        self.assertIn("15 caracteres", msg_bad_m.lower())
+        self.assertIsNone(pwd_bad_m)
+
+        # 3. Éxito: confirmación exacta y motivo válido
+        motivo_justificado = "Colaborador confirma no recepcion tras 2 dias en spam y bandeja"
+        ok_ok, msg_ok, pwd_temporal = auth_manager.restablecer_manual_excepcional(
+            usuario_id=u_id,
+            correo_confirmacion=correo_test,
+            motivo=motivo_justificado,
+            admin_correo_solicitante=self.admin_correo,
+        )
+        self.assertTrue(ok_ok)
+        self.assertIsNotNone(pwd_temporal)
+        self.assertEqual(len(pwd_temporal), 14)
+
+        # Verificar que debe_cambiar_password esté en 1
+        user_actualizado = database.obtener_usuario_por_id_db(u_id)
+        self.assertTrue(user_actualizado.get("debe_cambiar_password"))
+
+        # Garantía estricta de secreto: la clave temporal jamás está en texto plano en la BD ni en auditoría
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT password_hash FROM usuarios WHERE id = ?", (u_id,))
+            row_u = cursor.fetchone()
+            self.assertNotEqual(row_u["password_hash"], pwd_temporal)
+
+            cursor.execute("SELECT motivo, detalles FROM auditoria_autenticacion WHERE usuario_id = ?", (u_id,))
+            row_aud = cursor.fetchone()
+            self.assertEqual(row_aud["motivo"], motivo_justificado)
+            self.assertNotIn(pwd_temporal, row_aud["motivo"])
+            self.assertNotIn(pwd_temporal, row_aud["detalles"])
+
+    # =========================================================================
+    # E2E-13: Ciclo de Cambio Forzado de Contraseña en Primer Login
+    # =========================================================================
+    def test_13_ciclo_cambio_forzado_password_primer_login(self):
+        """Verifica el flujo completo: clave temporal -> bandera activa -> cambio forzado -> clave definitiva limpia."""
+        correo_test = "colab.forzado@iaclatam.com"
+        clave_vieja = "PasswordInicial123!"
+        ok_reg, _ = auth_manager.registrar_solicitud_corporativa(
+            nombre="Colaborador Cambio Forzado",
+            correo=correo_test,
+            password=clave_vieja,
+            requiere_aprobacion=False,
+        )
+        self.assertTrue(ok_reg)
+        user_row = database.obtener_usuario_por_correo_db(correo_test)
+        u_id = user_row["id"]
+
+        # Administrador genera restablecimiento manual excepcional
+        ok_gen, _, pwd_temporal = auth_manager.restablecer_manual_excepcional(
+            usuario_id=u_id,
+            correo_confirmacion=correo_test,
+            motivo="Colaborador no recibe correo oficial de recuperacion",
+            admin_correo_solicitante=self.admin_correo,
+        )
+        self.assertTrue(ok_gen)
+
+        # 1. Clave anterior queda invalidada
+        ok_old, _, _, _ = auth_manager.iniciar_sesion(correo_test, clave_vieja)
+        self.assertFalse(ok_old)
+
+        # 2. Login con clave temporal tiene éxito y marca debe_cambiar_password = True
+        ok_tmp, datos_tmp, _, _ = auth_manager.iniciar_sesion(correo_test, pwd_temporal)
+        self.assertTrue(ok_tmp)
+        self.assertTrue(datos_tmp.get("debe_cambiar_password"))
+
+        # 3. Colaborador intenta ingresar clave nueva muy corta (< 8 caracteres)
+        ok_corta, msg_corta = auth_manager.completar_cambio_password_obligatorio(u_id, "corta")
+        self.assertFalse(ok_corta)
+        self.assertIn("8 caracteres", msg_corta.lower())
+
+        # 4. Colaborador define su clave definitiva válida
+        clave_definitiva = "DefinitivaPersonal2026!#"
+        ok_def, msg_def = auth_manager.completar_cambio_password_obligatorio(u_id, clave_definitiva)
+        self.assertTrue(ok_def)
+        self.assertIn("exitosa", msg_def.lower())
+
+        # 5. La bandera en la base de datos debe estar limpia (debe_cambiar_password = False)
+        user_limpio = database.obtener_usuario_por_id_db(u_id)
+        self.assertFalse(user_limpio.get("debe_cambiar_password"))
+
+        # 6. Inicio de sesión subsiguiente con clave definitiva accede sin obligación de cambio
+        ok_sub, datos_sub, _, _ = auth_manager.iniciar_sesion(correo_test, clave_definitiva)
+        self.assertTrue(ok_sub)
+        self.assertFalse(datos_sub.get("debe_cambiar_password"))
+        self.assertEqual(datos_sub["correo"], correo_test)
+
+        # 7. Verificar evento registrado en auditoría
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                SELECT COUNT(*) AS total
+                FROM auditoria_autenticacion
+                WHERE tipo_evento = 'cambio_password_primer_ingreso' AND usuario_id = ?
+                """,
+                (u_id,),
+            )
+            self.assertEqual(cursor.fetchone()["total"], 1)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

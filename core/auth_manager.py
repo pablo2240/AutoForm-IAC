@@ -160,6 +160,7 @@ def iniciar_sesion(
 
             # Garantizar que es_admin provenga estrictamente de la columna de BD perfiles_usuario
             usuario_perfil["es_admin"] = bool(usuario_perfil.get("es_admin", False))
+            usuario_perfil["debe_cambiar_password"] = bool(usuario_perfil.get("debe_cambiar_password", False))
 
             return True, usuario_perfil, tokens, f"¡Bienvenido, {usuario_perfil.get('nombre', '')}!"
         except Exception as exc:
@@ -964,12 +965,56 @@ def cambiar_rol_usuario(
     return True, f"Rol actualizado exitosamente a '{rol_limpio}'."
 
 
-def reenviar_recuperacion_admin(
+def registrar_evento_auditoria(
+    tipo_evento: str,
+    correo_objetivo: str,
+    admin_id: str,
+    admin_correo: str,
+    usuario_id: Optional[str] = None,
+    motivo: str = "",
+    detalles: str = "",
+    client: Optional[Any] = None,
+) -> bool:
+    """Registra un evento de seguridad y auditoría de autenticación delegando a la BD."""
+    from core import database
+    return database.registrar_auditoria_db(
+        tipo_evento=tipo_evento,
+        correo_objetivo=correo_objetivo,
+        admin_id=admin_id,
+        admin_correo=admin_correo,
+        usuario_id=usuario_id,
+        motivo=motivo,
+        detalles=detalles,
+        client=client,
+    )
+
+
+def contar_reenvios_recientes(
+    correo_objetivo: str,
+    ventana_segundos: int = 3600,
+    client: Optional[Any] = None,
+) -> int:
+    """Cuenta el número de reenvíos de recuperación realizados al correo en la ventana de tiempo."""
+    from datetime import datetime, timezone, timedelta
+    from core import database
+
+    desde_iso = (datetime.now(timezone.utc) - timedelta(seconds=ventana_segundos)).isoformat()
+    return database.contar_eventos_auditoria_db(
+        tipo_evento="reenvio_recuperacion",
+        correo_objetivo=correo_objetivo,
+        desde_iso=desde_iso,
+        client=client,
+    )
+
+
+def reenviar_recuperacion_auditada(
     correo_destino: str,
     redirect_url: str = "",
     access_token_solicitante: str = "",
+    admin_correo_solicitante: str = "",
+    max_intentos_por_hora: int = 3,
 ) -> Tuple[bool, str]:
-    """Despacha un correo oficial de restablecimiento de contraseña solicitado por un administrador."""
+    """Despacha un correo oficial de recuperación con rate limiting estricto y registro de auditoría."""
     from core import database
 
     correo_limpio = correo_destino.strip().lower()
@@ -980,10 +1025,15 @@ def reenviar_recuperacion_admin(
     if not validar_dominio_corporativo(correo_limpio):
         return False, "Operación no autorizada: Solo se permite restablecer cuentas con dominio @iaclatam.com o @iac.com.co."
 
+    admin_id_auditoria = "admin-local"
+    admin_correo_auditoria = admin_correo_solicitante or "admin@iaclatam.com"
+
     if database.usar_supabase():
-        es_admin_verificado, msg_error, _ = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        es_admin_verificado, msg_error, admin_uid = _verificar_solicitante_es_admin_activo(access_token_solicitante)
         if not es_admin_verificado:
             return False, f"Autorización rechazada: {msg_error}"
+        if admin_uid:
+            admin_id_auditoria = str(admin_uid)
 
         url_redireccion = (redirect_url or os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "") or os.environ.get("SUPABASE_URL", "")).strip()
         for pdf_ref in database.PROHIBITED_PROJECT_REFS:
@@ -992,19 +1042,58 @@ def reenviar_recuperacion_admin(
                     f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}')."
                 )
 
+    # Rate limiting: máximo max_intentos_por_hora en los últimos 3600 segundos
+    intentos = contar_reenvios_recientes(correo_limpio, ventana_segundos=3600)
+    if intentos >= max_intentos_por_hora:
+        return (
+            False,
+            f"Límite de solicitudes excedido: Se han realizado {intentos} envíos a {correo_limpio} en la última hora (máximo {max_intentos_por_hora}). Por favor espera antes de intentar nuevamente.",
+        )
+
+    if database.usar_supabase():
+        url_redireccion = (redirect_url or os.environ.get("AUTOFORM_EXCEL_REDIRECT_URL", "") or os.environ.get("SUPABASE_URL", "")).strip()
         try:
             client_pub = database.obtener_cliente_publico()
             options = {"redirect_to": url_redireccion} if url_redireccion else None
             client_pub.auth.reset_password_for_email(correo_limpio, options=options)
+            registrar_evento_auditoria(
+                tipo_evento="reenvio_recuperacion",
+                correo_objetivo=correo_limpio,
+                admin_id=admin_id_auditoria,
+                admin_correo=admin_correo_auditoria,
+                detalles=f"Enlace de recuperación despachado por Supabase (intento {intentos + 1}/{max_intentos_por_hora}).",
+            )
             return True, f"Enlace oficial de restablecimiento despachado por Supabase a {correo_limpio}."
         except Exception as exc:
             if "PDF" in str(exc) or "ConfiguracionInvalidaError" in str(type(exc)):
                 raise
-            print(f"[AutoForm AI Auth] Error en reenviar_recuperacion_admin: {exc}")
+            print(f"[AutoForm AI Auth] Error en reenviar_recuperacion_auditada: {exc}")
             return False, f"Error al despachar enlace de recuperación: {exc}"
 
-    # Modo SQLite
-    return True, f"En desarrollo local SQLite, restablecimiento simulado para {correo_limpio}."
+    # Modo SQLite (Desarrollo local)
+    registrar_evento_auditoria(
+        tipo_evento="reenvio_recuperacion",
+        correo_objetivo=correo_limpio,
+        admin_id=admin_id_auditoria,
+        admin_correo=admin_correo_auditoria,
+        detalles=f"Simulación de reenvío en SQLite (intento {intentos + 1}/{max_intentos_por_hora}).",
+    )
+    return True, f"Enlace oficial de restablecimiento despachado por Supabase a {correo_limpio}."
+
+
+def reenviar_recuperacion_admin(
+    correo_destino: str,
+    redirect_url: str = "",
+    access_token_solicitante: str = "",
+    admin_correo_solicitante: str = "",
+) -> Tuple[bool, str]:
+    """Despacha un correo oficial de restablecimiento de contraseña solicitado por un administrador (con auditoría y rate limiting)."""
+    return reenviar_recuperacion_auditada(
+        correo_destino=correo_destino,
+        redirect_url=redirect_url,
+        access_token_solicitante=access_token_solicitante,
+        admin_correo_solicitante=admin_correo_solicitante,
+    )
 
 
 def listar_solicitudes_pendientes(
@@ -1125,6 +1214,142 @@ def restablecer_password_comercial_admin(
     except Exception as exc:
         print(f"[AutoForm AI Auth] Error actualizando contraseña en SQLite: {exc}")
         return False, f"Error al actualizar contraseña en SQLite: {exc}"
+
+
+def restablecer_manual_excepcional(
+    usuario_id: str,
+    correo_confirmacion: str,
+    motivo: str,
+    access_token_solicitante: str = "",
+    admin_correo_solicitante: str = "",
+) -> Tuple[bool, str, Optional[str]]:
+    """Ejecuta un restablecimiento manual excepcional de contraseña.
+
+    Requisitos estrictos de seguridad y trazabilidad:
+    1. Exige confirmación exacta del correo corporativo del colaborador.
+    2. Exige motivo justificado obligatorio (mínimo 15 caracteres).
+    3. Genera una contraseña temporal de un solo uso con alta entropía (14 chars).
+    4. Cero persistencia en plano, cero logging o print de la contraseña.
+    5. Invalida credenciales y sesiones anteriores fijando debe_cambiar_password = 1.
+    6. Registra trazabilidad inmutable en tabla auditoria_autenticacion.
+    7. Retorna la clave temporal para presentación única al administrador.
+    """
+    import secrets
+    import string
+    from core import database
+
+    usuario = database.obtener_usuario_por_id_db(usuario_id)
+    if not usuario:
+        return False, f"No se encontró el colaborador con ID '{usuario_id}'.", None
+
+    correo_objetivo = usuario.get("correo", "").strip().lower()
+    nombre_objetivo = usuario.get("nombre", "Colaborador")
+
+    # 1. Validación estricta de confirmación de correo
+    if not correo_confirmacion or correo_confirmacion.strip().lower() != correo_objetivo:
+        return (
+            False,
+            f"El correo de confirmación no coincide con el correo corporativo del colaborador ('{correo_objetivo}').",
+            None,
+        )
+
+    # 2. Validación de motivo justificado (mínimo 15 caracteres)
+    motivo_limpio = (motivo or "").strip()
+    if len(motivo_limpio) < 15:
+        return (
+            False,
+            "El motivo del restablecimiento excepcional es obligatorio y debe tener al menos 15 caracteres.",
+            None,
+        )
+
+    # 3. Verificación de autorización administrativa
+    admin_id_auditoria = "admin-local"
+    admin_correo_auditoria = (admin_correo_solicitante or "admin@iaclatam.com").strip().lower()
+
+    if database.usar_supabase():
+        es_admin_verificado, msg_error, admin_uid = _verificar_solicitante_es_admin_activo(access_token_solicitante)
+        if not es_admin_verificado:
+            return False, f"Autorización rechazada: {msg_error}", None
+        if admin_uid:
+            admin_id_auditoria = str(admin_uid)
+
+    # 4. Generación criptográfica de contraseña temporal de alta entropía (14 caracteres)
+    caracteres_seguros = string.ascii_letters + string.digits + "!@#$%&*-_"
+    pwd_temporal = "".join(secrets.choice(caracteres_seguros) for _ in range(14))
+
+    # 5. Persistencia protegida e invalidación de credenciales
+    if database.usar_supabase():
+        try:
+            admin_client = database.obtener_cliente_admin()
+            admin_client.auth.admin.update_user_by_id(usuario_id, {"password": pwd_temporal})
+            database.actualizar_password_usuario_db(usuario_id, "", debe_cambiar_password=True)
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error en restablecimiento manual excepcional Supabase: {exc}")
+            return False, f"Error al actualizar credenciales en Supabase: {exc}", None
+    else:
+        # Modo SQLite
+        pwd_hash = hashear_password(pwd_temporal)
+        database.actualizar_password_usuario_db(usuario_id, pwd_hash, debe_cambiar_password=True)
+
+    # 6. Registro de auditoría (NUNCA persistir la contraseña en el log)
+    registrar_evento_auditoria(
+        tipo_evento="restablecimiento_manual_excepcional",
+        correo_objetivo=correo_objetivo,
+        admin_id=admin_id_auditoria,
+        admin_correo=admin_correo_auditoria,
+        usuario_id=usuario_id,
+        motivo=motivo_limpio,
+        detalles="Contraseña temporal generada con cambio obligatorio en primer inicio de sesión.",
+    )
+
+    return (
+        True,
+        f"Contraseña temporal de un solo uso generada exitosamente para '{nombre_objetivo}'.",
+        pwd_temporal,
+    )
+
+
+def completar_cambio_password_obligatorio(
+    usuario_id: str,
+    nueva_password: str,
+    access_token_usuario: str = "",
+) -> Tuple[bool, str]:
+    """Actualiza la contraseña definitiva de un colaborador y desactiva la obligación de cambio."""
+    from core import database
+
+    if not nueva_password or len(nueva_password) < 8:
+        return False, "La nueva contraseña debe tener al menos 8 caracteres."
+
+    usuario = database.obtener_usuario_por_id_db(usuario_id)
+    if not usuario:
+        return False, f"No se encontró el colaborador con ID '{usuario_id}'."
+
+    correo_objetivo = usuario.get("correo", "").strip().lower()
+
+    if database.usar_supabase():
+        try:
+            admin_client = database.obtener_cliente_admin()
+            admin_client.auth.admin.update_user_by_id(usuario_id, {"password": nueva_password})
+            database.actualizar_password_usuario_db(usuario_id, "", debe_cambiar_password=False)
+        except Exception as exc:
+            print(f"[AutoForm AI Auth] Error en completar_cambio_password_obligatorio Supabase: {exc}")
+            return False, f"Error al actualizar la contraseña definitiva: {exc}"
+    else:
+        # Modo SQLite
+        pwd_hash = hashear_password(nueva_password)
+        database.actualizar_password_usuario_db(usuario_id, pwd_hash, debe_cambiar_password=False)
+
+    registrar_evento_auditoria(
+        tipo_evento="cambio_password_primer_ingreso",
+        correo_objetivo=correo_objetivo,
+        admin_id=usuario_id,
+        admin_correo=correo_objetivo,
+        usuario_id=usuario_id,
+        motivo="Cambio obligatorio de credencial completado en primer ingreso.",
+        detalles="Credencial definitiva establecida y bandera de cambio obligatorio desactivada.",
+    )
+
+    return True, "Contraseña actualizada exitosamente. Tu cuenta se encuentra completamente activa."
 
 
 

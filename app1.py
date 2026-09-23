@@ -594,6 +594,70 @@ except Exception as _sync_err:
         st.error("🔒 Error validando credenciales de sesión activa. Sesión cerrada por seguridad.")
         _safe_rerun()
 
+# ── INTERCEPCIÓN DE SEGURIDAD: CAMBIO OBLIGATORIO DE CONTRASEÑA EN PRIMER INGRESO ──
+if usuario_actual.get("debe_cambiar_password"):
+    st.markdown("""
+        <style>
+            [data-testid="stSidebar"] { display: none !important; }
+            [data-testid="stSidebarNav"] { display: none !important; }
+            [data-testid="collapsedControl"] { display: none !important; }
+        </style>
+    """, unsafe_allow_html=True)
+
+    col_izq, col_pwd, col_der = st.columns([1, 2, 1])
+    with col_pwd:
+        st.markdown(
+            f"""
+            <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-top: 5px solid #DC2626; border-radius: 12px; padding: 1.5rem 1.8rem; box-shadow: 0 4px 16px rgba(0,0,0,0.08); margin-top: 2rem; margin-bottom: 1.5rem;">
+                <h3 style="color: #991B1B; margin-bottom: 0.25rem; font-family: 'Montserrat', sans-serif;">🔒 Actualización Obligatoria de Contraseña</h3>
+                <p style="color: #475569; font-size: 0.9rem; margin-top: 0.5rem; line-height: 1.5;">
+                    Hola <strong>{usuario_actual.get('nombre', 'Colaborador')}</strong>. Tu cuenta fue restablecida mediante una clave temporal de un solo uso o requiere actualización obligatoria por directiva de seguridad.
+                </p>
+                <div style="margin-top: 0.75rem; font-size: 0.82rem; background: #FEF2F2; border: 1px solid #FCA5A5; padding: 0.6rem 0.85rem; border-radius: 6px; color: #991B1B;">
+                    🛡️ Por estrictas políticas corporativas de IAC Latam, debes definir una contraseña nueva y personal antes de acceder a las herramientas de AutoForm AI.
+                </div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+        with st.form("form_cambio_obligatorio_pwd", clear_on_submit=False):
+            nueva_pwd = st.text_input("Nueva Contraseña Definitiva * (mínimo 8 caracteres)", type="password", key="inp_forzado_nueva_pwd")
+            conf_pwd = st.text_input("Confirmar Nueva Contraseña *", type="password", key="inp_forzado_conf_pwd")
+            btn_guardar_pwd = st.form_submit_button("💾 Guardar Contraseña y Acceder a AutoForm", type="primary", use_container_width=True)
+
+        if btn_guardar_pwd:
+            p1 = str(nueva_pwd or "").strip()
+            p2 = str(conf_pwd or "").strip()
+            if not p1:
+                st.error("Por favor ingresa tu nueva contraseña.")
+            elif len(p1) < 8:
+                st.error("La contraseña debe tener al menos 8 caracteres.")
+            elif p1 != p2:
+                st.error("Las contraseñas no coinciden.")
+            else:
+                _ses_act = st.session_state.get("supabase_session", {})
+                _u_tok = _ses_act.get("access_token", "") if isinstance(_ses_act, dict) else ""
+                with st.spinner("Actualizando tu contraseña corporativa..."):
+                    ok_pwd, msg_pwd = auth_manager.completar_cambio_password_obligatorio(
+                        usuario_id=usuario_actual["id"],
+                        nueva_password=p1,
+                        access_token_usuario=_u_tok,
+                    )
+                if ok_pwd:
+                    st.session_state["usuario_activo"]["debe_cambiar_password"] = False
+                    st.success(f"✅ {msg_pwd}")
+                    _safe_rerun()
+                else:
+                    st.error(f"❌ {msg_pwd}")
+
+        if st.button("🚪 Cerrar Sesión", key="btn_logout_forzado_pwd", use_container_width=True):
+            auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
+            st.session_state.clear()
+            _safe_rerun()
+
+    st.stop()
+
 es_admin_usuario = bool(usuario_actual.get("es_admin", False))
 rol_badge_label = "🛡️ Administrador" if es_admin_usuario else "💼 Asesor Comercial"
 
@@ -1323,12 +1387,18 @@ with st.sidebar:
                         u_admin = bool(usr.get("es_admin", False))
                         u_activo = bool(usr.get("activo", False))
                         u_est = str(usr.get("estado_aprobacion") or "aprobado").lower()
+                        u_debe_cambiar = bool(usr.get("debe_cambiar_password", False))
 
                         badge_estado = '<span style="background: #DCFCE7; color: #166534; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🟢 Activo</span>' if u_activo else '<span style="background: #FEE2E2; color: #991B1B; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🔴 Inactivo</span>'
                         if u_est == "pendiente":
                             badge_estado = '<span style="background: #FEF3C7; color: #92400E; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">⏳ Pendiente</span>'
                         elif u_est == "rechazado":
                             badge_estado = '<span style="background: #F1F5F9; color: #475569; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">🚫 Rechazado</span>'
+
+                        badge_forzado = (
+                            '<div style="margin-top: 4px;"><span style="background: #FEF3C7; color: #92400E; font-size: 0.72rem; font-weight: 700; padding: 0.12rem 0.45rem; border-radius: 4px; border: 1px solid #FCD34D;">🔑 Cambio Obligatorio</span></div>'
+                            if u_debe_cambiar else ""
+                        )
 
                         badge_rol = "🛡️ Administrador" if u_admin else "💼 Comercial"
                         color_rol = "#1E3A8A" if u_admin else "#059669"
@@ -1342,7 +1412,7 @@ with st.sidebar:
                                 f'<div style="font-weight: 700; font-size: 0.92rem; color: #0F172A;">{u_nom}</div>'
                                 f'<div style="font-size: 0.78rem; color: {color_rol}; font-weight: 700; margin-top: 2px;">[{badge_rol}]</div>'
                                 f'</div>'
-                                f'<div>{badge_estado}</div>'
+                                f'<div style="text-align: right;">{badge_estado}{badge_forzado}</div>'
                                 f'</div>'
                                 f'<div style="font-size: 0.8rem; color: #64748B; margin-top: 0.35rem; word-break: break-all;">'
                                 f'<code>{u_cor}</code>'
@@ -1391,13 +1461,46 @@ with st.sidebar:
                                             st.error(f"❌ {msg_t}")
 
                             with col_btn2:
-                                if st.button("🔑 Restablecer", key=f"btn_recup_adm_{u_id}", use_container_width=True, help="Enviar enlace de recuperación de contraseña a este correo"):
-                                    with st.spinner("Enviando..."):
-                                        ok_rc, msg_rc = auth_manager.reenviar_recuperacion_admin(u_cor, access_token_solicitante=_acc_token)
+                                if st.button("✉️ Reenviar Enlace", key=f"btn_recup_adm_{u_id}", use_container_width=True, help="Vuelve a solicitar el enlace oficial de recuperación con auditoría y límite de intentos"):
+                                    with st.spinner("Despachando enlace oficial..."):
+                                        ok_rc, msg_rc = auth_manager.reenviar_recuperacion_auditada(
+                                            correo_destino=u_cor,
+                                            access_token_solicitante=_acc_token,
+                                            admin_correo_solicitante=usuario_actual.get("correo", ""),
+                                        )
                                     if ok_rc:
-                                        st.success("📩 Correo enviado")
+                                        st.success(f"📩 {msg_rc}")
                                     else:
                                         st.error(f"❌ {msg_rc}")
+
+                            # Acción 2: Restablecimiento Manual Excepcional
+                            with st.expander("⚠️ Restablecimiento Manual Excepcional", expanded=False):
+                                st.caption("Úsalo solo si el colaborador confirma no haber recibido el correo tras revisar spam:")
+                                with st.form(f"form_excepcional_{u_id}", clear_on_submit=True):
+                                    st.markdown(f"**Colaborador:** `{u_cor}`")
+                                    conf_cor_input = st.text_input("Escribe el correo del colaborador para confirmar *", placeholder=u_cor, key=f"inp_conf_cor_{u_id}")
+                                    motivo_input = st.text_area("Motivo justificado de la excepción * (mínimo 15 caracteres)", placeholder="Ej: Colaborador confirma bloqueo de filtros SMTP tras 2 días sin recepción.", key=f"inp_motivo_{u_id}")
+                                    btn_gen_tmp = st.form_submit_button("⚡ Generar Contraseña Temporal de Un Solo Uso", type="primary", use_container_width=True)
+
+                                if btn_gen_tmp:
+                                    with st.spinner("Generando credencial temporal y registrando auditoría..."):
+                                        ok_man, msg_man, pwd_tmp = auth_manager.restablecer_manual_excepcional(
+                                            usuario_id=u_id,
+                                            correo_confirmacion=conf_cor_input,
+                                            motivo=motivo_input,
+                                            access_token_solicitante=_acc_token,
+                                            admin_correo_solicitante=usuario_actual.get("correo", ""),
+                                        )
+                                    if ok_man and pwd_tmp:
+                                        st.session_state[f"temp_pwd_generated_{u_id}"] = pwd_tmp
+                                        st.success(f"✅ {msg_man}")
+                                    else:
+                                        st.error(f"❌ {msg_man}")
+
+                                if st.session_state.get(f"temp_pwd_generated_{u_id}"):
+                                    st.warning("⚠️ Contraseña temporal generada. Cópiala y compártela de forma segura; por seguridad no se guardará ni se volverá a mostrar:")
+                                    st.code(st.session_state[f"temp_pwd_generated_{u_id}"], language="text")
+                                    st.caption("🔒 Las credenciales y sesiones anteriores han sido invalidadas. El colaborador estará obligado a cambiarla en su primer inicio de sesión.")
 
                             st.markdown("<hr style='margin: 0.85rem 0; border: none; border-top: 1px solid #E2E8F0;' />", unsafe_allow_html=True)
 
