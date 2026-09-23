@@ -552,10 +552,14 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
     if txt_actual.startswith("="):
         return True
 
+    # Declaraciones explícitas de 'No Aplica' en formularios deben preservarse intactas y nunca sobreescribirse
+    if txt_actual.upper() in ("N/A", "NA", "NO APLICA"):
+        return False
+
     # Si la celda contiene comilla simple o placeholder que el usuario ve vacía en Excel, permitir sobreescritura
     es_formula_o_vacio_visualmente = bool(
         not txt_actual or
-        txt_actual in ("''", '""', "-", "N/A", "0") or
+        txt_actual in ("''", '""', "-") or
         re.match(r"^[\s_\.\:\-]+$", txt_actual)
     )
 

@@ -278,7 +278,8 @@ _TERMINOS_CABECERA = re.compile(
     r"^(?:datos|informaci[oó]n|documentaci[oó]n|proponente|oferente|"
     r"titulo|secci[oó]n|bloque|cap[ií]tulo|numeral|anexo|anexar|"
     r"composici[oó]n|declaraci[oó]n|referencias|representante|"
-    r"[oó]rganos|conflicto|autorizaci[oó]n|cumplimiento)\b",
+    r"[oó]rganos|conflicto|autorizaci[oó]n|cumplimiento|"
+    r"identificaci[oó]n|actividad|clasificaci[oó]n|firmas?)\b",
     re.IGNORECASE,
 )
 
@@ -377,7 +378,8 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         r"^\s*(?:\d+(?:\.\d+)*[\.]\s*)?(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|"
         r"PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|"
         r"NUMERAL|ANEXO|ANEXAR|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|"
-        r"REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)",
+        r"REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO|"
+        r"IDENTIFICACI[OÓ]N|ACTIVIDAD(?:\s+ECON[OÓ]MICA)?|CLASIFICACI[OÓ]N|FIRMAS?)",
         t_clean,
         re.IGNORECASE,
     ):
@@ -427,8 +429,11 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         tiene_espacio_llenado = der_vacia or der_merge or ab_vacia
 
         # 1. Banner de Ancho Completo (Ocupa desde el inicio de la celda hasta el final del formulario):
-        # Si la celda combinada inicia cerca del margen izquierdo (columna <= 3) y se extiende
-        # a través de múltiples columnas (span >= 5 o llega hasta col >= 10)
+        # Si la celda combinada inicia cerca del margen izquierdo (columna <= 4) y se extiende
+        # a través de múltiples columnas (span >= 15 o llega hasta col >= 20)
+        es_banner_ancho_total = (
+            es_merge and min_col <= 4 and (span_merge >= 15 or max_col >= 20)
+        )
         es_franja_ancho_completo = (
             es_merge and min_col <= 3 and (span_merge >= 5 or max_col >= 10)
         )
@@ -441,6 +446,14 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         # Textos descriptivos o párrafos en minúsculas/oración no son títulos de sección
         if not es_formato_titulo and len(t_clean.split()) > 4:
             return False
+
+        if es_banner_ancho_total:
+            if (
+                len(t_clean) >= 4
+                and not t_clean.endswith(":")
+                and not _PATRON_INSTRUCCIONES.search(t_clean)
+            ):
+                return True
 
         if es_franja_ancho_completo:
             if len(t_clean) >= 3 and not _TERMINOS_CAMPO_CORTO.search(t_clean):

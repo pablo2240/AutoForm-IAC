@@ -562,17 +562,18 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         continue
                     derecha_fila    = fila
                     derecha_columna = merge_propio.max_col + 1
+                    abajo_fila      = merge_propio.max_row + 1
+                    abajo_columna   = columna
                     es_merge_principal = True
                     coord_merge = str(merge_propio)
                 else:
                     derecha_fila    = fila
                     derecha_columna = columna + 1
+                    abajo_fila      = fila + 1
+                    abajo_columna   = columna
                     es_merge_principal = False
                     coord_merge = ""
                 # ────────────────────────────────────────────────────────────
-
-                abajo_fila   = fila + 1
-                abajo_columna = columna
 
                 # 3. Estado de vecinos: vacío / combinado (consultas O(1))
                 max_hoja_col = hoja.max_column or 1
@@ -582,7 +583,7 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                 rango_derecha   = mapa_merges.get((derecha_fila, derecha_columna))
                 rango_abajo     = mapa_merges.get((abajo_fila, abajo_columna))
                 derecha_es_merge = rango_derecha is not None
-                abajo_es_merge   = rango_abajo is not None
+                abajo_es_merge   = rango_abajo is not None and (merge_propio is None or rango_abajo.coord != merge_propio.coord)
 
                 # FIX-1: Considerar "placeholder" como vacío efectivo.
                 # Celdas con solo guiones, puntos o espacios (p.ej. "____", "...", "-")

@@ -793,6 +793,28 @@ def validar_item_mapeo(
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 
+    # ── Domain Isolation (ADR-0004 / ADR-0009): Referencias Bancarias de Terceros ──
+    es_sec_ref_bancaria = any(t in seccion_norm for t in ("referencias bancarias", "referencia bancaria"))
+    if es_sec_ref_bancaria:
+        # En grillas de referencias bancarias, los datos solicitados de dirección/teléfono pertenecen a la sucursal del banco externo.
+        # Prohibir inyectar los datos de contacto corporativo de la empresa contratista.
+        if campo_original in ("direccion", "telefono", "celular", "correo", "razon_social", "nit") or (campo_original == "sucursal" and "direccion" in rotulo_norm):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation (ADR-0004 / ADR-0009): Campo '{campo_original}' prohibido o no aplicable en referencias bancarias de terceros ('{seccion}' -> '{rotulo}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
+    # ── Domain Isolation (ADR-0004): Junta Directiva y Accionistas ──
+    es_sec_junta_o_socios = any(t in seccion_norm for t in ("junta directiva", "accionistas", "socios"))
+    if es_sec_junta_o_socios:
+        if campo_original in ("razon_social", "empresa", "nombre_empresa") and any(t in rotulo_norm for t in ("nombre", "miembro", "socio", "accionista")):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation: Razón social no aplicable a nombres de miembros en '{seccion}'."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
     # ── Domain Isolation (ADR-0006): Cifras de Balance y Estados Financieros ──
     # Condición estricta: SECCIÓN AND RÓTULO (nunca OR).
     if campo_original in CAMPOS_FINANCIEROS_BALANCE:
