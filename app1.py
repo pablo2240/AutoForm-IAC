@@ -466,7 +466,7 @@ if not st.session_state.get("usuario_activo"):
             </div>
         """, unsafe_allow_html=True)
 
-        tab_login, tab_register, tab_recovery = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse", "🔄 Recuperar Contraseña"])
+        tab_login, tab_register = st.tabs(["🔑 Iniciar Sesión", "📝 Registrarse"])
 
         with tab_login:
             st.markdown("##### Ingreso con Credenciales Corporativas")
@@ -551,31 +551,7 @@ if not st.session_state.get("usuario_activo"):
                     else:
                         st.error(f"❌ {msg_reg}")
 
-        with tab_recovery:
-            st.markdown("##### Restablecimiento de Credenciales Corporativas")
-            st.caption("Ingresa tu correo oficial para recibir un enlace de recuperación seguro.")
-            with st.form("gate_recovery_form", clear_on_submit=False):
-                rec_correo = st.text_input(
-                    "Correo Corporativo",
-                    key="gate_rec_correo",
-                )
-                btn_recovery = st.form_submit_button("Enviar Enlace de Recuperación", type="primary", use_container_width=True)
-
-            if btn_recovery:
-                correo_rec_val = str(rec_correo or st.session_state.get("gate_rec_correo") or "").strip().lower()
-                if not correo_rec_val:
-                    st.warning("Por favor ingresa tu correo corporativo.")
-                elif not auth_manager.validar_dominio_corporativo(correo_rec_val):
-                    st.error("Acceso restringido: Utiliza un correo oficial @iaclatam.com o @iac.com.co.")
-                else:
-                    with st.spinner("Procesando solicitud de recuperación..."):
-                        ok_rec, msg_rec = auth_manager.solicitar_recuperacion_password(correo_rec_val)
-                    if ok_rec:
-                        st.success(f"📩 {msg_rec}")
-                    else:
-                        st.error(f"❌ {msg_rec}")
-
-    st.stop()
+        st.stop()
 
 # 3. Header Hero Institucional y Barra de Sesión
 usuario_actual = st.session_state["usuario_activo"]
