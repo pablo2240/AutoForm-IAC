@@ -465,7 +465,7 @@ def _regla_autocorrecciones_semanticas_adicionales(
             if campo != "ciudad":
                 return "ciudad", "Rótulo 'Ciudad' en contexto financiero → asignado a 'ciudad'."
         elif re.search(r"^\s*(?:direcci[oó]n[\s/]+ciudad|ciudad[\s/]+direcci[oó]n|direcci[oó]n(?:\s+(?:de\s+la\s+)?sucursal)?)\s*:?\s*$", rotulo_normalizado):
-            if campo not in ("direccion", "sucursal", "ciudad"):
+            if campo != "direccion":
                 return "direccion", "Rótulo 'Dirección/Ciudad' en contexto bancario → asignado a 'direccion'."
         elif re.search(r"^\s*(?:tel[eé]fono[\s/]+fax|fax[\s/]+tel[eé]fono)\s*:?\s*$", rotulo_normalizado):
             if campo != "telefono":
@@ -793,17 +793,6 @@ def validar_item_mapeo(
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 
-    # ── Domain Isolation (ADR-0004 / ADR-0009): Referencias Bancarias de Terceros ──
-    es_sec_ref_bancaria = any(t in seccion_norm for t in ("referencias bancarias", "referencia bancaria"))
-    if es_sec_ref_bancaria:
-        # En grillas de referencias bancarias, los datos solicitados de dirección/teléfono pertenecen a la sucursal del banco externo.
-        # Prohibir inyectar los datos de contacto corporativo de la empresa contratista.
-        if campo_original in ("direccion", "telefono", "celular", "correo", "razon_social", "nit") or (campo_original == "sucursal" and "direccion" in rotulo_norm):
-            resultado["estado"] = EstadoMapeo.DESCARTADO
-            resultado["campo_final"] = ""
-            resultado["motivo"] = f"Domain Isolation (ADR-0004 / ADR-0009): Campo '{campo_original}' prohibido o no aplicable en referencias bancarias de terceros ('{seccion}' -> '{rotulo}')."
-            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-            return resultado
 
     # ── Domain Isolation (ADR-0004): Junta Directiva y Accionistas ──
     es_sec_junta_o_socios = any(t in seccion_norm for t in ("junta directiva", "accionistas", "socios"))
