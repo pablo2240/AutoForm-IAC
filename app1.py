@@ -528,7 +528,7 @@ if not st.session_state.get("usuario_activo"):
                 elif p_val != pc_val:
                     st.error("Las contraseñas no coinciden.")
                 else:
-                    with st.spinner("Creando cuenta corporativa y accediendo a AutoForm..."):
+                    with st.spinner("Enviando solicitud de registro corporativo..."):
                         ok_reg, msg_reg = auth_manager.registrar_solicitud_corporativa(
                             nombre=n_val,
                             correo=c_val,
@@ -536,18 +536,11 @@ if not st.session_state.get("usuario_activo"):
                             cargo=cg_val,
                             telefono=t_val,
                             ciudad=ci_val,
+                            requiere_aprobacion=True,
                         )
                     if ok_reg:
-                        # Auto-login directo e inmediato
-                        ok_log, usr_data, tok_data, _ = auth_manager.iniciar_sesion(c_val, p_val)
-                        if ok_log and usr_data:
-                            st.session_state["usuario_activo"] = usr_data
-                            st.session_state["supabase_session"] = tok_data
-                            st.success(f"🎉 ¡Bienvenido a AutoForm AI, {usr_data.get('nombre', n_val)}!")
-                            _safe_rerun()
-                        else:
-                            st.success(f"✅ {msg_reg}")
-                            st.info("ℹ️ Tu cuenta está activa. Ahora puedes ingresar desde la pestaña 'Iniciar Sesión'.")
+                        st.success("✅ Tu solicitud de acceso corporativo ha sido registrada exitosamente.")
+                        st.info("ℹ️ Por políticas de seguridad institucional, un administrador corporativo debe verificar y autorizar tu cuenta antes de tu primer ingreso. Podrás iniciar sesión desde la pestaña 'Iniciar Sesión' en cuanto sea aprobada.")
                     else:
                         st.error(f"❌ {msg_reg}")
 
@@ -1255,10 +1248,65 @@ with st.sidebar:
         with st.expander("👥 Directorio y Gestión de Usuarios Corporativos", expanded=False):
             st.caption("Gestiona los accesos, roles y colaboraciones de la plataforma:")
 
-            tab_directorio, tab_invitar = st.tabs([
+            tab_solicitudes, tab_directorio, tab_invitar = st.tabs([
+                "⏳ Solicitudes Pendientes",
                 "👥 Directorio de Colaboradores",
                 "✉️ Invitar Directamente",
             ])
+
+            # ── 1. SOLICITUDES PENDIENTES DE APROBACIÓN ────────────────────────
+            with tab_solicitudes:
+                st.markdown("##### Solicitudes de Registro Corporativo Pendientes")
+                st.caption("Revisa y autoriza el acceso a nuevos colaboradores de IAC Latam:")
+                ok_pend, res_pend = auth_manager.listar_solicitudes_pendientes(access_token_solicitante=_acc_token)
+                if not ok_pend or not res_pend:
+                    st.info("✅ No hay solicitudes pendientes de aprobación en este momento.")
+                else:
+                    for sol in res_pend:
+                        sol_id = sol["id"]
+                        sol_nom = sol.get("nombre", "")
+                        sol_cor = sol.get("correo", "")
+                        sol_car = sol.get("cargo") or "Asesor Comercial"
+                        sol_tel = sol.get("telefono") or "Sin teléfono"
+                        sol_ciu = sol.get("ciudad") or "Bogotá"
+                        sol_fecha = str(sol.get("created_at") or "")[:10]
+
+                        with st.container():
+                            st.markdown(
+                                f"""<div style="background: #FFFFFF; border: 1px solid #FCD34D; border-left: 4px solid #F59E0B; border-radius: 8px; padding: 0.75rem 1rem; margin-bottom: 0.6rem;">
+                                    <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                                        <div>
+                                            <div style="font-weight: 700; font-size: 0.95rem; color: #0F172A;">👤 {sol_nom}</div>
+                                            <div style="font-size: 0.8rem; color: #64748B;"><code>{sol_cor}</code></div>
+                                        </div>
+                                        <span style="background: #FEF3C7; color: #92400E; font-size: 0.75rem; font-weight: 700; padding: 0.15rem 0.5rem; border-radius: 9999px;">⏳ Pendiente</span>
+                                    </div>
+                                    <div style="font-size: 0.8rem; color: #475569; margin-top: 0.35rem;">
+                                        💼 <strong>Cargo:</strong> {sol_car} | 📞 <strong>Tel:</strong> {sol_tel} | 📍 <strong>Ciudad:</strong> {sol_ciu} | 📅 <strong>Fecha:</strong> {sol_fecha}
+                                    </div>
+                                </div>""",
+                                unsafe_allow_html=True,
+                            )
+                            c_apr, c_rec = st.columns(2)
+                            with c_apr:
+                                if st.button("✅ Aprobar Acceso", key=f"btn_apr_sol_{sol_id}", type="primary", use_container_width=True):
+                                    with st.spinner(f"Aprobando a {sol_nom}..."):
+                                        ok_ap, msg_ap = auth_manager.aprobar_solicitud_registro(sol_id, access_token_solicitante=_acc_token)
+                                    if ok_ap:
+                                        st.success(f"✅ {msg_ap}")
+                                        _safe_rerun()
+                                    else:
+                                        st.error(f"❌ {msg_ap}")
+                            with c_rec:
+                                if st.button("❌ Rechazar", key=f"btn_rec_sol_{sol_id}", use_container_width=True):
+                                    with st.spinner(f"Rechazando a {sol_nom}..."):
+                                        ok_rc, msg_rc = auth_manager.rechazar_solicitud_registro(sol_id, access_token_solicitante=_acc_token)
+                                    if ok_rc:
+                                        st.warning(f"🚫 {msg_rc}")
+                                        _safe_rerun()
+                                    else:
+                                        st.error(f"❌ {msg_rc}")
+                            st.markdown("<hr style='margin: 0.75rem 0; border: none; border-top: 1px solid #E2E8F0;' />", unsafe_allow_html=True)
 
             # ── 1. DIRECTORIO DE COLABORADORES ────────────────────────────────
             with tab_directorio:
