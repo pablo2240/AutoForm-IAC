@@ -503,12 +503,28 @@ class TestSyntheticE2EStaging(unittest.TestCase):
         self.assertTrue(ok_tmp)
         self.assertTrue(datos_tmp.get("debe_cambiar_password"))
 
-        # 3. Colaborador intenta ingresar clave nueva muy corta (< 8 caracteres)
+        # 3. Validar rechazo de contraseñas que no cumplen política corporativa
+        # 3a. Clave muy corta (< 8 caracteres)
         ok_corta, msg_corta = auth_manager.completar_cambio_password_obligatorio(u_id, "corta")
         self.assertFalse(ok_corta)
         self.assertIn("8 caracteres", msg_corta.lower())
 
-        # 4. Colaborador define su clave definitiva válida
+        # 3b. Sin mayúscula
+        ok_sin_mayus, msg_sin_mayus = auth_manager.completar_cambio_password_obligatorio(u_id, "minusculas123!")
+        self.assertFalse(ok_sin_mayus)
+        self.assertIn("mayúscula", msg_sin_mayus.lower())
+
+        # 3c. Sin minúscula
+        ok_sin_minus, msg_sin_minus = auth_manager.completar_cambio_password_obligatorio(u_id, "MAYUSCULAS123!")
+        self.assertFalse(ok_sin_minus)
+        self.assertIn("minúscula", msg_sin_minus.lower())
+
+        # 3d. Sin número o símbolo
+        ok_sin_num, msg_sin_num = auth_manager.completar_cambio_password_obligatorio(u_id, "SolamenteLetras")
+        self.assertFalse(ok_sin_num)
+        self.assertIn("número o símbolo", msg_sin_num.lower())
+
+        # 4. Colaborador define su clave definitiva válida (cumple mayúscula, minúscula, número y símbolo)
         clave_definitiva = "DefinitivaPersonal2026!#"
         ok_def, msg_def = auth_manager.completar_cambio_password_obligatorio(u_id, clave_definitiva)
         self.assertTrue(ok_def)

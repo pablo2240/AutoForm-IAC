@@ -58,6 +58,24 @@ def validar_formato_correo(correo: str) -> bool:
     return bool(re.match(patron, (correo or "").strip()))
 
 
+def validar_complejidad_password(password: str) -> Tuple[bool, str]:
+    """Valida los requisitos corporativos de la contraseña:
+    - Mínimo 8 caracteres
+    - Al menos una letra mayúscula
+    - Al menos una letra minúscula
+    - Al menos un número o símbolo especial
+    """
+    if not password or len(password) < 8:
+        return False, "La contraseña debe tener al menos 8 caracteres."
+    if not any(c.isupper() for c in password):
+        return False, "La contraseña debe contener al menos una letra mayúscula."
+    if not any(c.islower() for c in password):
+        return False, "La contraseña debe contener al menos una letra minúscula."
+    if not any(c.isdigit() or not c.isalnum() for c in password):
+        return False, "La contraseña debe contener al menos un número o símbolo especial."
+    return True, ""
+
+
 def hashear_password(password: str) -> str:
     """Genera un hash seguro de la contraseña usando PBKDF2-HMAC-SHA256 con salt aleatorio (Modo Local).
 
@@ -1317,8 +1335,9 @@ def completar_cambio_password_obligatorio(
     """Actualiza la contraseña definitiva de un colaborador y desactiva la obligación de cambio."""
     from core import database
 
-    if not nueva_password or len(nueva_password) < 8:
-        return False, "La nueva contraseña debe tener al menos 8 caracteres."
+    valida, msg_val = validar_complejidad_password(nueva_password)
+    if not valida:
+        return False, msg_val
 
     usuario = database.obtener_usuario_por_id_db(usuario_id)
     if not usuario:

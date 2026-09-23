@@ -622,7 +622,8 @@ if usuario_actual.get("debe_cambiar_password"):
         )
 
         with st.form("form_cambio_obligatorio_pwd", clear_on_submit=False):
-            nueva_pwd = st.text_input("Nueva Contraseña Definitiva * (mínimo 8 caracteres)", type="password", key="inp_forzado_nueva_pwd")
+            st.caption("Requisitos corporativos: mínimo 8 caracteres, al menos una mayúscula, una minúscula y un número o símbolo.")
+            nueva_pwd = st.text_input("Nueva Contraseña Definitiva *", type="password", key="inp_forzado_nueva_pwd")
             conf_pwd = st.text_input("Confirmar Nueva Contraseña *", type="password", key="inp_forzado_conf_pwd")
             btn_guardar_pwd = st.form_submit_button("💾 Guardar Contraseña y Acceder a AutoForm", type="primary", use_container_width=True)
 
@@ -631,25 +632,27 @@ if usuario_actual.get("debe_cambiar_password"):
             p2 = str(conf_pwd or "").strip()
             if not p1:
                 st.error("Por favor ingresa tu nueva contraseña.")
-            elif len(p1) < 8:
-                st.error("La contraseña debe tener al menos 8 caracteres.")
             elif p1 != p2:
                 st.error("Las contraseñas no coinciden.")
             else:
-                _ses_act = st.session_state.get("supabase_session", {})
-                _u_tok = _ses_act.get("access_token", "") if isinstance(_ses_act, dict) else ""
-                with st.spinner("Actualizando tu contraseña corporativa..."):
-                    ok_pwd, msg_pwd = auth_manager.completar_cambio_password_obligatorio(
-                        usuario_id=usuario_actual["id"],
-                        nueva_password=p1,
-                        access_token_usuario=_u_tok,
-                    )
-                if ok_pwd:
-                    st.session_state["usuario_activo"]["debe_cambiar_password"] = False
-                    st.success(f"✅ {msg_pwd}")
-                    _safe_rerun()
+                valida, msg_val = auth_manager.validar_complejidad_password(p1)
+                if not valida:
+                    st.error(f"❌ {msg_val}")
                 else:
-                    st.error(f"❌ {msg_pwd}")
+                    _ses_act = st.session_state.get("supabase_session", {})
+                    _u_tok = _ses_act.get("access_token", "") if isinstance(_ses_act, dict) else ""
+                    with st.spinner("Actualizando tu contraseña corporativa..."):
+                        ok_pwd, msg_pwd = auth_manager.completar_cambio_password_obligatorio(
+                            usuario_id=usuario_actual["id"],
+                            nueva_password=p1,
+                            access_token_usuario=_u_tok,
+                        )
+                    if ok_pwd:
+                        st.session_state["usuario_activo"]["debe_cambiar_password"] = False
+                        st.success(f"✅ {msg_pwd}")
+                        _safe_rerun()
+                    else:
+                        st.error(f"❌ {msg_pwd}")
 
         if st.button("🚪 Cerrar Sesión", key="btn_logout_forzado_pwd", use_container_width=True):
             auth_manager.cerrar_sesion(st.session_state.get("supabase_session"))
