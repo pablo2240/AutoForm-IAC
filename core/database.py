@@ -1544,7 +1544,7 @@ def obtener_usuario_por_id_db(usuario_id: str, client: Optional[Client] = None) 
     """Busca un usuario por su ID primario (UUID o texto) en el almacén activo."""
     if usar_supabase():
         try:
-            cli = _obtener_cliente_activo(client)
+            cli = client or obtener_cliente_admin()
             res = cli.table("perfiles_usuario").select("*").eq("id", usuario_id).limit(1).execute()
             if res.data and len(res.data) > 0:
                 row = res.data[0]
@@ -1618,7 +1618,7 @@ def actualizar_password_usuario_db(
     """Actualiza la contraseña (hash) y el flag de cambio obligatorio."""
     if usar_supabase():
         try:
-            cli = _obtener_cliente_activo(client)
+            cli = obtener_cliente_admin()
             res = (
                 cli.table("perfiles_usuario")
                 .update({"debe_cambiar_password": debe_cambiar_password})
@@ -1749,7 +1749,7 @@ def contar_eventos_auditoria_db(
     correo_limpio = (correo_objetivo or "").strip().lower()
     if usar_supabase():
         try:
-            cli = _obtener_cliente_activo(client)
+            cli = client or obtener_cliente_admin()
             res = (
                 cli.table("auditoria_autenticacion")
                 .select("id", count="exact")

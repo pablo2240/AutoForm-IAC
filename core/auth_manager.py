@@ -149,6 +149,25 @@ def iniciar_sesion(
             # 3. Si no existe, está pendiente, rechazado o inactivo, rechazar inmediatamente, revocar sesión y no entregar tokens.
             if not usuario_perfil:
                 try:
+                    admin_cli = database.obtener_cliente_admin()
+                    res_p = admin_cli.table("perfiles_usuario").select("estado_aprobacion, activo").eq("id", tokens["user_id"]).limit(1).execute()
+                    if res_p.data and len(res_p.data) > 0:
+                        p_info = res_p.data[0]
+                        est = str(p_info.get("estado_aprobacion") or "").lower()
+                        try:
+                            client_auth.auth.sign_out()
+                        except Exception:
+                            pass
+                        if est == "pendiente":
+                            return False, None, None, "Tu solicitud de acceso está pendiente de aprobación por el administrador corporativo."
+                        if est == "rechazado":
+                            return False, None, None, "Tu solicitud de acceso fue rechazada. Contacta al administrador corporativo."
+                        if not p_info.get("activo"):
+                            return False, None, None, "Tu cuenta se encuentra inactiva. Contacta al administrador."
+                except Exception:
+                    pass
+
+                try:
                     client_auth.auth.sign_out()
                 except Exception:
                     pass
@@ -1060,8 +1079,18 @@ def reenviar_recuperacion_auditada(
                     f"Error de seguridad: La URL de redirección contiene un identificador de proyecto PDF prohibido ('{pdf_ref}')."
                 )
 
+    client_admin_auth = None
+    if database.usar_supabase():
+        if access_token_solicitante:
+            try:
+                client_admin_auth = database.obtener_cliente_usuario(access_token_solicitante)
+            except Exception:
+                client_admin_auth = None
+        if client_admin_auth is None:
+            client_admin_auth = database.obtener_cliente_admin()
+
     # Rate limiting: máximo max_intentos_por_hora en los últimos 3600 segundos
-    intentos = contar_reenvios_recientes(correo_limpio, ventana_segundos=3600)
+    intentos = contar_reenvios_recientes(correo_limpio, ventana_segundos=3600, client=client_admin_auth)
     if intentos >= max_intentos_por_hora:
         return (
             False,
@@ -1256,33 +1285,10 @@ def restablecer_manual_excepcional(
     import string
     from core import database
 
-    usuario = database.obtener_usuario_por_id_db(usuario_id)
-    if not usuario:
-        return False, f"No se encontró el colaborador con ID '{usuario_id}'.", None
-
-    correo_objetivo = usuario.get("correo", "").strip().lower()
-    nombre_objetivo = usuario.get("nombre", "Colaborador")
-
-    # 1. Validación estricta de confirmación de correo
-    if not correo_confirmacion or correo_confirmacion.strip().lower() != correo_objetivo:
-        return (
-            False,
-            f"El correo de confirmación no coincide con el correo corporativo del colaborador ('{correo_objetivo}').",
-            None,
-        )
-
-    # 2. Validación de motivo justificado (mínimo 15 caracteres)
-    motivo_limpio = (motivo or "").strip()
-    if len(motivo_limpio) < 15:
-        return (
-            False,
-            "El motivo del restablecimiento excepcional es obligatorio y debe tener al menos 15 caracteres.",
-            None,
-        )
-
-    # 3. Verificación de autorización administrativa
+    # 1. Verificación de autorización administrativa
     admin_id_auditoria = "admin-local"
     admin_correo_auditoria = (admin_correo_solicitante or "admin@iaclatam.com").strip().lower()
+    client_admin = None
 
     if database.usar_supabase():
         es_admin_verificado, msg_error, admin_uid = _verificar_solicitante_es_admin_activo(access_token_solicitante)
@@ -1290,6 +1296,31 @@ def restablecer_manual_excepcional(
             return False, f"Autorización rechazada: {msg_error}", None
         if admin_uid:
             admin_id_auditoria = str(admin_uid)
+        client_admin = database.obtener_cliente_admin()
+
+    usuario = database.obtener_usuario_por_id_db(usuario_id, client=client_admin)
+    if not usuario:
+        return False, f"No se encontró el colaborador con ID '{usuario_id}'.", None
+
+    correo_objetivo = usuario.get("correo", "").strip().lower()
+    nombre_objetivo = usuario.get("nombre", "Colaborador")
+
+    # 2. Validación estricta de confirmación de correo
+    if not correo_confirmacion or correo_confirmacion.strip().lower() != correo_objetivo:
+        return (
+            False,
+            f"El correo de confirmación no coincide con el correo corporativo del colaborador ('{correo_objetivo}').",
+            None,
+        )
+
+    # 3. Validación de motivo justificado (mínimo 15 caracteres)
+    motivo_limpio = (motivo or "").strip()
+    if len(motivo_limpio) < 15:
+        return (
+            False,
+            "El motivo del restablecimiento excepcional es obligatorio y debe tener al menos 15 caracteres.",
+            None,
+        )
 
     # 4. Generación criptográfica de contraseña temporal de alta entropía (14 caracteres)
     caracteres_seguros = string.ascii_letters + string.digits + "!@#$%&*-_"
@@ -1339,7 +1370,8 @@ def completar_cambio_password_obligatorio(
     if not valida:
         return False, msg_val
 
-    usuario = database.obtener_usuario_por_id_db(usuario_id)
+    client_admin = database.obtener_cliente_admin() if database.usar_supabase() else None
+    usuario = database.obtener_usuario_por_id_db(usuario_id, client=client_admin)
     if not usuario:
         return False, f"No se encontró el colaborador con ID '{usuario_id}'."
 

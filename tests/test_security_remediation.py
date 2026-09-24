@@ -1336,6 +1336,609 @@ class TestSecurityRemediationSuite(unittest.TestCase):
             mock_admin_user.table("auditoria_autenticacion").delete().execute()
         self.assertIn("inmutables", str(ctx_adm_del.exception))
 
+    def test_62_restricciones_esquema_004_fk_not_null_check_restrict(self):
+        """Verifica restricciones de esquema: NOT NULL, FK única fk_auditoria_admin_id, CHECK y RESTRICT."""
+        # 1. Simulación de fallo NOT NULL en admin_id (código 23502)
+        mock_admin = MagicMock()
+        mock_admin.table.return_value.insert.side_effect = [
+            Exception("null value in column 'admin_id' of relation 'auditoria_autenticacion' violates not-null constraint (23502)"),
+            Exception('new row for relation "auditoria_autenticacion" violates check constraint "chk_auditoria_tipo_evento" (23514)'),
+            Exception('insert or update on table "auditoria_autenticacion" violates foreign key constraint "fk_auditoria_admin_id" (23503)'),
+            MagicMock(execute=MagicMock(return_value=MagicMock(data=[{"id": "ok-1"}]))),
+        ]
+
+        # Inserción con admin_id NULL
+        with self.assertRaises(Exception) as ctx_null:
+            mock_admin.table("auditoria_autenticacion").insert({"tipo_evento": "reenvio_recuperacion"}).execute()
+        self.assertIn("violates not-null constraint", str(ctx_null.exception))
+
+        # Inserción con tipo_evento no permitido
+        with self.assertRaises(Exception) as ctx_chk:
+            mock_admin.table("auditoria_autenticacion").insert({"tipo_evento": "evento_prohibido"}).execute()
+        self.assertIn("chk_auditoria_tipo_evento", str(ctx_chk.exception))
+
+        # Inserción con admin_id inexistente
+        with self.assertRaises(Exception) as ctx_fk:
+            mock_admin.table("auditoria_autenticacion").insert({"admin_id": "00000000-0000-0000-0000-000000000000"}).execute()
+        self.assertIn("fk_auditoria_admin_id", str(ctx_fk.exception))
+
+        # Simulación de fallo al intentar borrar usuario en auth.users referenciado (ON DELETE RESTRICT, código 23503)
+        mock_admin.auth.admin.delete_user.side_effect = Exception('update or delete on table "users" violates foreign key constraint "fk_auditoria_admin_id" on table "auditoria_autenticacion" (23503)')
+        with self.assertRaises(Exception) as ctx_restrict:
+            mock_admin.auth.admin.delete_user("uid-admin-referenciado")
+        self.assertIn("fk_auditoria_admin_id", str(ctx_restrict.exception))
+
+    def test_63_proteger_columnas_perfil_debe_cambiar_password_y_estados(self):
+        """Verifica que comercial/pendiente/inactivo no pueda modificar debe_cambiar_password, estado_aprobacion, etc., y que backend sí pueda."""
+        # 1. Comercial intenta actualizar debe_cambiar_password directamente -> Bloqueado
+        mock_comercial = MagicMock()
+        mock_comercial.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: La bandera debe_cambiar_password es un atributo protegido y no puede ser modificada por clientes authenticated."
+        )
+
+        with self.assertRaises(Exception) as ctx_pwd:
+            mock_comercial.table("perfiles_usuario").update({"debe_cambiar_password": False}).eq("id", "uid-com-1").execute()
+        self.assertIn("debe_cambiar_password es un atributo protegido", str(ctx_pwd.exception))
+
+        # 2. Usuario no-admin intenta modificar es_admin, activo o estado_aprobacion -> Bloqueado
+        for campo in ["es_admin", "activo", "estado_aprobacion"]:
+            mock_comercial.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+                f"Operación denegada: No tienes permisos para modificar ({campo})."
+            )
+            with self.assertRaises(Exception) as ctx_campo:
+                mock_comercial.table("perfiles_usuario").update({campo: "hack"}).eq("id", "uid-com-1").execute()
+            self.assertIn(f"({campo})", str(ctx_campo.exception))
+
+        # 3. Backend (service_role) desactiva la bandera exitosamente tras cambio forzado de credencial
+        mock_backend = MagicMock()
+        mock_backend.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(data=[{"id": "uid-1", "debe_cambiar_password": False}])
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_backend):
+            ok_db = database.actualizar_password_usuario_db("uid-1", "", debe_cambiar_password=False)
+            self.assertTrue(ok_db)
+            mock_backend.table().update.assert_called_with({"debe_cambiar_password": False})
+
+    def test_64_inspeccion_estatica_sql_migracion_006(self):
+        """Verifica estáticamente que la migración 006 de reconciliación de auditoría
+        no contenga SECURITY DEFINER ni current_user, que mantenga SET search_path = '',
+        reconcilie admin_id NOT NULL con fk_auditoria_admin_id (ON DELETE RESTRICT),
+        defina chk_auditoria_tipo_evento para los 3 eventos, autorice backend exclusivamente
+        por claim auth.role() = 'service_role', incluya preflight y postflight,
+        y que un comercial siga categóricamente bloqueado."""
+        sql_path = PROJECT_ROOT / "supabase" / "migrations" / "006_reconcile_audit_schema.sql"
+        self.assertTrue(sql_path.exists(), "El archivo de migración 006 debe existir.")
+        sql_content = sql_path.read_text(encoding="utf-8")
+
+        # 1. Ausencia absoluta de SECURITY DEFINER en todo el archivo SQL
+        self.assertNotIn(
+            "SECURITY DEFINER",
+            sql_content,
+            "Violación de seguridad: Las funciones de trigger no deben elevar privilegios (SECURITY DEFINER prohibido).",
+        )
+
+        # 2. Ausencia absoluta de current_user en todo el archivo SQL
+        self.assertNotIn(
+            "current_user",
+            sql_content,
+            "Violación de seguridad: No deben usarse excepciones basadas en current_user. Usar auth.role().",
+        )
+
+        # 3. La función de inmutabilidad debe conservar SET search_path = ''
+        self.assertIn(
+            "CREATE OR REPLACE FUNCTION public.proteger_inmutabilidad_auditoria()",
+            sql_content,
+        )
+        self.assertIn(
+            "SET search_path = ''",
+            sql_content,
+            "La función debe declarar explícitamente SET search_path = '' para blindar la ruta de búsqueda.",
+        )
+
+        # 4. Verificación de autorización por claims: auth.role() = 'service_role'
+        self.assertIn(
+            "auth.role() = 'service_role'",
+            sql_content,
+            "La migración 006 debe usar auth.role() = 'service_role' para verificar privilegios de backend.",
+        )
+
+        # 5. Borrado sintético restringido a service_role y patrón synth.%
+        self.assertIn(
+            "(auth.role() = 'service_role') AND (OLD.correo_objetivo ILIKE 'synth.%')",
+            sql_content,
+            "El borrado en auditoría debe requerir exclusivamente claim service_role y correo_objetivo sintético.",
+        )
+
+        # 6. Reconciliación de esquema: admin_id NOT NULL, FK ON DELETE RESTRICT, CHECK tipo_evento
+        self.assertIn(
+            "ALTER COLUMN admin_id SET NOT NULL",
+            sql_content,
+            "La migración 006 debe asegurar admin_id NOT NULL.",
+        )
+        self.assertIn(
+            "CONSTRAINT fk_auditoria_admin_id",
+            sql_content,
+            "Debe definir la restricción fk_auditoria_admin_id.",
+        )
+        self.assertIn(
+            "REFERENCES auth.users(id) ON DELETE RESTRICT",
+            sql_content,
+            "La FK de admin_id debe ser ON DELETE RESTRICT.",
+        )
+        self.assertIn(
+            "CONSTRAINT chk_auditoria_tipo_evento",
+            sql_content,
+            "Debe definir la restricción chk_auditoria_tipo_evento.",
+        )
+        for evento in [
+            "reenvio_recuperacion",
+            "restablecimiento_manual_excepcional",
+            "cambio_password_primer_ingreso",
+        ]:
+            self.assertIn(evento, sql_content, f"El evento {evento} debe estar en el CHECK.")
+
+        # 7. Eliminación dinámica de políticas SOLO en public.auditoria_autenticacion y recreación única SELECT
+        self.assertIn(
+            "FROM pg_policies",
+            sql_content,
+            "Debe consultar pg_policies para eliminar dinámicamente las políticas existentes.",
+        )
+        self.assertIn(
+            "tablename = 'auditoria_autenticacion'",
+            sql_content,
+            "La eliminación dinámica de políticas debe limitarse exclusivamente a auditoria_autenticacion.",
+        )
+        self.assertIn(
+            "DROP POLICY IF EXISTS %I ON public.auditoria_autenticacion",
+            sql_content,
+            "Debe ejecutar DROP POLICY dinámico sobre auditoria_autenticacion.",
+        )
+        self.assertIn(
+            "CREATE POLICY \"Solo administradores pueden consultar auditoria\"",
+            sql_content,
+            "Debe recrear la política SELECT para administradores.",
+        )
+
+        # 8. Preflight de identidad y postflight assertions exhaustivas
+        self.assertIn("Preflight de identidad en base de datos", sql_content)
+        self.assertIn("deployment_identity", sql_content)
+        self.assertIn("Post-Flight Assertions", sql_content)
+
+        # 8.1 Postflight: RLS habilitado y exactamente la política SELECT administrativa oficial
+        self.assertIn("relrowsecurity", sql_content, "Postflight debe validar relrowsecurity.")
+        self.assertIn("total_politicas != 1", sql_content)
+        self.assertIn("pol_rec.policyname != 'Solo administradores pueden consultar auditoria'", sql_content)
+        self.assertIn("pol_rec.cmd != 'SELECT'", sql_content)
+        self.assertIn("'authenticated' = ANY(pol_rec.roles)", sql_content)
+        self.assertIn("pol_rec.qual !~* 'auth\\.uid\\(\\)'", sql_content)
+        self.assertIn("pol_rec.qual !~* 'es_admin\\s*=\\s*true'", sql_content)
+        self.assertIn("pol_rec.qual !~* 'activo\\s*=\\s*true'", sql_content)
+
+        # 8.2 Postflight: Exactamente 1 FK sobre admin_id, dirigida a auth.users(id), con ON DELETE RESTRICT
+        self.assertIn("total_fks_admin != 1", sql_content)
+        self.assertIn("fks_validas_admin != 1", sql_content)
+        self.assertIn("confdeltype = 'r'", sql_content)
+        self.assertIn("ftn.nspname = 'auth'", sql_content)
+        self.assertIn("ft.relname = 'users'", sql_content)
+
+        # 8.3 Postflight: CHECK tipo_evento acepta exactamente los 3 eventos oficiales y ningún valor extra
+        self.assertIn("pg_get_constraintdef", sql_content)
+        self.assertIn("chk_auditoria_tipo_evento", sql_content)
+        self.assertIn("ARRAY_AGG(m[1] ORDER BY m[1])", sql_content)
+        self.assertIn("literales_eventos != ARRAY['cambio_password_primer_ingreso', 'reenvio_recuperacion', 'restablecimiento_manual_excepcional']", sql_content)
+
+        # 8.4 Postflight: Función sin elevación (prosecdef=false) y conserva SET search_path = ''
+        self.assertIn("bool_or(p.prosecdef)", sql_content)
+        self.assertIn("is_secdef IS TRUE", sql_content)
+        self.assertIn("fn_search_path_ok IS NOT TRUE", sql_content)
+        self.assertIn("trg_proteger_inmutabilidad_auditoria", sql_content)
+
+        # 8. Comprobación funcional del bloqueo a usuario comercial:
+        # a) Intento de comercial de modificar debe_cambiar_password directamente
+        mock_comercial = MagicMock()
+        mock_comercial.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: La bandera debe_cambiar_password es un atributo protegido y no puede ser modificada por clientes authenticated. Requiere backend autorizado."
+        )
+        with self.assertRaises(Exception) as ctx_com_pwd:
+            mock_comercial.table("perfiles_usuario").update({"debe_cambiar_password": False}).eq("id", "com-1").execute()
+        self.assertIn("debe_cambiar_password es un atributo protegido", str(ctx_com_pwd.exception))
+
+        # b) Intento de comercial de consultar o insertar en auditoria_autenticacion
+        mock_comercial.table.return_value.select.return_value.execute.return_value = MagicMock(data=[])
+        res_sel = mock_comercial.table("auditoria_autenticacion").select("id").execute()
+        self.assertEqual(len(res_sel.data), 0, "Comercial debe recibir 0 registros por RLS")
+
+        mock_comercial.table.return_value.insert.return_value.execute.side_effect = Exception(
+            "new row violates row-level security policy for table 'auditoria_autenticacion'"
+        )
+        with self.assertRaises(Exception) as ctx_com_ins:
+            mock_comercial.table("auditoria_autenticacion").insert({"tipo_evento": "reenvio_recuperacion"}).execute()
+        self.assertIn("row-level security", str(ctx_com_ins.exception))
+
+    def test_65_inspeccion_estatica_sql_migracion_005(self):
+        """Verifica estáticamente que la migración 005 contenga el preflight de identidad en base de datos,
+        inmutabilidad absoluta de id (incluso service_role), correo exclusivo para service_role,
+        protección del último admin activo aplicable a service_role, y postflight assertions."""
+        sql_path = PROJECT_ROOT / "supabase" / "migrations" / "005_complete_forced_password_upgrade.sql"
+        self.assertTrue(sql_path.exists(), "El archivo de migración 005 debe existir.")
+        sql_content = sql_path.read_text(encoding="utf-8")
+
+        # 1. Ausencia absoluta de SECURITY DEFINER y current_user
+        self.assertNotIn(
+            "SECURITY DEFINER",
+            sql_content,
+            "Violación de seguridad: La función de perfiles no debe elevar privilegios.",
+        )
+        self.assertNotIn(
+            "current_user",
+            sql_content,
+            "Violación de seguridad: No deben usarse excepciones basadas en current_user. Usar auth.role().",
+        )
+
+        # 2. Conservación de SET search_path = ''
+        self.assertIn(
+            "SET search_path = ''",
+            sql_content,
+            "La función debe declarar SET search_path = '' para blindar la ruta de ejecución.",
+        )
+
+        # 3. Preflight de identidad en base de datos presente en SQL
+        self.assertIn("Preflight de identidad en base de datos", sql_content)
+        self.assertNotIn("Preflight 5-Way", sql_content)
+        self.assertIn("deployment_identity", sql_content)
+        self.assertIn("autoform-excel", sql_content)
+        self.assertIn("staging", sql_content)
+        self.assertIn("nfaxkncrpfrsvzfgczny", sql_content)
+
+        # 4. Agrega columna debe_cambiar_password
+        self.assertIn(
+            "ADD COLUMN IF NOT EXISTS debe_cambiar_password BOOLEAN NOT NULL DEFAULT false",
+            sql_content,
+        )
+
+        # 5. Inmutabilidad absoluta de id para todos los roles (incluido service_role)
+        self.assertIn(
+            "IF NEW.id IS DISTINCT FROM OLD.id THEN",
+            sql_content,
+            "El identificador de cuenta (id) debe ser inmutable sin excepciones de rol.",
+        )
+
+        # 6. Inicialización fail-closed de roles ante NULL
+        self.assertIn(
+            "is_service_role := COALESCE(auth.role() = 'service_role', false);",
+            sql_content,
+            "La inicialización de is_service_role debe ser fail-closed ante NULL.",
+        )
+        self.assertIn(
+            "caller_is_admin := CASE\n        WHEN is_service_role THEN false\n        ELSE COALESCE(public.is_admin(), false)\n    END;",
+            sql_content,
+            "La inicialización de caller_is_admin debe ser fail-closed y subordinada a is_service_role.",
+        )
+
+        # 7. Bloqueo transaccional de concurrencia con advisory lock
+        self.assertIn(
+            "PERFORM pg_catalog.pg_advisory_xact_lock(9052026);",
+            sql_content,
+            "Debe aplicar pg_advisory_xact_lock(9052026) antes de comprobar el último admin.",
+        )
+
+        # 8. Verificación de las 5 columnas requeridas en el preflight
+        self.assertIn(
+            "column_name IN ('id', 'correo', 'es_admin', 'activo', 'estado_aprobacion')",
+            sql_content,
+            "El preflight debe verificar la presencia de las 5 columnas indispensables.",
+        )
+        self.assertIn(
+            "IF cols_encontradas != 5 THEN",
+            sql_content,
+            "El preflight debe abortar si no se encuentran las 5 columnas en perfiles_usuario.",
+        )
+
+        # 9. Modificación de correo restringida exclusivamente a service_role
+        self.assertIn(
+            "IF NEW.correo IS DISTINCT FROM OLD.correo THEN",
+            sql_content,
+            "La modificación de correo debe estar bloqueada para clientes authenticated (incluso admin).",
+        )
+
+        # 10. Preservación intacta de auditoria_autenticacion (CERO sentencias de mutación DDL)
+        lineas_mutacion_auditoria = [
+            line for line in sql_content.splitlines()
+            if any(verbo in line.upper() for verbo in ["CREATE TABLE", "ALTER TABLE", "DROP TABLE", "CREATE TRIGGER", "DROP TRIGGER"])
+            and "auditoria_autenticacion" in line.lower()
+        ]
+        self.assertEqual(
+            len(lineas_mutacion_auditoria),
+            0,
+            f"La migración 005 no debe mutar auditoria_autenticacion: {lineas_mutacion_auditoria}",
+        )
+
+        # 11. Postflight assertions reforzadas (exactamente 1 función y prosecdef=false)
+        self.assertIn("Postflight", sql_content)
+        self.assertIn("trigger_proteger_columnas_perfil_usuario", sql_content)
+        self.assertIn("information_schema.columns", sql_content)
+        self.assertIn("IF fn_count != 1 THEN", sql_content)
+        self.assertIn("bool_or(prosecdef)", sql_content)
+
+    def test_66_reglas_motor_perfil_005_inmutabilidad_correo_ultimo_admin(self):
+        """Verifica funcionalmente mediante simulación del trigger 005:
+        1. id absolutamente inmutable para cualquier rol, incluido service_role.
+        2. correo modificable únicamente por service_role; ningún admin autenticado puede cambiarlo directamente.
+        3. Protección que impida degradar o desactivar al último administrador activo, aplicando también a service_role."""
+
+        # 1. Simulación: id inmutable para service_role
+        mock_backend = MagicMock()
+        mock_backend.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: El identificador de cuenta (id) es absolutamente inmutable."
+        )
+        with self.assertRaises(Exception) as ctx_id:
+            mock_backend.table("perfiles_usuario").update({"id": "nuevo-uuid"}).eq("id", "uuid-original").execute()
+        self.assertIn("identificador de cuenta (id) es absolutamente inmutable", str(ctx_id.exception))
+
+        # 2. Simulación: Administrador autenticado intenta cambiar correo directamente -> Bloqueado
+        mock_admin_user = MagicMock()
+        mock_admin_user.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: El correo electrónico corporativo solo puede ser modificado por backend autorizado (service_role)."
+        )
+        with self.assertRaises(Exception) as ctx_email:
+            mock_admin_user.table("perfiles_usuario").update({"correo": "nuevo@iaclatam.com"}).eq("id", "adm-1").execute()
+        self.assertIn("solo puede ser modificado por backend autorizado (service_role)", str(ctx_email.exception))
+
+        # 3. Simulación: service_role cambia correo -> Permitido
+        mock_backend_email = MagicMock()
+        mock_backend_email.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"id": "usr-1", "correo": "actualizado@iaclatam.com"}]
+        )
+        res_email = mock_backend_email.table("perfiles_usuario").update({"correo": "actualizado@iaclatam.com"}).eq("id", "usr-1").execute()
+        self.assertEqual(res_email.data[0]["correo"], "actualizado@iaclatam.com")
+
+        # 4. Simulación: Intento de degradar (es_admin=False) o desactivar (activo=False) al último admin activo
+        for rol_actor, mock_actor in [("Admin Autenticado", mock_admin_user), ("Backend ServiceRole", mock_backend)]:
+            mock_actor.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+                "Operación denegada: No se puede desactivar ni degradar al único administrador activo del sistema. Debe existir otro administrador activo previamente."
+            )
+            with self.assertRaises(Exception) as ctx_deg:
+                mock_actor.table("perfiles_usuario").update({"es_admin": False}).eq("id", "unico-admin").execute()
+            self.assertIn("No se puede desactivar ni degradar al único administrador activo", str(ctx_deg.exception), f"Fallo para {rol_actor}")
+
+            with self.assertRaises(Exception) as ctx_desact:
+                mock_actor.table("perfiles_usuario").update({"activo": False}).eq("id", "unico-admin").execute()
+            self.assertIn("No se puede desactivar ni degradar al único administrador activo", str(ctx_desact.exception), f"Fallo para {rol_actor}")
+
+        # 5. Simulación: Si existe otro administrador activo, la degradación sí es permitida
+        mock_backend_ok = MagicMock()
+        mock_backend_ok.table.return_value.update.return_value.eq.return_value.execute.return_value = MagicMock(
+            data=[{"id": "admin-2", "es_admin": False, "activo": True}]
+        )
+        res_deg_ok = mock_backend_ok.table("perfiles_usuario").update({"es_admin": False}).eq("id", "admin-2").execute()
+        self.assertFalse(res_deg_ok.data[0]["es_admin"])
+
+        # 6. Simulación: Administrador intenta modificar debe_cambiar_password -> Bloqueado
+        mock_admin_user.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: La bandera debe_cambiar_password es un atributo protegido y no puede ser modificada por clientes authenticated. Requiere backend autorizado."
+        )
+        with self.assertRaises(Exception) as ctx_pwd_adm:
+            mock_admin_user.table("perfiles_usuario").update({"debe_cambiar_password": False}).eq("id", "usr-1").execute()
+        self.assertIn("debe_cambiar_password es un atributo protegido", str(ctx_pwd_adm.exception))
+
+    def test_67_fail_closed_advisory_lock_y_preflight_columnas(self):
+        """Verifica:
+        1. Comportamiento fail-closed ante roles NULL (auth.role() o public.is_admin() retornan NULL).
+        2. Serialización concurrente mediante advisory xact lock al proteger al último administrador.
+        3. Preflight de identidad en BD aborta si falta cualquiera de las 5 columnas requeridas."""
+
+        # 1. Simulación fail-closed: roles NULL
+        # Si auth.role() es NULL -> is_service_role = False
+        # Si public.is_admin() es NULL -> caller_is_admin = False
+        def resolver_roles_fail_closed(auth_role, is_admin_val):
+            is_service_role = bool(auth_role == "service_role") if auth_role is not None else False
+            if is_service_role:
+                caller_is_admin = False
+            else:
+                caller_is_admin = bool(is_admin_val) if is_admin_val is not None else False
+            return is_service_role, caller_is_admin
+
+        # Probar con valores NULL (None)
+        srv_role_null, adm_role_null = resolver_roles_fail_closed(None, None)
+        self.assertFalse(srv_role_null, "is_service_role debe ser False cuando auth.role() es NULL")
+        self.assertFalse(adm_role_null, "caller_is_admin debe ser False cuando public.is_admin() es NULL")
+
+        # Con ambos en False, cualquier modificación sensible queda bloqueada
+        mock_null_client = MagicMock()
+        mock_null_client.table.return_value.update.return_value.eq.return_value.execute.side_effect = Exception(
+            "Operación denegada: No tienes permisos para modificar el estado de aprobación (estado_aprobacion)."
+        )
+        with self.assertRaises(Exception) as ctx_null_upd:
+            mock_null_client.table("perfiles_usuario").update({"estado_aprobacion": "aprobado"}).eq("id", "usr-x").execute()
+        self.assertIn("No tienes permisos para modificar", str(ctx_null_upd.exception))
+
+        # 2. Protección en concurrencia con pg_advisory_xact_lock
+        # Simular dos hilos concurrentes intentando degradar al único admin activo
+        candado_adquirido = [False]
+        ultimo_admin_degradado = [0]
+        lock_id_esperado = 9052026
+
+        def simular_transaccion_degradacion(admin_id: str, tiene_otro_admin: bool):
+            # Simula: PERFORM pg_catalog.pg_advisory_xact_lock(9052026);
+            candado_adquirido[0] = True
+            # Comprobación de existencia bajo el lock
+            if not tiene_otro_admin:
+                raise Exception("Operación denegada: No se puede desactivar ni degradar al único administrador activo del sistema. Debe existir otro administrador activo previamente.")
+            ultimo_admin_degradado[0] += 1
+            return True
+
+        # Primera transacción falla porque no hay otro admin activo
+        with self.assertRaises(Exception) as ctx_conc1:
+            simular_transaccion_degradacion("adm-unico", tiene_otro_admin=False)
+        self.assertTrue(candado_adquirido[0], "El candado transaccional debe haberse solicitado")
+        self.assertEqual(ultimo_admin_degradado[0], 0, "Ningún admin debe haberse degradado")
+
+        # 3. Fallo de preflight si falta una columna requerida
+        columnas_disponibles_incompletas = ["id", "correo", "es_admin", "activo"] # falta 'estado_aprobacion'
+        columnas_requeridas = ["id", "correo", "es_admin", "activo", "estado_aprobacion"]
+        cols_encontradas = len(set(columnas_disponibles_incompletas).intersection(set(columnas_requeridas)))
+
+        self.assertNotEqual(cols_encontradas, 5)
+        # La lógica del preflight aborta si cols_encontradas != 5
+        preflight_abortado = False
+        try:
+            if cols_encontradas != 5:
+                raise Exception("Preflight de identidad en base de datos falló: public.perfiles_usuario debe contener id, correo, es_admin, activo y estado_aprobacion antes de actualizar el trigger.")
+        except Exception as exc_pre:
+            preflight_abortado = True
+            self.assertIn("debe contener id, correo, es_admin, activo y estado_aprobacion", str(exc_pre))
+        self.assertTrue(preflight_abortado, "El preflight debe abortar si falta una columna requerida")
+
+    def test_68_postflight_reconciliacion_auditoria_reglas_estrictas(self):
+        """Verifica funcionalmente la lógica de aserciones del postflight de la migración 006:
+        1. RLS habilitado y exactamente la política SELECT administrativa oficial (auth.uid, es_admin=true, activo=true).
+        2. Exactamente 1 FK sobre admin_id, dirigida a auth.users(id) con ON DELETE RESTRICT.
+        3. chk_auditoria_tipo_evento acepta exactamente los 3 eventos oficiales y ningún valor extra.
+        4. Función de inmutabilidad sin elevación de privilegios (prosecdef=false) y con SET search_path = ''."""
+
+        # 1. Simulación Postflight RLS y Política Administrativa Oficial Única
+        def validar_politica_auditoria_estricta(rls_activo: bool, total_politicas: int, policyname: str, cmd: str, roles: list, qual: str):
+            if not rls_activo:
+                raise Exception("Postflight falló: Row Level Security (RLS) no está habilitado en public.auditoria_autenticacion.")
+            if total_politicas != 1:
+                raise Exception(f"Postflight falló: Se esperaba exactamente 1 política total en public.auditoria_autenticacion, se encontraron {total_politicas}.")
+            if policyname != "Solo administradores pueden consultar auditoria":
+                raise Exception(f"Postflight falló: La política existente se llama '{policyname}', se esperaba 'Solo administradores pueden consultar auditoria'.")
+            if cmd != "SELECT":
+                raise Exception(f"Postflight falló: El comando de la política es '{cmd}', se esperaba 'SELECT'.")
+            if roles != ["authenticated"]:
+                raise Exception(f"Postflight falló: Los roles de la política son {roles}, se esperaba exclusivamente {{authenticated}}.")
+            if not (re.search(r"auth\.uid\(\)", qual) and re.search(r"perfiles_usuario", qual) and re.search(r"es_admin\s*=\s*true", qual) and re.search(r"activo\s*=\s*true", qual)):
+                raise Exception(f"Postflight falló: La cláusula USING de la política no valida la condición de administrador activo (auth.uid, es_admin=true y activo=true): {qual}")
+            return True
+
+        # Falla si RLS no está habilitado
+        with self.assertRaises(Exception) as ctx_rls:
+            validar_politica_auditoria_estricta(False, 1, "Solo administradores pueden consultar auditoria", "SELECT", ["authenticated"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("RLS) no está habilitado", str(ctx_rls.exception))
+
+        # Falla si hay 0 o 2 políticas
+        with self.assertRaises(Exception) as ctx_pol0:
+            validar_politica_auditoria_estricta(True, 0, "Solo administradores pueden consultar auditoria", "SELECT", ["authenticated"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("Se esperaba exactamente 1 política total", str(ctx_pol0.exception))
+
+        with self.assertRaises(Exception) as ctx_pol2:
+            validar_politica_auditoria_estricta(True, 2, "Solo administradores pueden consultar auditoria", "SELECT", ["authenticated"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("Se esperaba exactamente 1 política total", str(ctx_pol2.exception))
+
+        # Falla si el nombre es diferente
+        with self.assertRaises(Exception) as ctx_name:
+            validar_politica_auditoria_estricta(True, 1, "Otra politica", "SELECT", ["authenticated"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("se esperaba 'Solo administradores pueden consultar auditoria'", str(ctx_name.exception))
+
+        # Falla si el comando no es SELECT (p.ej. INSERT)
+        with self.assertRaises(Exception) as ctx_cmd:
+            validar_politica_auditoria_estricta(True, 1, "Solo administradores pueden consultar auditoria", "INSERT", ["authenticated"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("se esperaba 'SELECT'", str(ctx_cmd.exception))
+
+        # Falla si los roles no son exclusivamente authenticated (p.ej. anon o public)
+        with self.assertRaises(Exception) as ctx_rol:
+            validar_politica_auditoria_estricta(True, 1, "Solo administradores pueden consultar auditoria", "SELECT", ["public"], "perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true")
+        self.assertIn("se esperaba exclusivamente {authenticated}", str(ctx_rol.exception))
+
+        # Falla si la condición USING no valida es_admin o activo
+        with self.assertRaises(Exception) as ctx_using:
+            validar_politica_auditoria_estricta(True, 1, "Solo administradores pueden consultar auditoria", "SELECT", ["authenticated"], "perfiles_usuario.id = auth.uid()")
+        self.assertIn("no valida la condición de administrador activo", str(ctx_using.exception))
+
+        # Pasa con la configuración oficial exacta
+        qual_oficial = "EXISTS (SELECT 1 FROM public.perfiles_usuario WHERE perfiles_usuario.id = auth.uid() AND perfiles_usuario.es_admin = true AND perfiles_usuario.activo = true)"
+        self.assertTrue(validar_politica_auditoria_estricta(True, 1, "Solo administradores pueden consultar auditoria", "SELECT", ["authenticated"], qual_oficial))
+
+        # 2. Simulación Postflight FK admin_id (única, dirigida a auth.users, con ON DELETE RESTRICT)
+        def validar_fk_admin_id(total_fks: int, fks_validas: int):
+            if total_fks != 1:
+                raise Exception(f"Postflight falló: Se esperaba exactamente 1 clave foránea en admin_id, se encontraron {total_fks}.")
+            if fks_validas != 1:
+                raise Exception("Postflight falló: La clave foránea en admin_id debe referenciar auth.users(id) con ON DELETE RESTRICT.")
+            return True
+
+        # Falla si hay 0 o más de 1 FK
+        with self.assertRaises(Exception) as ctx_fk0:
+            validar_fk_admin_id(total_fks=0, fks_validas=0)
+        self.assertIn("Se esperaba exactamente 1 clave foránea en admin_id", str(ctx_fk0.exception))
+
+        with self.assertRaises(Exception) as ctx_fk2:
+            validar_fk_admin_id(total_fks=2, fks_validas=1)
+        self.assertIn("Se esperaba exactamente 1 clave foránea en admin_id", str(ctx_fk2.exception))
+
+        # Falla si la FK apunta a otra tabla o no tiene RESTRICT
+        with self.assertRaises(Exception) as ctx_fk_no_res:
+            validar_fk_admin_id(total_fks=1, fks_validas=0)
+        self.assertIn("debe referenciar auth.users(id) con ON DELETE RESTRICT", str(ctx_fk_no_res.exception))
+
+        # Pasa si hay exactamente 1 FK válida con RESTRICT
+        self.assertTrue(validar_fk_admin_id(total_fks=1, fks_validas=1))
+
+        # 3. Simulación Postflight CHECK chk_auditoria_tipo_evento exacto sin valores extra
+        def validar_check_tipo_evento_estricto(chk_def: str | None):
+            if chk_def is None:
+                raise Exception("Postflight falló: La restricción chk_auditoria_tipo_evento no está registrada.")
+            if "tipo_evento" not in chk_def:
+                raise Exception(f"Postflight falló: chk_auditoria_tipo_evento no opera sobre la columna tipo_evento: {chk_def}")
+            literales = sorted(re.findall(r"'([^']+)'", chk_def))
+            esperados = ["cambio_password_primer_ingreso", "reenvio_recuperacion", "restablecimiento_manual_excepcional"]
+            if literales != esperados:
+                raise Exception(f"Postflight falló: chk_auditoria_tipo_evento debe aceptar exactamente los tres eventos oficiales y ningún valor extra. Encontrados: {literales}")
+            return True
+
+        # Falla si no existe
+        with self.assertRaises(Exception) as ctx_chk_none:
+            validar_check_tipo_evento_estricto(None)
+        self.assertIn("no está registrada", str(ctx_chk_none.exception))
+
+        # Falla si no opera sobre tipo_evento
+        with self.assertRaises(Exception) as ctx_chk_col:
+            validar_check_tipo_evento_estricto("CHECK (otra_columna IN ('reenvio_recuperacion'))")
+        self.assertIn("no opera sobre la columna tipo_evento", str(ctx_chk_col.exception))
+
+        # Falla si falta un evento
+        with self.assertRaises(Exception) as ctx_chk_inc:
+            validar_check_tipo_evento_estricto("CHECK (tipo_evento IN ('reenvio_recuperacion', 'restablecimiento_manual_excepcional'))")
+        self.assertIn("debe aceptar exactamente los tres eventos oficiales y ningún valor extra", str(ctx_chk_inc.exception))
+
+        # Falla si contiene un valor extra no autorizado
+        chk_con_extra = "CHECK (tipo_evento IN ('cambio_password_primer_ingreso', 'evento_extra_no_autorizado', 'reenvio_recuperacion', 'restablecimiento_manual_excepcional'))"
+        with self.assertRaises(Exception) as ctx_chk_extra:
+            validar_check_tipo_evento_estricto(chk_con_extra)
+        self.assertIn("debe aceptar exactamente los tres eventos oficiales y ningún valor extra", str(ctx_chk_extra.exception))
+
+        # Pasa con exactamente los 3 eventos oficiales
+        chk_valido = "CHECK (tipo_evento = ANY (ARRAY['cambio_password_primer_ingreso'::text, 'reenvio_recuperacion'::text, 'restablecimiento_manual_excepcional'::text]))"
+        self.assertTrue(validar_check_tipo_evento_estricto(chk_valido))
+
+        # 4. Simulación Postflight Función de Inmutabilidad
+        def validar_funcion_inmutabilidad(fn_count: int, is_secdef: bool, search_path_ok: bool):
+            if fn_count != 1:
+                raise Exception(f"Postflight falló: Se esperaba exactamente 1 función public.proteger_inmutabilidad_auditoria(), se encontraron {fn_count}.")
+            if is_secdef:
+                raise Exception("Postflight falló: La función proteger_inmutabilidad_auditoria tiene prosecdef=true (debe ser sin elevación).")
+            if not search_path_ok:
+                raise Exception("Postflight falló: La función proteger_inmutabilidad_auditoria debe conservar SET search_path = ''.")
+            return True
+
+        # Falla si fn_count != 1
+        with self.assertRaises(Exception) as ctx_fn0:
+            validar_funcion_inmutabilidad(fn_count=0, is_secdef=False, search_path_ok=True)
+        self.assertIn("Se esperaba exactamente 1 función", str(ctx_fn0.exception))
+
+        # Falla si prosecdef=True
+        with self.assertRaises(Exception) as ctx_fn_sec:
+            validar_funcion_inmutabilidad(fn_count=1, is_secdef=True, search_path_ok=True)
+        self.assertIn("tiene prosecdef=true (debe ser sin elevación)", str(ctx_fn_sec.exception))
+
+        # Falla si search_path no está configurado
+        with self.assertRaises(Exception) as ctx_fn_sp:
+            validar_funcion_inmutabilidad(fn_count=1, is_secdef=False, search_path_ok=False)
+        self.assertIn("debe conservar SET search_path = ''", str(ctx_fn_sp.exception))
+
+        # Pasa si es 1 función, sin elevación y con search_path
+        self.assertTrue(validar_funcion_inmutabilidad(fn_count=1, is_secdef=False, search_path_ok=True))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

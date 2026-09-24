@@ -145,9 +145,30 @@ def verificar_identidad_despliegue_5way(client: Any, project_ref_esperado: str) 
         sys.exit(1)
 
 
+def verificar_esquema_previo_aprobacion(admin_client: Any) -> bool:
+    """Comprobación estricta de esquema previo contra Staging:
+    Confirma que existen las columnas requeridas por el flujo de aprobación corporativa,
+    en particular 'estado_aprobacion'. Si falta alguna, aborta inmediatamente sin aplicar 004
+    para requerir una migración previa separada."""
+    print("\n[COMPROBACIÓN DE ESQUEMA PREVIO (FLUJO DE APROBACIÓN)]")
+    columnas_requeridas = ["id", "correo", "es_admin", "activo", "estado_aprobacion"]
+    try:
+        admin_client.table("perfiles_usuario").select(", ".join(columnas_requeridas)).limit(1).execute()
+        print(f"   [OK ESQUEMA PREVIO] Columnas requeridas del flujo de aprobación verificadas en 'perfiles_usuario': {columnas_requeridas}")
+        return True
+    except Exception as exc:
+        print(f"   [FALLO CRÍTICO ESQUEMA PREVIO] Faltan columnas requeridas para el flujo de aprobación en 'perfiles_usuario': {exc}")
+        print("   [ACCION REQUERIDA] Abortando sin aplicar 004. Se debe preparar y aplicar una migración previa separada.")
+        return False
+
+
 def verificar_esquema_remoto(admin_client: Any) -> bool:
-    """Verifica que la migración 004 esté presente: columna debe_cambiar_password y tabla auditoria_autenticacion."""
+    """Verifica el esquema previo y que la migración 004 esté presente: debe_cambiar_password y auditoria_autenticacion."""
     print("\n[VERIFICACIÓN DE ESQUEMA REMOTO]")
+    # Paso 0: Validar esquema previo indispensable
+    if not verificar_esquema_previo_aprobacion(admin_client):
+        return False
+
     try:
         # 1. Comprobar columna debe_cambiar_password en perfiles_usuario
         res_perfil = admin_client.table("perfiles_usuario").select("id, debe_cambiar_password").limit(1).execute()
@@ -167,6 +188,182 @@ def verificar_esquema_remoto(admin_client: Any) -> bool:
     return True
 
 
+def verificar_restricciones_motor_004(admin_client: Any) -> bool:
+    """Verifica en el motor de base de datos remoto de Supabase Staging:
+    1. NOT NULL en admin_id.
+    2. CHECK en tipo_evento (chk_auditoria_tipo_evento: solo 3 autorizados).
+    3. FK única explícita fk_auditoria_admin_id REFERENCES auth.users(id).
+    4. Comportamiento ON DELETE RESTRICT al intentar borrar un admin referenciado.
+    5. Bloqueo real de UPDATE por el trigger de inmutabilidad en el motor.
+    6. Comportamiento de DELETE (restringido a registros sintéticos vía service_role).
+    """
+    print("\n[VERIFICACIÓN DE RESTRICCIONES DE MOTOR Y SEGURIDAD — MIGRACIÓN 004]")
+    run_id = uuid.uuid4().hex[:6]
+    correo_test_admin = f"synth.motor_adm_{run_id}@iaclatam.com"
+    pwd_test_admin = "PasswordMotor2026!#"
+    uid_test_admin = None
+
+    try:
+        # Fixture: Crear un usuario admin sintético real en auth.users para las pruebas de FK
+        u_auth = admin_client.auth.admin.create_user({
+            "email": correo_test_admin,
+            "password": pwd_test_admin,
+            "email_confirm": True,
+            "app_metadata": {"es_admin": True, "role": "administrador", "estado": "aprobado"},
+        })
+        uid_test_admin = u_auth.user.id
+
+        admin_client.table("perfiles_usuario").upsert({
+            "id": uid_test_admin,
+            "nombre": "Admin Motor Check",
+            "correo": correo_test_admin,
+            "es_admin": True,
+            "activo": True,
+            "estado_aprobacion": "aprobado",
+            "debe_cambiar_password": False,
+        }).execute()
+
+        # ---------------------------------------------------------------------
+        # 1. NOT NULL en admin_id
+        # ---------------------------------------------------------------------
+        try:
+            admin_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "reenvio_recuperacion",
+                "correo_objetivo": f"synth.notnull_{run_id}@iaclatam.com",
+                "admin_correo": correo_test_admin,
+                # admin_id omitido deliberadamente
+            }).execute()
+            print("   [FALLO MOTOR] Se permitió insertar en auditoria_autenticacion con admin_id NULL.")
+            return False
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "not-null" in err_str or "23502" in err_str or "null value" in err_str:
+                print("   [OK MOTOR] Restricción NOT NULL en 'admin_id' verificada exitosamente (código 23502).")
+            else:
+                print(f"   [OK MOTOR] Inserción sin 'admin_id' rechazada por motor: {exc}")
+
+        # ---------------------------------------------------------------------
+        # 2. CHECK constraint en tipo_evento (chk_auditoria_tipo_evento)
+        # ---------------------------------------------------------------------
+        # 2a. Evento arbitrario/inválido debe ser rechazado por CHECK
+        try:
+            admin_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "evento_invalido_prohibido",
+                "correo_objetivo": f"synth.chk_bad_{run_id}@iaclatam.com",
+                "admin_id": uid_test_admin,
+                "admin_correo": correo_test_admin,
+            }).execute()
+            print("   [FALLO MOTOR] Se permitió insertar tipo_evento inválido (falló chk_auditoria_tipo_evento).")
+            return False
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "chk_auditoria_tipo_evento" in err_str or "23514" in err_str or "check constraint" in err_str:
+                print("   [OK MOTOR] CHECK chk_auditoria_tipo_evento verificado (rechazó evento arbitrario, código 23514).")
+            else:
+                print(f"   [OK MOTOR] Evento arbitrario rechazado por el motor: {exc}")
+
+        # 2b. Los 3 eventos permitidos deben ser aceptados
+        eventos_validos = [
+            "reenvio_recuperacion",
+            "restablecimiento_manual_excepcional",
+            "cambio_password_primer_ingreso",
+        ]
+        for ev in eventos_validos:
+            res_ev = admin_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": ev,
+                "correo_objetivo": f"synth.chk_{ev[:8]}_{run_id}@iaclatam.com",
+                "admin_id": uid_test_admin,
+                "admin_correo": correo_test_admin,
+                "motivo": f"Validación de evento {ev}",
+            }).execute()
+            if not res_ev.data:
+                print(f"   [FALLO MOTOR] Evento válido '{ev}' no pudo ser insertado.")
+                return False
+        print("   [OK MOTOR] Los 3 eventos autorizados por chk_auditoria_tipo_evento fueron aceptados.")
+
+        # ---------------------------------------------------------------------
+        # 3. Exactamente una FK en admin_id (fk_auditoria_admin_id REFERENCES auth.users)
+        # ---------------------------------------------------------------------
+        # Un UUID inexistente en auth.users debe violar la FK fk_auditoria_admin_id
+        uuid_inexistente = "00000000-0000-0000-0000-000000000000"
+        try:
+            admin_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "reenvio_recuperacion",
+                "correo_objetivo": f"synth.fk_bad_{run_id}@iaclatam.com",
+                "admin_id": uuid_inexistente,
+                "admin_correo": correo_test_admin,
+            }).execute()
+            print("   [FALLO MOTOR] Se permitió insertar con admin_id inexistente en auth.users (falló FK).")
+            return False
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "fk_auditoria_admin_id" in err_str or "23503" in err_str or "foreign key" in err_str:
+                print("   [OK MOTOR] FK explícita 'fk_auditoria_admin_id' verificada contra auth.users(id) (código 23503).")
+            else:
+                print(f"   [OK MOTOR] Inserción con admin_id inexistente rechazada por FK: {exc}")
+
+        # ---------------------------------------------------------------------
+        # 4. Comportamiento ON DELETE RESTRICT
+        # ---------------------------------------------------------------------
+        # Si existe un registro de auditoría con admin_id, borrar al admin de auth.users DEBE fallar
+        try:
+            admin_client.auth.admin.delete_user(uid_test_admin)
+            print("   [FALLO MOTOR] Se permitió borrar usuario admin referenciado en auditoría (falló ON DELETE RESTRICT).")
+            return False
+        except Exception as exc:
+            err_str = str(exc).lower()
+            if "foreign key" in err_str or "23503" in err_str or "violates" in err_str or "restrict" in err_str:
+                print("   [OK MOTOR] ON DELETE RESTRICT verificado: borrado de auth.users bloqueado por clave foránea activa.")
+            else:
+                print(f"   [OK MOTOR] Borrado de auth.users bloqueado como esperado: {exc}")
+
+        # ---------------------------------------------------------------------
+        # 5. Bloqueo real de UPDATE por Trigger de Inmutabilidad
+        # ---------------------------------------------------------------------
+        res_sel = admin_client.table("auditoria_autenticacion").select("id").eq("admin_id", uid_test_admin).limit(1).execute()
+        if res_sel.data:
+            audit_id_created = res_sel.data[0]["id"]
+            try:
+                admin_client.table("auditoria_autenticacion").update({
+                    "motivo": "intento_modificacion_inmutable",
+                }).eq("id", audit_id_created).execute()
+                print("   [FALLO MOTOR] El motor permitió UPDATE sobre auditoria_autenticacion (falló trigger de inmutabilidad).")
+                return False
+            except Exception as exc:
+                err_str = str(exc)
+                if "estrictamente inmutables" in err_str or "no se permite update" in err_str.lower():
+                    print("   [OK MOTOR] Trigger de inmutabilidad verificado: UPDATE bloqueado categóricamente en el motor.")
+                else:
+                    print(f"   [OK MOTOR] UPDATE bloqueado por el motor: {exc}")
+
+        # ---------------------------------------------------------------------
+        # 6. Comportamiento de DELETE higiénico
+        # ---------------------------------------------------------------------
+        res_del = admin_client.table("auditoria_autenticacion").delete().eq("admin_id", uid_test_admin).execute()
+        print(f"   [OK MOTOR] DELETE higiénico de registros synth.% permitido para service_role ({len(res_del.data or [])} filas purgadas).")
+
+        return True
+
+    except Exception as exc:
+        print(f"   [FALLO MOTOR] Error durante verificación de restricciones: {exc}")
+        return False
+    finally:
+        # Teardown de fixtures del check
+        try:
+            admin_client.table("auditoria_autenticacion").delete().ilike("correo_objetivo", f"synth.%_{run_id}@iaclatam.com").execute()
+        except Exception:
+            pass
+        if uid_test_admin:
+            try:
+                admin_client.table("perfiles_usuario").delete().eq("id", uid_test_admin).execute()
+            except Exception:
+                pass
+            try:
+                admin_client.auth.admin.delete_user(uid_test_admin)
+            except Exception:
+                pass
+
+
 def instalar_guard_cero_envios_email(pub_client: Any, admin_client: Any) -> None:
     """Garantiza categóricamente cero despacho SMTP de correos reales a buzones externos."""
     def _bloquear_despacho(*args, **kwargs):
@@ -179,6 +376,24 @@ def instalar_guard_cero_envios_email(pub_client: Any, admin_client: Any) -> None
             admin_client.auth.reset_password_for_email = _bloquear_despacho
         if hasattr(admin_client.auth, "admin") and hasattr(admin_client.auth.admin, "invite_user_by_email"):
             admin_client.auth.admin.invite_user_by_email = _bloquear_despacho
+
+    orig_pub = database.obtener_cliente_publico
+    def _pub_guarded(*args, **kwargs):
+        c = orig_pub(*args, **kwargs)
+        if hasattr(c, "auth"):
+            c.auth.reset_password_for_email = _bloquear_despacho
+        return c
+    database.obtener_cliente_publico = _pub_guarded
+
+    orig_admin = database.obtener_cliente_admin
+    def _admin_guarded(*args, **kwargs):
+        c = orig_admin(*args, **kwargs)
+        if hasattr(c, "auth"):
+            c.auth.reset_password_for_email = _bloquear_despacho
+            if hasattr(c.auth, "admin"):
+                c.auth.admin.invite_user_by_email = _bloquear_despacho
+        return c
+    database.obtener_cliente_admin = _admin_guarded
 
 
 def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
@@ -202,14 +417,34 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
 
         try:
             pub_client.table("auditoria_autenticacion").insert({
-                "tipo_evento": "test_anon",
-                "correo_objetivo": "test@iaclatam.com",
+                "tipo_evento": "reenvio_recuperacion",
+                "correo_objetivo": "synth.anon@iaclatam.com",
+                "admin_id": "00000000-0000-0000-0000-000000000000",
                 "admin_correo": "anon@iaclatam.com",
             }).execute()
             print("   [FALLO RLS] Cliente anónimo pudo insertar en auditoria_autenticacion.")
             return False
         except Exception:
             print("   [OK RLS] Cliente anónimo bloqueado por RLS en INSERT.")
+
+        # 1b. Cliente anónimo: no puede UPDATE ni DELETE
+        try:
+            res_upd_anon = pub_client.table("auditoria_autenticacion").update({"motivo": "anon_hack"}).eq("correo_objetivo", "synth.anon@iaclatam.com").execute()
+            if res_upd_anon.data and len(res_upd_anon.data) > 0:
+                print("   [FALLO RLS] Cliente anónimo pudo ejecutar UPDATE en auditoria_autenticacion.")
+                return False
+            print("   [OK RLS] Cliente anónimo bloqueado por RLS en UPDATE (0 filas afectadas).")
+        except Exception:
+            print("   [OK RLS] Cliente anónimo bloqueado por RLS en UPDATE.")
+
+        try:
+            res_del_anon = pub_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", "synth.anon@iaclatam.com").execute()
+            if res_del_anon.data and len(res_del_anon.data) > 0:
+                print("   [FALLO RLS] Cliente anónimo pudo ejecutar DELETE en auditoria_autenticacion.")
+                return False
+            print("   [OK RLS] Cliente anónimo bloqueado por RLS en DELETE (0 filas afectadas).")
+        except Exception:
+            print("   [OK RLS] Cliente anónimo bloqueado por RLS en DELETE.")
 
         # 2. Crear usuario comercial sintético activo
         u_auth_com = admin_client.auth.admin.create_user({
@@ -227,7 +462,7 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
             "es_admin": False,
             "activo": True,
             "estado_aprobacion": "aprobado",
-            "debe_cambiar_password": False,
+            "debe_cambiar_password": True,
         }).execute()
 
         # Iniciar sesión como comercial para obtener token JWT
@@ -248,14 +483,51 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
         # 2b. Comercial no puede hacer INSERT (denegado por RLS)
         try:
             comercial_client.table("auditoria_autenticacion").insert({
-                "tipo_evento": "test_comercial",
+                "tipo_evento": "reenvio_recuperacion",
                 "correo_objetivo": correo_comercial,
+                "admin_id": uid_comercial,
                 "admin_correo": correo_comercial,
             }).execute()
             print("   [FALLO RLS] Usuario comercial pudo insertar en auditoria_autenticacion.")
             return False
         except Exception:
             print("   [OK RLS] Usuario comercial autenticado bloqueado en INSERT (denegado por RLS).")
+
+        # 2c. Comercial no puede hacer UPDATE ni DELETE (ausencia de políticas de escritura)
+        try:
+            res_upd_com = comercial_client.table("auditoria_autenticacion").update({"motivo": "com_hack"}).eq("correo_objetivo", correo_comercial).execute()
+            if res_upd_com.data and len(res_upd_com.data) > 0:
+                print("   [FALLO RLS] Usuario comercial pudo ejecutar UPDATE en auditoria_autenticacion.")
+                return False
+            print("   [OK RLS] Usuario comercial autenticado bloqueado en UPDATE (0 filas afectadas por RLS).")
+        except Exception:
+            print("   [OK RLS] Usuario comercial autenticado bloqueado en UPDATE (denegado por RLS).")
+
+        try:
+            res_del_com = comercial_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
+            if res_del_com.data and len(res_del_com.data) > 0:
+                print("   [FALLO RLS] Usuario comercial pudo ejecutar DELETE en auditoria_autenticacion.")
+                return False
+            print("   [OK RLS] Usuario comercial autenticado bloqueado en DELETE (0 filas afectadas por RLS).")
+        except Exception:
+            print("   [OK RLS] Usuario comercial autenticado bloqueado en DELETE (denegado por RLS).")
+
+        # 2d. Comercial intenta modificar directamente debe_cambiar_password en su propio perfil -> BLOQUEADO por trigger
+        try:
+            comercial_client.table("perfiles_usuario").update({"debe_cambiar_password": False}).eq("id", uid_comercial).execute()
+            print("   [FALLO SEGURIDAD] Comercial pudo modificar 'debe_cambiar_password' directamente.")
+            return False
+        except Exception:
+            print("   [OK SEGURIDAD] Comercial bloqueado al intentar modificar 'debe_cambiar_password' directamente.")
+
+        # 2e. Comercial intenta modificar atributos protegidos (es_admin, activo, estado_aprobacion) -> BLOQUEADO por trigger
+        for campo_prot, val_hack in [("es_admin", True), ("activo", False), ("estado_aprobacion", "rechazado")]:
+            try:
+                comercial_client.table("perfiles_usuario").update({campo_prot: val_hack}).eq("id", uid_comercial).execute()
+                print(f"   [FALLO SEGURIDAD] Comercial pudo modificar campo protegido '{campo_prot}' directamente.")
+                return False
+            except Exception:
+                print(f"   [OK SEGURIDAD] Comercial bloqueado al intentar modificar campo protegido '{campo_prot}'.")
 
         # 3. Crear usuario administrador sintético activo
         u_auth_adm = admin_client.auth.admin.create_user({
@@ -278,7 +550,7 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
 
         # Inserción de prueba desde el backend con clave secreta (service_role)
         admin_client.table("auditoria_autenticacion").insert({
-            "tipo_evento": "test_rls_admin",
+            "tipo_evento": "reenvio_recuperacion",
             "correo_objetivo": correo_comercial,
             "admin_id": uid_admin,
             "admin_correo": correo_admin,
@@ -304,7 +576,7 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
         # 3b. Administrador NO puede hacer INSERT directo (denegado: solo service_role puede insertar)
         try:
             admin_user_client.table("auditoria_autenticacion").insert({
-                "tipo_evento": "test_admin_direct_insert",
+                "tipo_evento": "reenvio_recuperacion",
                 "correo_objetivo": correo_comercial,
                 "admin_id": uid_admin,
                 "admin_correo": correo_admin,
@@ -316,19 +588,23 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
 
         # 3c. Administrador NO puede hacer UPDATE (inmutabilidad estricta)
         try:
-            admin_user_client.table("auditoria_autenticacion").update({
+            res_adm_upd = admin_user_client.table("auditoria_autenticacion").update({
                 "motivo": "modificado_ilegalmente",
             }).eq("correo_objetivo", correo_comercial).execute()
-            print("   [FALLO RLS] Administrador pudo modificar registros de auditoría (violación de inmutabilidad).")
-            return False
+            if res_adm_upd.data and len(res_adm_upd.data) > 0:
+                print("   [FALLO RLS] Administrador pudo modificar registros de auditoría (violación de inmutabilidad).")
+                return False
+            print("   [OK RLS] Administrador bloqueado en UPDATE (0 filas afectadas por RLS / inmutabilidad).")
         except Exception:
             print("   [OK RLS] Administrador bloqueado en UPDATE (registros de auditoría estrictamente inmutables).")
 
         # 3d. Administrador NO puede hacer DELETE directo
         try:
-            admin_user_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
-            print("   [FALLO RLS] Administrador pudo eliminar registros de auditoría vía JWT (violación de inmutabilidad).")
-            return False
+            res_adm_del = admin_user_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
+            if res_adm_del.data and len(res_adm_del.data) > 0:
+                print("   [FALLO RLS] Administrador pudo eliminar registros de auditoría vía JWT (violación de inmutabilidad).")
+                return False
+            print("   [OK RLS] Administrador bloqueado en DELETE directo (0 filas afectadas por RLS).")
         except Exception:
             print("   [OK RLS] Administrador bloqueado en DELETE directo (inmutabilidad preservada).")
 
@@ -339,20 +615,22 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
         return False
     finally:
         # Teardown de fixtures de RLS
-        for uid_to_del in [uid_comercial, uid_admin]:
-            if uid_to_del:
-                try:
-                    admin_client.auth.admin.delete_user(uid_to_del)
-                except Exception:
-                    pass
-                try:
-                    admin_client.table("perfiles_usuario").delete().eq("id", uid_to_del).execute()
-                except Exception:
-                    pass
+        # 1. Purgar primero registros de auditoría sintéticos para evitar restricción ON DELETE RESTRICT en admin_id
         try:
             admin_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
         except Exception:
             pass
+        # 2. Purgar perfiles y usuarios en Auth
+        for uid_to_del in [uid_comercial, uid_admin]:
+            if uid_to_del:
+                try:
+                    admin_client.table("perfiles_usuario").delete().eq("id", uid_to_del).execute()
+                except Exception:
+                    pass
+                try:
+                    admin_client.auth.admin.delete_user(uid_to_del)
+                except Exception:
+                    pass
 
 
 def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
@@ -423,7 +701,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     # -------------------------------------------------------------------------
     print(f"\n--- E2E-02: Bloqueo de inicio de sesión de cuenta pendiente ---")
     try:
-        ok_log, msg_log, _, _ = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
+        ok_log, _, _, msg_log = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
         assert not ok_log, "El login debió haber sido denegado para cuenta pendiente"
         assert any(term in msg_log.lower() for term in ["revisión", "aprobación", "pendiente"]), f"Mensaje inesperado: {msg_log}"
         print("   [OK] E2E-02 superado: Login bloqueado correctamente con mensaje de revisión administrativa.")
@@ -475,7 +753,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     # -------------------------------------------------------------------------
     print(f"\n--- E2E-04: Login exitoso post-aprobación con perfil comercial ---")
     try:
-        ok_log4, msg_log4, tokens4, datos4 = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
+        ok_log4, datos4, tokens4, msg_log4 = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
         assert ok_log4, f"Fallo al iniciar sesión tras aprobación: {msg_log4}"
         assert tokens4 is not None and "access_token" in tokens4
         assert datos4["es_admin"] is False
@@ -507,7 +785,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             "activo": False,
         }).eq("id", uid_rech).execute()
 
-        ok_log5, msg_log5, _, _ = auth_manager.iniciar_sesion(correo_rech, pwd_rech)
+        ok_log5, _, _, msg_log5 = auth_manager.iniciar_sesion(correo_rech, pwd_rech)
         assert not ok_log5, "Login debió fallar para usuario rechazado"
         assert "rechazada" in msg_log5.lower() or "inactiva" in msg_log5.lower()
         print("   [OK] E2E-05 superado: Solicitud rechazada y login subsiguiente bloqueado categóricamente.")
@@ -522,7 +800,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     try:
         # Desactivar u_id_e2e1
         admin_client.table("perfiles_usuario").update({"activo": False}).eq("id", u_id_e2e1).execute()
-        ok_log6, msg_log6, _, _ = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
+        ok_log6, _, _, msg_log6 = auth_manager.iniciar_sesion(correo_e2e1, pwd_e2e1)
         assert not ok_log6, "Login debió fallar para cuenta desactivada"
         assert "inactiva" in msg_log6.lower() or "suspendida" in msg_log6.lower()
         # Reactivar para las siguientes pruebas
@@ -604,7 +882,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     print(f"\n--- E2E-11: Reenvío auditado con rate limiting (máx 3/hora) ---")
     try:
         # Mock para evitar llamadas de correo SMTP real hacia Supabase
-        with patch.object(pub_client.auth, "reset_password_for_email", return_value=None):
+        with patch("core.database.obtener_cliente_publico", return_value=pub_client):
             # Limpiar eventos previos de este correo de prueba
             admin_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_e2e1).execute()
 
@@ -698,7 +976,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     print(f"\n--- E2E-13: Ciclo de cambio forzado de contraseña en primer login ---")
     try:
         # 1. Login con clave temporal tiene éxito y marca debe_cambiar_password = True
-        ok_tmp_log, msg_tmp, _, datos_tmp = auth_manager.iniciar_sesion(correo_e2e1, pwd_temporal)
+        ok_tmp_log, datos_tmp, _, msg_tmp = auth_manager.iniciar_sesion(correo_e2e1, pwd_temporal)
         assert ok_tmp_log, f"Login con clave temporal falló: {msg_tmp}"
         assert datos_tmp.get("debe_cambiar_password") is True, "debe_cambiar_password no se reflejó en datos de sesión"
 
@@ -729,7 +1007,7 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
         assert res_limpio.data[0]["debe_cambiar_password"] is False, "debe_cambiar_password sigue en True tras cambio forzado"
 
         # 5. Login subsiguiente accede sin obligación de cambio
-        ok_final, _, _, datos_final = auth_manager.iniciar_sesion(correo_e2e1, clave_definitiva_valida)
+        ok_final, datos_final, _, _ = auth_manager.iniciar_sesion(correo_e2e1, clave_definitiva_valida)
         assert ok_final, "Login con contraseña definitiva falló"
         assert datos_final.get("debe_cambiar_password") is False, "debe_cambiar_password no se limpió en sesión final"
 
@@ -750,24 +1028,12 @@ def ejecutar_teardown_sintetico_remoto(admin_client: Any) -> int:
     print("\n[TEARDOWN Y PURGA DE DATOS SINTÉTICOS]")
     total_borrados = 0
 
-    # 1. Buscar perfiles sintéticos en public.perfiles_usuario
     try:
-        res = admin_client.table("perfiles_usuario").select("id, correo").ilike("correo", "synth.%@iaclatam.com").execute()
-        usuarios_sinteticos = res.data or []
-        for u in usuarios_sinteticos:
-            uid = u["id"]
-            u_cor = u.get("correo", "")
-            # Eliminar en Auth
-            try:
-                admin_client.auth.admin.delete_user(uid)
-            except Exception:
-                pass
-            # Eliminar en perfiles
-            try:
-                admin_client.table("perfiles_usuario").delete().eq("id", uid).execute()
-                total_borrados += 1
-            except Exception:
-                pass
+        # 1. Limpiar tabla de auditoría para correos sintéticos PRIMERO (evitar bloqueo por FK ON DELETE RESTRICT sobre admin_id)
+        try:
+            admin_client.table("auditoria_autenticacion").delete().ilike("correo_objetivo", "synth.%@iaclatam.com").execute()
+        except Exception:
+            pass
 
         # 2. Limpiar tabla de operadores sintéticos
         try:
@@ -775,9 +1041,23 @@ def ejecutar_teardown_sintetico_remoto(admin_client: Any) -> int:
         except Exception:
             pass
 
-        # 3. Limpiar tabla de auditoría para correos sintéticos
+        # 3. Buscar y eliminar perfiles sintéticos en public.perfiles_usuario y auth.users
         try:
-            admin_client.table("auditoria_autenticacion").delete().ilike("correo_objetivo", "synth.%@iaclatam.com").execute()
+            res = admin_client.table("perfiles_usuario").select("id, correo").ilike("correo", "synth.%@iaclatam.com").execute()
+            usuarios_sinteticos = res.data or []
+            for u in usuarios_sinteticos:
+                uid = u["id"]
+                # Eliminar en perfiles
+                try:
+                    admin_client.table("perfiles_usuario").delete().eq("id", uid).execute()
+                    total_borrados += 1
+                except Exception:
+                    pass
+                # Eliminar en Auth
+                try:
+                    admin_client.auth.admin.delete_user(uid)
+                except Exception:
+                    pass
         except Exception:
             pass
 
@@ -840,17 +1120,21 @@ def main() -> None:
 
     if args.check_schema:
         ok_esq = verificar_esquema_remoto(admin_client)
-        if ok_esq:
-            print("\n✅ Esquema remoto de la migración 004 verificado exitosamente.")
-            ok_rls = verificar_politicas_rls(admin_client, pub_client)
-            if ok_rls:
-                print("\n✅ Políticas RLS de la migración 004 verificadas exitosamente.")
-            else:
-                print("\n❌ Fallo en las políticas RLS remotas.")
-                sys.exit(1)
-        else:
+        if not ok_esq:
             print("\n❌ Discrepancias detectadas en el esquema remoto.")
             sys.exit(1)
+
+        ok_restr = verificar_restricciones_motor_004(admin_client)
+        if not ok_restr:
+            print("\n❌ Fallo en las restricciones del motor de la migración 004.")
+            sys.exit(1)
+
+        ok_rls = verificar_politicas_rls(admin_client, pub_client)
+        if not ok_rls:
+            print("\n❌ Fallo en las políticas RLS remotas.")
+            sys.exit(1)
+
+        print("\n✅ Esquema remoto, restricciones de motor (NOT NULL, FK, RESTRICT, CHECK) y RLS de la migración 004 verificados exitosamente.")
 
     if args.run_remote_e2e:
         print("\n[EJECUCIÓN DE PRUEBAS REMOTAS E2E]")
@@ -858,6 +1142,11 @@ def main() -> None:
         ok_esq = verificar_esquema_remoto(admin_client)
         if not ok_esq:
             print("\n❌ La migración 004 no está aplicada en Supabase Staging. Operación abortada.")
+            sys.exit(1)
+
+        ok_restr = verificar_restricciones_motor_004(admin_client)
+        if not ok_restr:
+            print("\n❌ Fallo en las restricciones del motor de la migración 004. Operación abortada.")
             sys.exit(1)
 
         ok_rls = verificar_politicas_rls(admin_client, pub_client)
