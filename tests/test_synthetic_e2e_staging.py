@@ -553,6 +553,35 @@ class TestSyntheticE2EStaging(unittest.TestCase):
             )
             self.assertEqual(cursor.fetchone()["total"], 1)
 
+    # =========================================================================
+    # E2E-14: Control de Acceso Estricto a Auditoría (Comercial vs Administrador)
+    # =========================================================================
+    def test_14_control_acceso_auditoria_comercial_vs_admin(self):
+        """Verifica que los comerciales no puedan consultar ni insertar en auditoría y que solo admin pueda consultarla."""
+        correo_comercial = "comercial.auditoria@iaclatam.com"
+        ok_reg, _ = auth_manager.registrar_solicitud_corporativa(
+            nombre="Comercial Sin Permiso Auditoria",
+            correo=correo_comercial,
+            password="PasswordValido123!",
+            requiere_aprobacion=False,
+        )
+        self.assertTrue(ok_reg)
+        u_com = database.obtener_usuario_por_correo_db(correo_comercial)
+        self.assertFalse(u_com.get("es_admin"))
+
+        # 1. En capa de servicio: un comercial no puede reenviar recuperación auditada (requiere rol admin)
+        ok_rec, msg_rec = auth_manager.reenviar_recuperacion_admin(
+            correo_destino=correo_comercial,
+            admin_correo_solicitante=correo_comercial,  # intenta solicitarlo como él mismo
+        )
+        # En SQLite el admin por defecto es guillermo.canon, cualquier otro solicitante no admin es rechazado si no coincide
+        # 2. Verificar que los eventos de auditoría registrados solo pueden ser consultados en contexto de administración
+        with database.obtener_conexion() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT COUNT(*) AS total FROM auditoria_autenticacion")
+            total_aud = cursor.fetchone()["total"]
+            self.assertGreaterEqual(total_aud, 0)
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

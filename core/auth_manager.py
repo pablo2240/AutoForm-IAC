@@ -986,8 +986,8 @@ def cambiar_rol_usuario(
 def registrar_evento_auditoria(
     tipo_evento: str,
     correo_objetivo: str,
-    admin_id: str,
-    admin_correo: str,
+    admin_id: Optional[str] = None,
+    admin_correo: str = "",
     usuario_id: Optional[str] = None,
     motivo: str = "",
     detalles: str = "",

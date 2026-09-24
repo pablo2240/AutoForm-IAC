@@ -1652,14 +1652,21 @@ def actualizar_password_usuario_db(
 def registrar_auditoria_db(
     tipo_evento: str,
     correo_objetivo: str,
-    admin_id: str,
+    admin_id: Optional[str],
     admin_correo: str,
     usuario_id: Optional[str] = None,
     motivo: str = "",
     detalles: str = "",
     client: Optional[Client] = None,
 ) -> bool:
-    """Registra un evento de seguridad y auditoría de autenticación."""
+    """Registra un evento de seguridad y auditoría de autenticación.
+
+    REGLA DE SEGURIDAD ESTRICTA (ADR-0010):
+    La inserción en public.auditoria_autenticacion se realiza exclusivamente
+    desde el backend con la clave secreta (service_role), después de que el
+    backend haya validado el JWT y el rol de administrador activo del solicitante.
+    Ningún cliente authenticated ni anon tiene permisos de inserción directa.
+    """
     from datetime import datetime, timezone
     import uuid
 
@@ -1670,13 +1677,28 @@ def registrar_auditoria_db(
 
     if usar_supabase():
         try:
-            cli = _obtener_cliente_activo(client)
+            cli = obtener_cliente_admin()
+
+            admin_uuid_val = None
+            if admin_id:
+                try:
+                    admin_uuid_val = str(uuid.UUID(str(admin_id)))
+                except (ValueError, AttributeError):
+                    admin_uuid_val = None
+
+            usuario_uuid_val = None
+            if usuario_id:
+                try:
+                    usuario_uuid_val = str(uuid.UUID(str(usuario_id)))
+                except (ValueError, AttributeError):
+                    usuario_uuid_val = None
+
             data = {
                 "id": record_id,
                 "tipo_evento": tipo_evento,
-                "usuario_id": usuario_id,
+                "usuario_id": usuario_uuid_val,
                 "correo_objetivo": correo_limpio,
-                "admin_id": admin_id,
+                "admin_id": admin_uuid_val,
                 "admin_correo": admin_correo_limpio,
                 "motivo": motivo,
                 "detalles": detalles,

@@ -167,30 +167,58 @@ def verificar_esquema_remoto(admin_client: Any) -> bool:
     return True
 
 
+def instalar_guard_cero_envios_email(pub_client: Any, admin_client: Any) -> None:
+    """Garantiza categóricamente cero despacho SMTP de correos reales a buzones externos."""
+    def _bloquear_despacho(*args, **kwargs):
+        return None
+
+    if hasattr(pub_client, "auth") and hasattr(pub_client.auth, "reset_password_for_email"):
+        pub_client.auth.reset_password_for_email = _bloquear_despacho
+    if hasattr(admin_client, "auth"):
+        if hasattr(admin_client.auth, "reset_password_for_email"):
+            admin_client.auth.reset_password_for_email = _bloquear_despacho
+        if hasattr(admin_client.auth, "admin") and hasattr(admin_client.auth.admin, "invite_user_by_email"):
+            admin_client.auth.admin.invite_user_by_email = _bloquear_despacho
+
+
 def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
-    """Verifica que las políticas RLS bloqueen a usuarios anónimos y comerciales en auditoria_autenticacion."""
+    """Verifica que las políticas RLS bloqueen a anónimos y comerciales, y que admins solo puedan SELECT."""
     print("\n[VERIFICACIÓN DE POLÍTICAS RLS EN AUDITORÍA]")
     run_id = uuid.uuid4().hex[:6]
-    correo_comercial = f"synth.rls_{run_id}@iaclatam.com"
+    correo_comercial = f"synth.rls_com_{run_id}@iaclatam.com"
     pwd_comercial = "PasswordRls2026!#"
+    correo_admin = f"synth.rls_adm_{run_id}@iaclatam.com"
+    pwd_admin = "PasswordAdminRls2026!#"
 
     uid_comercial = None
+    uid_admin = None
     try:
-        # 1. Verificar que cliente anónimo no puede leer auditoría (devuelve 0 filas o rechazo)
+        # 1. Cliente anónimo: no puede SELECT ni INSERT
         res_anon = pub_client.table("auditoria_autenticacion").select("id").execute()
         if res_anon.data and len(res_anon.data) > 0:
             print("   [FALLO RLS] Cliente anónimo pudo consultar registros en auditoria_autenticacion.")
             return False
-        print("   [OK RLS] Cliente anónimo bloqueado por RLS en auditoria_autenticacion (0 filas devueltas).")
+        print("   [OK RLS] Cliente anónimo bloqueado por RLS en SELECT (0 filas devueltas).")
+
+        try:
+            pub_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "test_anon",
+                "correo_objetivo": "test@iaclatam.com",
+                "admin_correo": "anon@iaclatam.com",
+            }).execute()
+            print("   [FALLO RLS] Cliente anónimo pudo insertar en auditoria_autenticacion.")
+            return False
+        except Exception:
+            print("   [OK RLS] Cliente anónimo bloqueado por RLS en INSERT.")
 
         # 2. Crear usuario comercial sintético activo
-        u_auth = admin_client.auth.admin.create_user({
+        u_auth_com = admin_client.auth.admin.create_user({
             "email": correo_comercial,
             "password": pwd_comercial,
             "email_confirm": True,
             "app_metadata": {"es_admin": False, "role": "comercial", "estado": "aprobado"},
         })
-        uid_comercial = u_auth.user.id
+        uid_comercial = u_auth_com.user.id
 
         admin_client.table("perfiles_usuario").upsert({
             "id": uid_comercial,
@@ -202,37 +230,107 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
             "debe_cambiar_password": False,
         }).execute()
 
-        # Insertar un registro de auditoría de prueba con admin_client
-        admin_client.table("auditoria_autenticacion").insert({
-            "tipo_evento": "test_rls",
-            "correo_objetivo": correo_comercial,
-            "admin_id": "test-admin",
-            "admin_correo": "admin@iaclatam.com",
-            "motivo": "Prueba de aislamiento RLS",
-            "detalles": "Verificación de acceso no administrativo",
+        # Iniciar sesión como comercial para obtener token JWT
+        login_com = pub_client.auth.sign_in_with_password({"email": correo_comercial, "password": pwd_comercial})
+        if not login_com.session:
+            print("   [FALLO RLS] No se pudo obtener sesión JWT para comercial sintético.")
+            return False
+        jwt_comercial = login_com.session.access_token
+        comercial_client = database.obtener_cliente_usuario(jwt_comercial)
+
+        # 2a. Comercial no puede hacer SELECT (retorna 0 filas)
+        res_com_sel = comercial_client.table("auditoria_autenticacion").select("id").execute()
+        if res_com_sel.data and len(res_com_sel.data) > 0:
+            print("   [FALLO RLS] Comercial pudo consultar registros de auditoria_autenticacion.")
+            return False
+        print("   [OK RLS] Usuario comercial autenticado bloqueado en SELECT (0 filas devueltas).")
+
+        # 2b. Comercial no puede hacer INSERT (denegado por RLS)
+        try:
+            comercial_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "test_comercial",
+                "correo_objetivo": correo_comercial,
+                "admin_correo": correo_comercial,
+            }).execute()
+            print("   [FALLO RLS] Usuario comercial pudo insertar en auditoria_autenticacion.")
+            return False
+        except Exception:
+            print("   [OK RLS] Usuario comercial autenticado bloqueado en INSERT (denegado por RLS).")
+
+        # 3. Crear usuario administrador sintético activo
+        u_auth_adm = admin_client.auth.admin.create_user({
+            "email": correo_admin,
+            "password": pwd_admin,
+            "email_confirm": True,
+            "app_metadata": {"es_admin": True, "role": "administrador", "estado": "aprobado"},
+        })
+        uid_admin = u_auth_adm.user.id
+
+        admin_client.table("perfiles_usuario").upsert({
+            "id": uid_admin,
+            "nombre": "Admin RLS Test",
+            "correo": correo_admin,
+            "es_admin": True,
+            "activo": True,
+            "estado_aprobacion": "aprobado",
+            "debe_cambiar_password": False,
         }).execute()
 
-        # Iniciar sesión como comercial para obtener token JWT
-        login_res = pub_client.auth.sign_in_with_password({"email": correo_comercial, "password": pwd_comercial})
-        if not login_res.session:
-            print(f"   [FALLO RLS] No se pudo obtener sesión JWT para comercial sintético.")
-            return False
-        jwt_comercial = login_res.session.access_token
+        # Inserción de prueba desde el backend con clave secreta (service_role)
+        admin_client.table("auditoria_autenticacion").insert({
+            "tipo_evento": "test_rls_admin",
+            "correo_objetivo": correo_comercial,
+            "admin_id": uid_admin,
+            "admin_correo": correo_admin,
+            "motivo": "Prueba de aislamiento RLS y solo lectura",
+            "detalles": "Verificación de permisos",
+        }).execute()
 
-        # Consultar tabla auditoria con cliente autenticado comercial
-        comercial_client = database.obtener_cliente_usuario(jwt_comercial)
-        res_com = comercial_client.table("auditoria_autenticacion").select("id").execute()
-        if res_com.data and len(res_com.data) > 0:
-            print("   [FALLO RLS] Usuario comercial pudo leer registros de auditoria_autenticacion (violación RLS).")
+        # Iniciar sesión como administrador para obtener su JWT de usuario
+        login_adm = pub_client.auth.sign_in_with_password({"email": correo_admin, "password": pwd_admin})
+        if not login_adm.session:
+            print("   [FALLO RLS] No se pudo obtener sesión JWT para administrador sintético.")
             return False
-        print("   [OK RLS] Usuario comercial autenticado bloqueado por RLS en auditoria_autenticacion (0 filas devueltas).")
+        jwt_admin = login_adm.session.access_token
+        admin_user_client = database.obtener_cliente_usuario(jwt_admin)
 
-        # Verificar que el admin sí puede leerlo
-        res_adm = admin_client.table("auditoria_autenticacion").select("id").eq("correo_objetivo", correo_comercial).execute()
-        if not res_adm.data:
-            print("   [FALLO RLS] Administrador no pudo consultar registros en auditoria_autenticacion.")
+        # 3a. Administrador SÍ puede hacer SELECT
+        res_adm_sel = admin_user_client.table("auditoria_autenticacion").select("id").eq("correo_objetivo", correo_comercial).execute()
+        if not res_adm_sel.data:
+            print("   [FALLO RLS] Administrador autenticado no pudo consultar auditoria_autenticacion.")
             return False
-        print(f"   [OK RLS] Administrador tiene acceso completo de consulta a auditoria_autenticacion ({len(res_adm.data)} fila(s) detectada(s)).")
+        print(f"   [OK RLS] Administrador autenticado puede consultar auditoria_autenticacion ({len(res_adm_sel.data)} fila(s)).")
+
+        # 3b. Administrador NO puede hacer INSERT directo (denegado: solo service_role puede insertar)
+        try:
+            admin_user_client.table("auditoria_autenticacion").insert({
+                "tipo_evento": "test_admin_direct_insert",
+                "correo_objetivo": correo_comercial,
+                "admin_id": uid_admin,
+                "admin_correo": correo_admin,
+            }).execute()
+            print("   [FALLO RLS] Administrador pudo insertar directamente vía JWT (violación de exclusividad backend).")
+            return False
+        except Exception:
+            print("   [OK RLS] Administrador bloqueado en INSERT directo (inserción exclusiva desde backend service_role).")
+
+        # 3c. Administrador NO puede hacer UPDATE (inmutabilidad estricta)
+        try:
+            admin_user_client.table("auditoria_autenticacion").update({
+                "motivo": "modificado_ilegalmente",
+            }).eq("correo_objetivo", correo_comercial).execute()
+            print("   [FALLO RLS] Administrador pudo modificar registros de auditoría (violación de inmutabilidad).")
+            return False
+        except Exception:
+            print("   [OK RLS] Administrador bloqueado en UPDATE (registros de auditoría estrictamente inmutables).")
+
+        # 3d. Administrador NO puede hacer DELETE directo
+        try:
+            admin_user_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
+            print("   [FALLO RLS] Administrador pudo eliminar registros de auditoría vía JWT (violación de inmutabilidad).")
+            return False
+        except Exception:
+            print("   [OK RLS] Administrador bloqueado en DELETE directo (inmutabilidad preservada).")
 
         return True
 
@@ -240,16 +338,17 @@ def verificar_politicas_rls(admin_client: Any, pub_client: Any) -> bool:
         print(f"   [FALLO RLS] Error durante verificación de RLS: {exc}")
         return False
     finally:
-        # Teardown de esta prueba puntual
-        if uid_comercial:
-            try:
-                admin_client.auth.admin.delete_user(uid_comercial)
-            except Exception:
-                pass
-            try:
-                admin_client.table("perfiles_usuario").delete().eq("id", uid_comercial).execute()
-            except Exception:
-                pass
+        # Teardown de fixtures de RLS
+        for uid_to_del in [uid_comercial, uid_admin]:
+            if uid_to_del:
+                try:
+                    admin_client.auth.admin.delete_user(uid_to_del)
+                except Exception:
+                    pass
+                try:
+                    admin_client.table("perfiles_usuario").delete().eq("id", uid_to_del).execute()
+                except Exception:
+                    pass
         try:
             admin_client.table("auditoria_autenticacion").delete().eq("correo_objetivo", correo_comercial).execute()
         except Exception:
@@ -261,6 +360,29 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
     print("\n[EJECUCIÓN DE LOS 13 CASOS E2E EN SUPABASE STAGING]")
     run_id = uuid.uuid4().hex[:6]
     exito_total = True
+
+    # Administrador sintético para autorizar operaciones protegidas (E2E-03, E2E-08, E2E-11, E2E-12)
+    correo_admin_e2e = f"synth.e2e_admin_{run_id}@iaclatam.com"
+    pwd_admin_e2e = "AdminValido2026!#"
+    u_admin_auth = admin_client.auth.admin.create_user({
+        "email": correo_admin_e2e,
+        "password": pwd_admin_e2e,
+        "email_confirm": True,
+        "app_metadata": {"es_admin": True, "role": "administrador", "estado": "aprobado"},
+    })
+    uid_admin_e2e = u_admin_auth.user.id
+    admin_client.table("perfiles_usuario").upsert({
+        "id": uid_admin_e2e,
+        "nombre": "Admin E2E Runner",
+        "correo": correo_admin_e2e,
+        "es_admin": True,
+        "activo": True,
+        "estado_aprobacion": "aprobado",
+        "debe_cambiar_password": False,
+    }).execute()
+
+    login_adm_e2e = pub_client.auth.sign_in_with_password({"email": correo_admin_e2e, "password": pwd_admin_e2e})
+    token_admin_e2e = login_adm_e2e.session.access_token
 
     # -------------------------------------------------------------------------
     # E2E-01: Auto-Registro con Estado Pendiente e Inactivo
@@ -490,7 +612,8 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             for i in range(3):
                 ok_rc, msg_rc = auth_manager.reenviar_recuperacion_auditada(
                     correo_destino=correo_e2e1,
-                    admin_correo_solicitante="admin@iaclatam.com",
+                    access_token_solicitante=token_admin_e2e,
+                    admin_correo_solicitante=correo_admin_e2e,
                     max_intentos_por_hora=3,
                 )
                 assert ok_rc, f"Intento {i+1} debió tener éxito: {msg_rc}"
@@ -498,7 +621,8 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             # Intento 4 debe ser bloqueado por rate limit
             ok_rc4, msg_rc4 = auth_manager.reenviar_recuperacion_auditada(
                 correo_destino=correo_e2e1,
-                admin_correo_solicitante="admin@iaclatam.com",
+                access_token_solicitante=token_admin_e2e,
+                admin_correo_solicitante=correo_admin_e2e,
                 max_intentos_por_hora=3,
             )
             assert not ok_rc4, "Intento 4 debió ser bloqueado por rate limit"
@@ -522,6 +646,8 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             usuario_id=u_id_e2e1,
             correo_confirmacion="incorrecto@iaclatam.com",
             motivo="Motivo con más de quince caracteres válidos",
+            access_token_solicitante=token_admin_e2e,
+            admin_correo_solicitante=correo_admin_e2e,
         )
         assert not ok_bad_cor, "Debió fallar con correo de confirmación discrepante"
 
@@ -530,6 +656,8 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             usuario_id=u_id_e2e1,
             correo_confirmacion=correo_e2e1,
             motivo="Corto",
+            access_token_solicitante=token_admin_e2e,
+            admin_correo_solicitante=correo_admin_e2e,
         )
         assert not ok_bad_mot, "Debió fallar con motivo menor a 15 caracteres"
 
@@ -539,7 +667,8 @@ def ejecutar_13_pruebas_e2e_remotas(admin_client: Any, pub_client: Any) -> bool:
             usuario_id=u_id_e2e1,
             correo_confirmacion=correo_e2e1,
             motivo=motivo_valido,
-            admin_correo_solicitante="admin@iaclatam.com",
+            access_token_solicitante=token_admin_e2e,
+            admin_correo_solicitante=correo_admin_e2e,
         )
         assert ok_rest, f"Fallo al generar restablecimiento manual: {msg_rest}"
         assert pwd_temporal is not None and len(pwd_temporal) == 14, "La clave temporal debe tener exactamente 14 caracteres"
@@ -706,6 +835,7 @@ def main() -> None:
     proj_ref = verificar_project_ref(supabase_url, args.confirm_project)
     admin_client = database.obtener_cliente_admin()
     pub_client = database.obtener_cliente_publico()
+    instalar_guard_cero_envios_email(pub_client, admin_client)
     verificar_identidad_despliegue_5way(admin_client, proj_ref)
 
     if args.check_schema:

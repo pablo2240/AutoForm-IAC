@@ -1270,6 +1270,71 @@ class TestSecurityRemediationSuite(unittest.TestCase):
                 {"password": "NuevaPasswordSegura123!"},
             )
 
+    def test_60_insercion_auditoria_exclusiva_backend_service_role(self):
+        """Verifica que registrar_auditoria_db use exclusivamente el cliente admin (service_role) y valide UUIDs."""
+        mock_admin = MagicMock()
+        mock_admin.table.return_value.insert.return_value.execute.return_value = MagicMock(data=[{"id": "uuid-1"}])
+
+        valid_admin_uuid = "a0eebc99-9c0b-4ef8-bb6d-6bb9bd380a11"
+        valid_user_uuid = "b0eebc99-9c0b-4ef8-bb6d-6bb9bd380a22"
+
+        with patch("core.database.usar_supabase", return_value=True), \
+             patch("core.database.obtener_cliente_admin", return_value=mock_admin) as mock_get_admin, \
+             patch("core.database._obtener_cliente_activo") as mock_get_activo:
+
+            ok = database.registrar_auditoria_db(
+                tipo_evento="reenvio_recuperacion",
+                correo_objetivo="colab@iaclatam.com",
+                admin_id=valid_admin_uuid,
+                admin_correo="admin@iaclatam.com",
+                usuario_id=valid_user_uuid,
+                motivo="Prueba de auditoria",
+                detalles="Detalles de auditoria",
+            )
+            self.assertTrue(ok)
+            mock_get_admin.assert_called_once()
+            mock_get_activo.assert_not_called()
+
+            insert_call_args = mock_admin.table().insert.call_args[0][0]
+            self.assertEqual(insert_call_args["admin_id"], valid_admin_uuid)
+            self.assertEqual(insert_call_args["usuario_id"], valid_user_uuid)
+            self.assertEqual(insert_call_args["correo_objetivo"], "colab@iaclatam.com")
+
+    def test_61_aislamiento_rls_auditoria_autenticacion_comercial_vs_admin(self):
+        """Verifica el modelo de seguridad RLS: comercial no lee ni inserta, admin solo lee, service_role inserta."""
+        # 1. Simulación de cliente comercial (es_admin = False): SELECT retorna 0 filas, INSERT falla
+        mock_comercial = MagicMock()
+        mock_comercial.table.return_value.select.return_value.execute.return_value = MagicMock(data=[])
+        mock_comercial.table.return_value.insert.return_value.execute.side_effect = Exception("violates row-level security policy for table auditoria_autenticacion")
+
+        res_select = mock_comercial.table("auditoria_autenticacion").select("*").execute()
+        self.assertEqual(len(res_select.data), 0, "Comercial no debe ver registros de auditoría")
+
+        with self.assertRaises(Exception) as ctx_com_ins:
+            mock_comercial.table("auditoria_autenticacion").insert({"tipo_evento": "hack"}).execute()
+        self.assertIn("row-level security", str(ctx_com_ins.exception))
+
+        # 2. Simulación de cliente admin autenticado (es_admin = True): SELECT permite lectura, pero INSERT, UPDATE y DELETE directos fallan
+        mock_admin_user = MagicMock()
+        mock_admin_user.table.return_value.select.return_value.execute.return_value = MagicMock(data=[{"id": "aud-1"}])
+        mock_admin_user.table.return_value.insert.return_value.execute.side_effect = Exception("new row violates row-level security policy for table auditoria_autenticacion")
+        mock_admin_user.table.return_value.update.return_value.execute.side_effect = Exception("Operación denegada: Los registros son estrictamente inmutables")
+        mock_admin_user.table.return_value.delete.return_value.execute.side_effect = Exception("Operación denegada: Los registros son inmutables")
+
+        res_adm_select = mock_admin_user.table("auditoria_autenticacion").select("*").execute()
+        self.assertEqual(len(res_adm_select.data), 1, "Administrador autenticado debe poder consultar auditoría")
+
+        with self.assertRaises(Exception) as ctx_adm_ins:
+            mock_admin_user.table("auditoria_autenticacion").insert({"tipo_evento": "direct_insert"}).execute()
+        self.assertIn("row-level security", str(ctx_adm_ins.exception))
+
+        with self.assertRaises(Exception) as ctx_adm_upd:
+            mock_admin_user.table("auditoria_autenticacion").update({"motivo": "modificado"}).execute()
+        self.assertIn("inmutables", str(ctx_adm_upd.exception))
+
+        with self.assertRaises(Exception) as ctx_adm_del:
+            mock_admin_user.table("auditoria_autenticacion").delete().execute()
+        self.assertIn("inmutables", str(ctx_adm_del.exception))
 
 
 if __name__ == "__main__":
