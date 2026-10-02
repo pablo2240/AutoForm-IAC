@@ -27,6 +27,35 @@ def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
             plan_mapeo=plan_final,
             datos_empresa=ctx.datos_empresa,
         )
+
+        # ── VERIFICACIÓN POSTERIOR DE INTEGRIDAD (ROUND-TRIP VERIFICATION) ──
+        try:
+            from core.excel_verifier import verificar_integridad_excel
+            from core.excel_inspector import inspeccionar_libro_excel
+            insp = ctx.inspeccion_excel
+            if insp is None:
+                insp = inspeccionar_libro_excel(ctx.archivo_bytes)
+                ctx.inspeccion_excel = insp
+
+            res_verif = verificar_integridad_excel(
+                archivo_original_bytes=ctx.archivo_bytes,
+                archivo_generado_bytes=archivo_resultado,
+                plan_mapeo=plan_final,
+                inspeccion_original=insp,
+            )
+            ctx.resultado_verificacion = res_verif
+            ctx.log(
+                f"[Stage 5 - Verificador] Verificación posterior: válido={res_verif.es_valido} | "
+                f"{res_verif.exitosos}/{res_verif.total_verificados} valores confirmados | "
+                f"{res_verif.formulas_preservadas} fórmulas preservadas intactas."
+            )
+            if not res_verif.es_valido:
+                errores = "; ".join(res_verif.errores_bloqueantes)
+                raise RuntimeError(f"Fallo controlado de integridad estructural: {errores}")
+        except Exception as exc_verif:
+            if "Fallo controlado" in str(exc_verif):
+                raise
+            ctx.log(f"[Stage 5 - Verificador] Advertencia durante verificación: {exc_verif}")
     else:
         raise ValueError(f"Tipo de documento '{ctx.tipo_documento}' no soportado para escritura. AutoForm AI solo escribe en Excel.")
 
@@ -41,3 +70,4 @@ def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
     )
 
     return ctx
+

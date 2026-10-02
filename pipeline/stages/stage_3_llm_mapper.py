@@ -425,6 +425,42 @@ def _aplicar_validacion_deterministica(
         documento_ir=ctx.documento_ir,
     )
 
+    # ── VALIDACIÓN ANTI-ALUCINACIÓN E INSPECCIÓN ESTRUCTURADA ──
+    try:
+        from core.semantic_validator import enriquecer_item_con_inspeccion_excel
+        insp = ctx.inspeccion_excel
+        for item in plan_validado:
+            # 1. Anti-alucinación de hojas
+            if insp and insp.hojas:
+                h_item = str(item.get("hoja") or "")
+                if h_item and h_item not in insp.hojas:
+                    item["estado"] = EstadoMapeo.DESCARTADO
+                    item["motivo"] = f"Hoja alucinada '{h_item}' no existe en el libro Excel original."
+                    item["bloqueante"] = True
+
+            # 2. Asignar valor concreto desde datos_empresa si está disponible
+            campo_final = str(item.get("campo_final") or item.get("campo") or "")
+            if campo_final in ctx.datos_empresa:
+                item["valor"] = ctx.datos_empresa[campo_final]
+
+            # 3. Enriquecer con reglas de Excel (fórmulas, dropdowns, valores previos)
+            item.update(enriquecer_item_con_inspeccion_excel(item, insp))
+
+            # 4. Asignar nivel de confianza numérico (0.0 - 1.0)
+            fuente = str(item.get("fuente") or "inferencia_ia")
+            if fuente == "determinista_alias":
+                item["confianza"] = 1.0
+            elif item.get("bloqueante"):
+                item["confianza"] = 0.2
+            elif item.get("estado") == EstadoMapeo.APROBADO:
+                item["confianza"] = 0.95 if not item.get("advertencias") else 0.75
+            elif item.get("estado") == EstadoMapeo.REVISION:
+                item["confianza"] = 0.50
+            else:
+                item["confianza"] = 0.30
+    except Exception as exc_insp_val:
+        ctx.log(f"[Stage 3b - Validador] Advertencia en enriquecimiento de inspección: {exc_insp_val}")
+
     # Generar resumen para observabilidad
     resumen = generar_resumen_validacion(plan_validado)
     ctx.resumen_validacion = resumen
@@ -446,12 +482,9 @@ def _aplicar_validacion_deterministica(
                 f"→ {ac['original']} → {ac['corregido']}"
             )
 
-    # Filtrar activamente elementos descartados para que no lleguen al Writer
-    plan_activo = [
-        item for item in plan_validado
-        if str(item.get("estado", "")).upper() != "DESCARTADO"
-    ]
-    return plan_activo
+    # Retornar plan validado enriquecido (no descartar todavía para poder mostrar en auditoría)
+    return plan_validado
+
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -535,10 +568,35 @@ def ejecutar_stage_3_mapper(
         import concurrent.futures
 
         def _procesar_lote_concurrente(idx: int, titulo_lote: str, campos_lote: List[Dict[str, Any]]):
-            ctx.log(f"[Stage 3 - Chunking] Procesando Lote ({idx}/{total_macro}): '{titulo_lote}' ({len(campos_lote)} campos)...")
-            mapeos = consultar_llm_seccion_instructor(campos_lote, taxonomia_d, titulo_lote)
-            mapeos = _ejecutar_diff_loop_seccion(campos_lote, mapeos, ctx.datos_empresa, titulo_lote, ctx)
-            return mapeos
+            from core.domain_constants import resolver_campo_por_alias_determinista
+            asignaciones_determ = []
+            campos_llm = []
+
+            for c in campos_lote:
+                campo_alias = resolver_campo_por_alias_determinista(c.get("rotulo", ""))
+                if campo_alias and campo_alias in ctx.datos_empresa:
+                    asignaciones_determ.append({
+                        "id": c["id"],
+                        "campo": campo_alias,
+                        "ubicacion": c.get("tipoEspacioEscritura", "derecha"),
+                        "fuente": "determinista_alias",
+                        "confianza": 1.0,
+                    })
+                else:
+                    campos_llm.append(c)
+
+            if campos_llm:
+                ctx.log(
+                    f"[Stage 3 - Chunking] Lote ({idx}/{total_macro}) '{titulo_lote}': "
+                    f"{len(asignaciones_determ)} por alias determinista, enviando {len(campos_llm)} a IA..."
+                )
+                mapeos_ia = consultar_llm_seccion_instructor(campos_llm, taxonomia_d, titulo_lote)
+                mapeos_ia = _ejecutar_diff_loop_seccion(campos_llm, mapeos_ia, ctx.datos_empresa, titulo_lote, ctx)
+                return asignaciones_determ + mapeos_ia
+            else:
+                ctx.log(f"[Stage 3 - Chunking] Lote ({idx}/{total_macro}) '{titulo_lote}': 100% resuelto determinísticamente.")
+                return asignaciones_determ
+
 
         max_workers = min(4, total_macro)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:

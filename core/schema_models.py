@@ -86,6 +86,38 @@ class PlanMapeoFormulario(BaseModel):
     )
 
 
+class MapeoEstructuradoItem(BaseModel):
+    """Esquema de Precisión para un dato mapeado hacia Excel."""
+    hoja: str = Field(description="Nombre exacto de la hoja de destino en el libro Excel")
+    tabla: Optional[str] = Field(default=None, description="Nombre de la tabla estructurada si aplica")
+    fila: int = Field(ge=1, description="Fila de destino (1-indexed)")
+    columna: int = Field(ge=1, description="Columna de destino (1-indexed)")
+    celda: Optional[str] = Field(default=None, description="Coordenada A1 de la celda de destino (ej. 'B5')")
+    encabezado: Optional[str] = Field(default=None, description="Encabezado de columna o rótulo del campo")
+    campo: str = Field(description="Clave del dato maestro (ej. 'nit', 'razon_social')")
+    valor: Any = Field(description="Valor del dato a inyectar")
+    valor_anterior: Optional[Any] = Field(default=None, description="Valor existente previamente en la celda")
+    fuente: str = Field(default="perfil_empresa", description="Origen del dato (ej. 'perfil_empresa', 'operador', 'determinista_alias', 'ia')")
+    confianza: float = Field(ge=0.0, le=1.0, default=1.0, description="Nivel de confianza de la asignación entre 0.0 y 1.0")
+    advertencias: List[str] = Field(default_factory=list, description="Advertencias o posibles inconsistencias de validación")
+    bloqueante: bool = Field(default=False, description="True si existe un error bloqueante que impide la inyección segura")
+
+    @field_validator("confianza", mode="before")
+    @classmethod
+    def normalizar_confianza(cls, v: Any) -> float:
+        try:
+            val = float(v)
+            return max(0.0, min(1.0, val))
+        except Exception:
+            return 0.8
+
+
+class PlanMapeoEstructurado(BaseModel):
+    """Plan de Mapeo Estructurado con validación anti-alucinación y métricas."""
+    mappings: List[MapeoEstructuradoItem] = Field(default_factory=list)
+
+
+
 def _extraer_json_robusto(texto: str) -> Any:
     """Extrae y parsea JSON de respuestas LLM, incluso si incluyen razonamiento previo (Chain-of-Thought)."""
     texto_limpio = texto.strip()

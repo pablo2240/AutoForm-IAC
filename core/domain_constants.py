@@ -419,3 +419,154 @@ def desglosar_nombre_completo(nombre_completo: str) -> Dict[str, str]:
         "segundo_apellido": "",
     }
 
+
+# ── Aliases Determinísticos Configurables para Mapeo Rápido y Exacto ─────────
+ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
+    "nit": [
+        "nit", "número de identificación tributaria", "numero de identificacion tributaria",
+        "identificación tributaria", "identificacion tributaria", "tax id", "rut",
+        "número de identificación", "numero de identificacion", "documento",
+        "id tributario", "nit/rut", "nit / rut", "identificación fiscal", "identificacion fiscal",
+        "numero id tributario", "no de identificacion", "nro identificacion",
+    ],
+    "razon_social": [
+        "razon social", "razón social", "nombre de la empresa", "nombre o razon social",
+        "nombre o razón social", "empresa", "denominación social", "denominacion social",
+        "nombre comercial", "razon social / nombre comercial", "razon social o nombre comercial",
+        "nombre de la compañia", "nombre de la compania", "proponente", "proveedor",
+    ],
+    "direccion": [
+        "direccion", "dirección", "domicilio", "dirección principal", "direccion principal",
+        "domicilio principal", "dirección de correspondencia", "direccion de correspondencia",
+        "direccion fisica", "dirección física", "direccion empresa",
+    ],
+    "telefono": [
+        "telefono", "teléfono", "telefono fijo", "teléfono fijo", "telefono empresa",
+        "teléfono empresa", "conmutador", "telefono de contacto", "tel", "tel.",
+    ],
+    "celular": [
+        "celular", "móvil", "movil", "telefono celular", "teléfono celular",
+        "número celular", "numero celular", "cel", "cel.",
+    ],
+    "correo": [
+        "correo", "email", "e-mail", "correo electronico", "correo electrónico",
+        "correo corporativo", "correo principal", "email corporativo", "e-mail corporativo",
+    ],
+    "ciudad": [
+        "ciudad", "municipio", "ciudad domicilio", "ciudad principal", "ciudad sede",
+        "municipio / ciudad", "ciudad / municipio",
+    ],
+    "departamento": [
+        "departamento", "departamento domicilio", "estado o departamento", "provincia",
+        "dpto", "depto",
+    ],
+    "pais": [
+        "pais", "país", "nacion", "nación", "pais de origen", "país de origen",
+    ],
+    "pagina_web": [
+        "pagina web", "página web", "sitio web", "web", "url", "portal web",
+    ],
+    "representante_legal": [
+        "representante legal", "nombre representante legal", "nombre del representante legal",
+        "apoderado legal", "nombre representante", "gerente general",
+        "nombres y apellidos del representante legal", "representante",
+    ],
+    "primer_nombre": [
+        "primer nombre", "1er nombre", "primer nombre representante",
+    ],
+    "segundo_nombre": [
+        "segundo nombre", "2do nombre", "segundo nombre representante",
+    ],
+    "primer_apellido": [
+        "primer apellido", "1er apellido", "primer apellido representante",
+    ],
+    "segundo_apellido": [
+        "segundo apellido", "2do apellido", "segundo apellido representante",
+    ],
+    "cedula": [
+        "cedula", "cédula", "cedula de ciudadania", "cédula de ciudadanía",
+        "cc", "c.c.", "documento representante", "documento de identidad",
+        "número de documento", "numero de documento", "identificacion representante",
+        "cedula rep legal", "cédula rep legal", "no. documento", "nro. documento",
+    ],
+    "tipo_documento": [
+        "tipo de documento", "tipo documento", "tipo id", "tipo de id",
+        "tipo identificacion", "tipo de identificacion", "clase de documento",
+    ],
+    "lugar_expedicion": [
+        "lugar de expedicion", "lugar de expedición", "lugar expedición", "lugar expedicion",
+        "ciudad expedicion", "ciudad expedición", "de expedicion", "de expedición",
+    ],
+    "fecha_expedicion": [
+        "fecha de expedicion", "fecha de expedición", "fecha expedición", "fecha expedicion",
+    ],
+    "cargo": [
+        "cargo", "rol", "cargo representante", "puesto", "cargo que desempeña",
+    ],
+    "banco": [
+        "banco", "entidad bancaria", "nombre del banco", "institucion financiera",
+        "entidad financiera",
+    ],
+    "numero_cuenta": [
+        "numero de cuenta", "número de cuenta", "no de cuenta", "no. cuenta",
+        "num cuenta", "cuenta bancaria", "no cuenta", "nro de cuenta", "nro cuenta",
+    ],
+    "tipo_cuenta": [
+        "tipo de cuenta", "tipo cuenta", "corriente o ahorros", "ahorros o corriente",
+        "clase de cuenta", "tipo de producto",
+    ],
+    "sucursal": [
+        "sucursal", "sucursal bancaria", "oficina bancaria",
+    ],
+    "moneda": [
+        "moneda", "tipo de moneda", "divisa",
+    ],
+    "total_activos": [
+        "total activos", "activos", "valor activos", "total de activos", "activos totales",
+    ],
+    "total_pasivos": [
+        "total pasivos", "pasivos", "valor pasivos", "total de pasivos", "pasivos totales",
+    ],
+    "total_patrimonio": [
+        "total patrimonio", "patrimonio", "patrimonio neto", "total de patrimonio",
+    ],
+    "total_ingresos_mensuales": [
+        "ingresos mensuales", "total ingresos mensuales", "ingresos operacionales mensuales",
+    ],
+    "total_egresos_mensuales": [
+        "egresos mensuales", "total egresos mensuales", "gastos mensuales",
+    ],
+}
+
+
+def resolver_campo_por_alias_determinista(texto_rotulo: str) -> Optional[str]:
+    """Resuelve determinísticamente el campo maestro a partir de un texto de rótulo o encabezado.
+    
+    Aplica normalización de tildes, puntuación y mayúsculas/minúsculas.
+    Retorna la clave del campo (ej. 'nit') si hay coincidencia exacta o de alta prioridad.
+    """
+    if not texto_rotulo:
+        return None
+    
+    rotulo_limpio = limpiar_rotulo(texto_rotulo).strip().lower()
+    if not rotulo_limpio:
+        return None
+    
+    # 1. Búsqueda exacta en el catálogo de aliases
+    for campo_key, aliases in ALIASES_DETERMINISTICOS_CAMPOS.items():
+        for alias in aliases:
+            if rotulo_limpio == alias.lower():
+                return campo_key
+                
+    # 2. Búsqueda por subcadena delimitada o prefijo exacto (ej. "NIT:" o "Razón Social *")
+    for campo_key, aliases in ALIASES_DETERMINISTICOS_CAMPOS.items():
+        for alias in aliases:
+            # Si el alias es suficientemente largo (>= 3 chars) y está contenido como palabra completa
+            if len(alias) >= 3:
+                patron = rf"\b{re.escape(alias.lower())}\b"
+                if re.search(patron, rotulo_limpio):
+                    return campo_key
+                    
+    return None
+
+

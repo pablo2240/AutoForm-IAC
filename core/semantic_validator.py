@@ -1193,3 +1193,151 @@ def generar_resumen_validacion(plan_validado: List[Dict[str, Any]]) -> Dict[str,
         "items_revision": items_revision,
         "autocorrecciones": autocorreciones,
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# VALIDACIÓN DE FORMATOS Y REGLAS DE INTEGRIDAD EXCEL (SUITE DE PRECISIÓN)
+# ──────────────────────────────────────────────────────────────────────────────
+
+_PATRON_CORREO_VALIDO = re.compile(r"^[\w\.\+\-]+@[\w\-]+(?:\.[\w\-]+)+$")
+_PATRON_FECHA_VALIDA = re.compile(r"^(?:\d{4}[-/]\d{1,2}[-/]\d{1,2}|\d{1,2}[-/]\d{1,2}[-/]\d{2,4})$")
+_PATRON_IDENTIFICACION_VALIDA = re.compile(r"^[A-Za-z0-9\.\-\s]{3,25}$")
+_PATRON_TELEFONO_VALIDO = re.compile(r"^\+?[\d\s\(\)\-\.]{7,25}$")
+
+
+def validar_formato_dato(campo: str, valor: Any) -> Tuple[bool, str]:
+    """Valida que el valor propuesto cumpla las restricciones de formato según el tipo de campo."""
+    if valor is None:
+        return True, ""
+    val_str = str(valor).strip()
+    if not val_str:
+        return True, ""
+
+    c_norm = campo.lower()
+
+    # 1. Correos electrónicos
+    if "correo" in c_norm or "email" in c_norm:
+        if not _PATRON_CORREO_VALIDO.match(val_str):
+            return False, f"El correo '{val_str}' no tiene una sintaxis válida de email."
+
+    # 2. Fechas
+    elif "fecha" in c_norm:
+        if not _PATRON_FECHA_VALIDA.match(val_str):
+            return False, f"La fecha '{val_str}' debe tener formato YYYY-MM-DD o DD/MM/YYYY."
+
+    # 3. Identificaciones (NIT, Cédula)
+    elif c_norm in ("nit", "cedula", "numero_documento", "documento"):
+        if not _PATRON_IDENTIFICACION_VALIDA.match(val_str):
+            return False, f"La identificación '{val_str}' contiene caracteres inválidos."
+
+    # 4. Teléfonos y Celulares
+    elif "telefono" in c_norm or "celular" in c_norm or "movil" in c_norm:
+        if not _PATRON_TELEFONO_VALIDO.match(val_str):
+            return False, f"El teléfono '{val_str}' no cumple un formato numérico válido."
+
+    # 5. Moneda y Cifras Financieras
+    elif any(f in c_norm for f in ("activo", "pasivo", "patrimonio", "ingreso", "egreso", "monto", "capital", "saldo")):
+        try:
+            limpio = val_str.replace("$", "").replace(" ", "").replace(".", "").replace(",", ".")
+            float(limpio)
+        except Exception:
+            return False, f"El valor financiero '{val_str}' no es convertible a número."
+
+    # 6. Porcentajes
+    elif "porcentaje" in c_norm or "participacion" in c_norm:
+        try:
+            limpio = val_str.replace("%", "").replace(" ", "").replace(",", ".")
+            val_f = float(limpio)
+            if val_f < 0.0 or val_f > 100.0:
+                return False, f"El porcentaje '{val_str}' debe estar entre 0% y 100%."
+        except Exception:
+            return False, f"El porcentaje '{val_str}' no es válido."
+
+    return True, ""
+
+
+def enriquecer_item_con_inspeccion_excel(
+    item: Dict[str, Any],
+    inspeccion: Any,
+) -> Dict[str, Any]:
+    """Aplica las reglas de integridad de la Inspección Estructurada a un ítem de mapeo."""
+    if inspeccion is None:
+        return item
+
+    res = dict(item)
+    advertencias = list(res.get("advertencias") or [])
+    es_bloqueante = bool(res.get("bloqueante", False))
+
+    hoja = str(res.get("hoja") or "")
+    fila = int(res.get("fila") or 0)
+    col = int(res.get("columna") or 0)
+    ubic = str(res.get("ubicacion") or "derecha").lower()
+
+    # Calcular celda destino
+    if ubic == "abajo":
+        f_dest, c_dest = fila + 1, col
+    elif ubic == "misma":
+        f_dest, c_dest = fila, col
+    else:
+        f_dest, c_dest = fila, col + 1
+
+    res["fila_destino"] = f_dest
+    res["columna_destino"] = c_dest
+
+    from openpyxl.utils import get_column_letter
+    try:
+        res["celda"] = f"{get_column_letter(c_dest)}{f_dest}"
+    except Exception:
+        res["celda"] = f"R{f_dest}C{c_dest}"
+
+    campo = str(res.get("campo") or "")
+    valor = res.get("valor")
+
+    # 1. Regla: Nunca sobrescribir fórmulas
+    if inspeccion.es_celda_formula(hoja, f_dest, c_dest):
+        formula_existente = inspeccion.celdas_con_formula.get((hoja, f_dest, c_dest), "")
+        advertencias.append(
+            f"🚫 CUIDADO: La celda destino {res['celda']} contiene la fórmula '{formula_existente}'. "
+            "No se sobreescribirá para preservar el cálculo original."
+        )
+        res["bloqueante"] = True
+        es_bloqueante = True
+        res["estado"] = EstadoMapeo.REVISION
+
+    # 2. Regla: Respetar celdas protegidas
+    if inspeccion.es_celda_protegida(hoja, f_dest, c_dest):
+        advertencias.append(f"🔒 La celda destino {res['celda']} está protegida o bloqueada en la hoja.")
+        res["bloqueante"] = True
+        es_bloqueante = True
+        res["estado"] = EstadoMapeo.REVISION
+
+    # 3. Regla: Validar contra listas desplegables (DataValidation)
+    regla_dv = inspeccion.obtener_validacion(hoja, f_dest, c_dest)
+    if regla_dv and regla_dv.tipo == "list" and regla_dv.opciones_permitidas:
+        opciones = regla_dv.opciones_permitidas
+        val_str = str(valor or "").strip()
+        val_en_opciones = any(val_str.lower() == op.strip().lower() for op in opciones)
+        if not val_en_opciones:
+            advertencias.append(
+                f"⚠️ El valor '{val_str}' no figura entre las opciones de la lista desplegable: {opciones}."
+            )
+
+    # 4. Regla: Detectar valores preexistentes
+    val_ant = inspeccion.obtener_valor_anterior(hoja, f_dest, c_dest)
+    if val_ant is not None and str(val_ant).strip() != "":
+        res["valor_anterior"] = val_ant
+        if str(val_ant).strip().lower() != str(valor or "").strip().lower():
+            advertencias.append(
+                f"ℹ️ La celda contenía previamente el valor '{val_ant}'."
+            )
+
+    # 5. Validación de formato de dato
+    ok_fmt, msg_fmt = validar_formato_dato(campo, valor)
+    if not ok_fmt:
+        advertencias.append(f"⚠️ Formato: {msg_fmt}")
+
+    res["advertencias"] = advertencias
+    res["bloqueante"] = es_bloqueante
+
+    return res
+

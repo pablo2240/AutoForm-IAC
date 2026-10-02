@@ -18,6 +18,7 @@ try:
 except ImportError:
     fuzz = None
 
+from openpyxl.utils import get_column_letter
 from pipeline.context import PipelineContext
 from template_store.store import guardar_plantilla, calcular_hash_formulario
 
@@ -217,45 +218,82 @@ def obtener_opciones_campos_empresa(datos_empresa: Dict[str, Any]) -> List[str]:
     return [OPCION_OMITIR] + lista_ordenada
 
 
+def _calcular_celda_destino(fila: int, col: int, ubicacion: str) -> Tuple[int, int, str]:
+    """Calcula la coordenada (fila, columna, A1) destino a partir de la celda rótulo."""
+    u = str(ubicacion or "derecha").lower()
+    if u == "abajo":
+        f_dest, c_dest = fila + 1, col
+    elif u == "misma":
+        f_dest, c_dest = fila, col
+    else:
+        f_dest, c_dest = fila, col + 1
+    try:
+        celda_str = f"{get_column_letter(c_dest)}{f_dest}"
+    except Exception:
+        celda_str = f"R{f_dest}C{c_dest}"
+    return f_dest, c_dest, celda_str
+
+
 def _formatear_badge_estado(
     estado_raw: str,
     confianza_raw: str,
     campo_select: str,
     motivo: str = "",
+    confianza_score: Optional[float] = None,
 ) -> str:
-    """Convierte el estado y confianza técnicos en un badge visual intuitivo para el usuario."""
+    """Convierte el estado y confianza técnicos en un badge visual intuitivo para el usuario con score (0-1)."""
     if not campo_select or campo_select == OPCION_OMITIR:
         if estado_raw == "DESCARTADO":
-            return "⚪ Omitido"
-        return "⚪ Sin asignar"
+            return "0.00 ⚪ Omitido"
+        if estado_raw == "EXTRA":
+            return "0.00 ⚫ No es campo" if "Descartado" in motivo else "0.00 ⚪ Sin asignar"
+        return "0.00 ⚪ Sin asignar"
 
     estado_upper = str(estado_raw or "").upper()
     confianza_upper = str(confianza_raw or "").upper()
 
+    score = 1.0
+    if confianza_score is not None:
+        try:
+            score = max(0.0, min(1.0, float(confianza_score)))
+        except (ValueError, TypeError):
+            score = 1.0
+    elif confianza_upper == "EXACTA":
+        score = 1.0
+    elif confianza_upper == "ALTA":
+        score = 0.90
+    elif confianza_upper == "PARCIAL":
+        score = 0.65
+    elif estado_upper == "REVISION":
+        score = 0.50
+    else:
+        score = 0.80
+
     if estado_upper == "APROBADO":
-        if confianza_upper == "EXACTA":
-            return "🟢 Exacta"
+        if confianza_upper == "EXACTA" or score >= 0.98:
+            return f"{score:.2f} 🟢 Exacta"
         if "autocorr" in motivo.lower() or "corregido" in motivo.lower():
-            return "🟢 Alta (Autocorr.)"
-        if confianza_upper == "ALTA":
-            return "🟢 Alta"
-        if confianza_upper == "PARCIAL":
-            return "🟡 Parcial"
-        return "🟢 Aprobado"
+            return f"{score:.2f} 🟢 Alta (Autocorr.)"
+        if confianza_upper == "ALTA" or score >= 0.75:
+            return f"{score:.2f} 🟢 Alta"
+        if confianza_upper == "PARCIAL" or score >= 0.50:
+            return f"{score:.2f} 🟡 Parcial"
+        return f"{score:.2f} 🟢 Aprobado"
 
     if estado_upper == "REVISION":
-        return "🟡 Requiere Revisión"
+        return f"{score:.2f} 🟡 Requiere Revisión"
 
     if estado_upper == "DESCARTADO":
-        return "⚪ Omitido"
+        return "0.00 ⚪ Omitido"
 
-    return "✅ Sugerido por IA"
+    return f"{score:.2f} ✅ Sugerido por IA"
 
 
 def preparar_tabla_verificacion(
     plan_mapeo: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
     elementos_raw: Optional[List[Dict[str, Any]]] = None,
+    inspeccion_excel: Optional[Any] = None,
 ) -> pd.DataFrame:
     """Transforma el plan de mapeo enriquecido en un DataFrame interactivo con soporte de jerarquía y validación."""
     from pipeline.stages.stage_2_classifier import clasificar_rotulo_individual, ClasificacionElemento
@@ -270,15 +308,16 @@ def preparar_tabla_verificacion(
 
     # 1. Agregar primero los campos mapeados (enriquecidos por Fase 2 y 3)
     for idx, item in enumerate(plan_mapeo):
-        hoja = str(item.get("hoja", ""))
+        hoja = str(item.get("hoja", "") or "Hoja1")
         fila = int(item.get("fila", 0) or 0)
         col = int(item.get("columna", 0) or 0)
-        rotulo = str(item.get("valor") or item.get("rotulo") or "").strip()
+        rotulo = str(item.get("valor") or item.get("rotulo") or item.get("encabezado") or "").strip()
         campo = str(item.get("campo", "")).strip()
         seccion = str(item.get("seccion") or item.get("seccion_padre") or "INFORMACIÓN GENERAL").strip()
         
         estado_raw = str(item.get("estado", "APROBADO")).strip()
         confianza_raw = str(item.get("nivel_confianza", "ALTA")).strip()
+        conf_score = float(item.get("confianza_score") if item.get("confianza_score") is not None else (1.0 if confianza_raw == "EXACTA" else (0.85 if confianza_raw == "ALTA" else 0.5)))
         motivo = str(item.get("motivo", "")).strip()
         tipo_elem = str(item.get("tipo_elemento", "FIELD")).strip()
 
@@ -286,33 +325,74 @@ def preparar_tabla_verificacion(
         if ubicacion not in ("derecha", "abajo", "misma"):
             ubicacion = "derecha"
 
+        f_dest = int(item.get("fila_destino") or 0)
+        c_dest = int(item.get("columna_destino") or 0)
+        if not f_dest or not c_dest:
+            f_dest, c_dest, celda_str = _calcular_celda_destino(fila, col, ubicacion)
+        else:
+            try:
+                celda_str = f"{get_column_letter(c_dest)}{f_dest}"
+            except Exception:
+                celda_str = f"R{f_dest}C{c_dest}"
+        celda = str(item.get("celda") or celda_str)
+
         campo_select = campo if (campo and (campo in claves_disponibles or campo in datos_empresa or "." in campo)) else OPCION_OMITIR
         valor_real = _resolver_valor_campo(datos_empresa, campo_select)
-        
-        # Badge visual
-        badge = _formatear_badge_estado(estado_raw, confianza_raw, campo_select, motivo)
 
-        # Motivo legible para el usuario
+        # Valor anterior en el Excel original
+        v_ant = item.get("valor_anterior")
+        if v_ant is None and inspeccion_excel:
+            v_ant = inspeccion_excel.obtener_valor_anterior(hoja, f_dest, c_dest)
+        valor_anterior_str = "-" if v_ant is None or str(v_ant).strip() == "" else str(v_ant)
+
+        # Advertencias y detección de bloqueo (fórmulas preexistentes)
+        advertencias_lista = list(item.get("advertencias") or [])
+        es_bloqueante = bool(item.get("bloqueante", False))
+
+        if inspeccion_excel:
+            if inspeccion_excel.es_celda_formula(hoja, f_dest, c_dest):
+                es_bloqueante = True
+                f_val = inspeccion_excel.celdas_con_formula.get((hoja, f_dest, c_dest), "")
+                if not any("FÓRMULA" in a.upper() for a in advertencias_lista):
+                    advertencias_lista.append(f"🚫 FÓRMULA: Celda {celda} contiene cálculo original ('{f_val}').")
+            if inspeccion_excel.es_celda_protegida(hoja, f_dest, c_dest):
+                es_bloqueante = True
+                if not any("BLOQUEADA" in a.upper() for a in advertencias_lista):
+                    advertencias_lista.append(f"🔒 BLOQUEADA: Celda {celda} protegida.")
+
+        adv_display = " | ".join(advertencias_lista) if advertencias_lista else "Ninguna"
+
+        # Badge visual con score numérico
+        badge = _formatear_badge_estado(estado_raw, confianza_raw, campo_select, motivo, confianza_score=conf_score)
+
         motivo_display = motivo
         if not motivo_display:
-            if badge == "🟢 Exacta":
+            if "Exacta" in badge:
                 motivo_display = "Coincidencia directa con datos maestros"
-            elif badge.startswith("🟢"):
+            elif "Alta" in badge:
                 motivo_display = "Emparejamiento contextual validado"
 
         filas.append({
             "N°": idx + 1,
-            "Sección": seccion,
-            "Rótulo en el Formulario": rotulo,
-            "Ubicación": f"{hoja} (F{fila}:C{col})" if hoja else f"Fila {fila}, Col {col}",
-            "Confianza / Estado": badge,
+            "Hoja": hoja,
+            "Celda / Rango": celda,
+            "Rótulo / Encabezado": rotulo,
+            "Valor Anterior": valor_anterior_str,
             "Campo Asignado": campo_select,
-            "Valor a Escribir": valor_real,
-            "Motivo / Observación": motivo_display,
+            "Valor Nuevo": valor_real,
+            "Nivel de Confianza": badge,
+            "Advertencias": adv_display,
             "Dirección": ubicacion,
+            "Sección": seccion,
+            "Ubicación": f"{hoja} (F{fila}:C{col})" if hoja else f"Fila {fila}, Col {col}",
+            "Motivo / Observación": motivo_display,
             "_hoja": hoja,
             "_fila": fila,
             "_columna": col,
+            "_fila_destino": f_dest,
+            "_columna_destino": c_dest,
+            "_bloqueante": es_bloqueante,
+            "_confianza_score": conf_score,
             "_requiereMerge": bool(item.get("requiereMerge", False)),
             "_celdasAMergear": int(item.get("celdasAMergear", 1) or 1),
             "_anchoLinea": int(item.get("anchoLinea", 1) or 1),
@@ -328,13 +408,12 @@ def preparar_tabla_verificacion(
     if elementos_raw:
         n_extra = len(filas) + 1
         for elem in elementos_raw:
-            hoja_e = str(elem.get("hoja", ""))
+            hoja_e = str(elem.get("hoja", "") or "Hoja1")
             fila_e = int(elem.get("fila", 0) or 0)
             col_e = int(elem.get("columna", 0) or 0)
             rot_e = str(elem.get("valor") or elem.get("rotulo") or "").strip()
             sec_e = str(elem.get("seccion_padre") or elem.get("seccion") or "INFORMACIÓN GENERAL").strip()
 
-            # Evitar duplicar celdas ya mapeadas o rótulos vacíos
             if (hoja_e, fila_e, col_e) in coordenadas_mapeadas or not rot_e:
                 continue
 
@@ -345,7 +424,6 @@ def preparar_tabla_verificacion(
 
             r_norm = _normalizar(rot_e)
 
-            # Clasificación y asignación según el rol funcional
             if tipo_clasif in (
                 ClasificacionElemento.TITULO_SECCION.value,
                 ClasificacionElemento.OPCION_SELECCION.value,
@@ -358,46 +436,75 @@ def preparar_tabla_verificacion(
             ):
                 campo_final = OPCION_OMITIR
                 valor_final = ""
-                badge = "⚫ No es un campo"
+                badge = "0.00 ⚫ No es campo"
                 motivo_desc = f"Descartado: clasificado como {tipo_clasif}"
+                conf_val = 0.0
 
             elif r_norm in ("identificacion", "id", "documento", "identificacion no", "no identificacion") and not elem.get("seccion_padre"):
                 campo_final = OPCION_OMITIR
                 valor_final = ""
-                badge = "🟡 Requiere Revisión"
+                badge = "0.50 🟡 Requiere Revisión"
                 motivo_desc = "Rótulo ambiguo sin sección específica asignada"
+                conf_val = 0.5
 
             else:
                 sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles, seccion_padre=sec_e)
                 if sugerido:
                     campo_final = sugerido
                     valor_final = _resolver_valor_campo(datos_empresa, campo_final)
-                    badge = "🟡 Coincidencia parcial"
+                    badge = "0.70 🟡 Sugerencia"
                     motivo_desc = "Sugerencia por similitud léxica"
+                    conf_val = 0.70
                 else:
                     campo_final = OPCION_OMITIR
                     valor_final = ""
-                    badge = "⚪ Sin asignar"
+                    badge = "0.00 ⚪ Sin asignar"
                     motivo_desc = "No se encontró dato correspondiente en el perfil"
+                    conf_val = 0.0
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             ubic = str(elem.get("tipoEspacioEscritura", "derecha")).lower()
             if ubic not in ("derecha", "abajo", "misma"):
                 ubic = "derecha"
 
+            f_dest_e, c_dest_e, celda_str_e = _calcular_celda_destino(fila_e, col_e, ubic)
+
+            v_ant_e = None
+            bloqueante_e = False
+            advs_e = []
+            if inspeccion_excel:
+                v_ant_e = inspeccion_excel.obtener_valor_anterior(hoja_e, f_dest_e, c_dest_e)
+                if inspeccion_excel.es_celda_formula(hoja_e, f_dest_e, c_dest_e):
+                    bloqueante_e = True
+                    advs_e.append(f"🚫 FÓRMULA: Celda {celda_str_e} contiene fórmula.")
+                if inspeccion_excel.es_celda_protegida(hoja_e, f_dest_e, c_dest_e):
+                    bloqueante_e = True
+                    advs_e.append(f"🔒 BLOQUEADA: Celda {celda_str_e} protegida.")
+            val_ant_e_str = "-" if v_ant_e is None or str(v_ant_e).strip() == "" else str(v_ant_e)
+
+            adv_e_str = " | ".join(advs_e) if advs_e else (motivo_desc if "Descartado" in motivo_desc else "Ninguna")
+
             fila_dict = {
                 "N°": n_extra,
-                "Sección": sec_e,
-                "Rótulo en el Formulario": rot_e,
-                "Ubicación": f"{hoja_e} (F{fila_e}:C{col_e})" if hoja_e else f"Fila {fila_e}, Col {col_e}",
-                "Confianza / Estado": badge,
+                "Hoja": hoja_e,
+                "Celda / Rango": celda_str_e,
+                "Rótulo / Encabezado": rot_e,
+                "Valor Anterior": val_ant_e_str,
                 "Campo Asignado": campo_final,
-                "Valor a Escribir": valor_final,
-                "Motivo / Observación": motivo_desc,
+                "Valor Nuevo": valor_final,
+                "Nivel de Confianza": badge,
+                "Advertencias": adv_e_str,
                 "Dirección": ubic,
+                "Sección": sec_e,
+                "Ubicación": f"{hoja_e} (F{fila_e}:C{col_e})" if hoja_e else f"Fila {fila_e}, Col {col_e}",
+                "Motivo / Observación": motivo_desc,
                 "_hoja": hoja_e,
                 "_fila": fila_e,
                 "_columna": col_e,
+                "_fila_destino": f_dest_e,
+                "_columna_destino": c_dest_e,
+                "_bloqueante": bloqueante_e,
+                "_confianza_score": conf_val,
                 "_requiereMerge": bool(ancho_l > 1),
                 "_celdasAMergear": ancho_l,
                 "_anchoLinea": ancho_l,
@@ -414,17 +521,25 @@ def preparar_tabla_verificacion(
     df = pd.DataFrame(filas)
     if not df.empty:
         df["N°"] = df["N°"].fillna(0).astype(int)
-        df["Sección"] = df["Sección"].fillna("INFORMACIÓN GENERAL").astype(str)
-        df["Rótulo en el Formulario"] = df["Rótulo en el Formulario"].fillna("").astype(str)
-        df["Ubicación"] = df["Ubicación"].fillna("").astype(str)
-        df["Confianza / Estado"] = df["Confianza / Estado"].fillna("⚪ Sin asignar").astype(str)
+        df["Hoja"] = df["Hoja"].fillna("Hoja1").astype(str)
+        df["Celda / Rango"] = df["Celda / Rango"].fillna("").astype(str)
+        df["Rótulo / Encabezado"] = df["Rótulo / Encabezado"].fillna("").astype(str)
+        df["Valor Anterior"] = df["Valor Anterior"].fillna("-").astype(str)
         df["Campo Asignado"] = df["Campo Asignado"].fillna(OPCION_OMITIR).astype(str)
-        df["Valor a Escribir"] = df["Valor a Escribir"].fillna("").astype(str)
-        df["Motivo / Observación"] = df["Motivo / Observación"].fillna("").astype(str)
+        df["Valor Nuevo"] = df["Valor Nuevo"].fillna("").astype(str)
+        df["Nivel de Confianza"] = df["Nivel de Confianza"].fillna("0.00 ⚪ Sin asignar").astype(str)
+        df["Advertencias"] = df["Advertencias"].fillna("Ninguna").astype(str)
         df["Dirección"] = df["Dirección"].fillna("derecha").astype(str)
+        df["Sección"] = df["Sección"].fillna("INFORMACIÓN GENERAL").astype(str)
+        df["Ubicación"] = df["Ubicación"].fillna("").astype(str)
+        df["Motivo / Observación"] = df["Motivo / Observación"].fillna("").astype(str)
         df["_hoja"] = df["_hoja"].fillna("").astype(str)
         df["_fila"] = df["_fila"].fillna(0).astype(int)
         df["_columna"] = df["_columna"].fillna(0).astype(int)
+        df["_fila_destino"] = df["_fila_destino"].fillna(0).astype(int)
+        df["_columna_destino"] = df["_columna_destino"].fillna(0).astype(int)
+        df["_bloqueante"] = df["_bloqueante"].fillna(False).astype(bool)
+        df["_confianza_score"] = df["_confianza_score"].fillna(0.0).astype(float)
         df["_requiereMerge"] = df["_requiereMerge"].fillna(False).astype(bool)
         df["_celdasAMergear"] = df["_celdasAMergear"].fillna(1).astype(int)
         df["_anchoLinea"] = df["_anchoLinea"].fillna(1).astype(int)
@@ -455,21 +570,37 @@ def aplicar_cambios_verificacion(
         if direccion not in ("derecha", "abajo", "misma"):
             direccion = "derecha"
 
-        hoja = str(row.get("_hoja", ""))
+        hoja = str(row.get("_hoja", row.get("Hoja", "")))
         fila = int(row.get("_fila", 0))
         columna = int(row.get("_columna", 0))
-        rotulo = str(row.get("Rótulo en el Formulario", ""))
+        f_dest = int(row.get("_fila_destino", 0))
+        c_dest = int(row.get("_columna_destino", 0))
+        celda = str(row.get("Celda / Rango", row.get("Celda", "")))
+        rotulo = str(row.get("Rótulo / Encabezado", row.get("Rótulo en el Formulario", "")))
         ancho_l = int(row.get("_anchoLinea", 1) or 1)
         req_merge = bool(row.get("_requiereMerge", False) or (ancho_l > 1 and direccion == "derecha"))
         seccion = str(row.get("Sección", row.get("_seccion", "")))
+        valor_nuevo = str(row.get("Valor Nuevo", ""))
+        valor_anterior = str(row.get("Valor Anterior", "-"))
+        confianza_score = float(row.get("_confianza_score", 1.0) or 1.0)
+        bloqueante = bool(row.get("_bloqueante", False))
+        adv_val = str(row.get("Advertencias", ""))
 
         item_final = {
             "hoja": hoja,
             "fila": fila,
             "columna": columna,
+            "fila_destino": f_dest,
+            "columna_destino": c_dest,
+            "celda": celda,
             "valor": rotulo,
             "ubicacion": direccion,
             "campo": campo_seleccionado,
+            "valor_a_escribir": valor_nuevo,
+            "valor_anterior": valor_anterior if valor_anterior != "-" else None,
+            "confianza_score": confianza_score,
+            "bloqueante": bloqueante,
+            "advertencias": [adv_val] if adv_val and adv_val != "Ninguna" else [],
             "requiereMerge": req_merge,
             "celdasAMergear": int(row.get("_celdasAMergear", ancho_l) or ancho_l),
             "anchoLinea": ancho_l,
@@ -495,10 +626,10 @@ def render_pantalla_verificacion(
 
     opciones_campos = obtener_opciones_campos_empresa(ctx.datos_empresa)
 
-    st.markdown("### 📋 Verificación y Auditoría Semántica de Campos")
+    st.markdown("### 📋 Vista de Cambios Propuestos y Verificación de Celdas")
     st.markdown(
-        "Revisa y confirma la asignación de datos para cada campo detectado. "
-        "El sistema ha validado la jerarquía de secciones y la coherencia lógica de los datos maestros."
+        "Revisa la hoja, celda destino, valor anterior y nuevo valor propuesto antes de escribir en el archivo. "
+        "El motor de precisión protege al 100% las fórmulas y validaciones preexistentes del Excel."
     )
 
     # ── Gestión de Estado Maestro en Session State (Aislado por Documento) ──
@@ -507,17 +638,25 @@ def render_pantalla_verificacion(
     master_key = f"{key_prefix}_master_df_{doc_hash}"
     editor_key = f"{key_prefix}_data_editor_{doc_hash}"
 
+    insp = getattr(ctx, "inspeccion_excel", None)
+
     if master_key not in st.session_state or st.session_state[master_key] is None:
-        st.session_state[master_key] = preparar_tabla_verificacion(plan_activo, ctx.datos_empresa, elementos_todos)
+        st.session_state[master_key] = preparar_tabla_verificacion(
+            plan_activo,
+            ctx.datos_empresa,
+            elementos_todos,
+            inspeccion_excel=insp,
+        )
 
     master_df: pd.DataFrame = st.session_state[master_key]
 
     # Conteo de métricas cuantitativas
     total_detectados = len(master_df)
     total_asignados = sum(1 for c in master_df["Campo Asignado"] if c != OPCION_OMITIR)
-    total_alta_confianza = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("🟢") and r["Campo Asignado"] != OPCION_OMITIR)
-    total_revision = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("🟡") or (r["Campo Asignado"] == OPCION_OMITIR and str(r["Confianza / Estado"]) not in ("⚫ No es un campo", "⚪ Omitido")))
-    total_editados = sum(1 for _, r in master_df.iterrows() if str(r["Confianza / Estado"]).startswith("✏️"))
+    total_alta_confianza = sum(1 for _, r in master_df.iterrows() if "🟢" in str(r["Nivel de Confianza"]) and r["Campo Asignado"] != OPCION_OMITIR)
+    total_revision = sum(1 for _, r in master_df.iterrows() if "🟡" in str(r["Nivel de Confianza"]) or (r["Campo Asignado"] == OPCION_OMITIR and "⚪ Sin asignar" in str(r["Nivel de Confianza"])))
+    total_bloqueantes = sum(1 for _, r in master_df.iterrows() if r["Campo Asignado"] != OPCION_OMITIR and (bool(r.get("_bloqueante", False)) or "🚫" in str(r.get("Advertencias", ""))))
+    total_editados = sum(1 for _, r in master_df.iterrows() if "✏️" in str(r["Nivel de Confianza"]))
 
     # ── Tarjetas Métricas Resumidas ──
     col1, col2, col3, col4 = st.columns(4)
@@ -528,16 +667,27 @@ def render_pantalla_verificacion(
     with col3:
         st.metric("🟡 Requieren Revisión", f"{total_revision}", help="Campos con sugerencia parcial o pendientes de asignar")
     with col4:
-        st.metric("✏️ Asignados / Editados", f"{total_asignados}", delta=f"{total_editados} manuales" if total_editados > 0 else None)
+        if total_bloqueantes > 0:
+            st.metric("🚫 Bloqueantes", f"{total_bloqueantes}", delta="-Conflicto", delta_color="inverse", help="Campos que intentarían sobrescribir fórmulas o celdas bloqueadas")
+        else:
+            st.metric("✏️ Asignados", f"{total_asignados}", delta=f"{total_editados} manuales" if total_editados > 0 else None)
+
+    # ── Alerta Visual de Errores Bloqueantes ──
+    if total_bloqueantes > 0:
+        st.error(
+            f"⛔ **BLOQUEO DE SEGURIDAD**: Se detectaron {total_bloqueantes} celdas con errores bloqueantes "
+            "(intento de sobreescritura de fórmulas originales o celdas protegidas). "
+            "Debes cambiar el campo a **'-- Omitir / Dejar vacío --'** o reasignar la celda antes de generar el Excel final."
+        )
 
     # ── Filtros y Búsqueda Avanzada ──
     col_search, col_sec_filter, col_filter = st.columns([2, 1.5, 1.5])
     
     with col_search:
         filtro_texto = st.text_input(
-            "🔍 Buscar rótulo, sección o campo...",
+            "🔍 Buscar por rótulo, celda o campo...",
             key=f"{key_prefix}_search_input_{doc_hash}",
-            placeholder="Ej: Representante, Cuenta, NIT, Banco...",
+            placeholder="Ej: B5, NIT, Representante, Total, Razón Social...",
         ).strip().lower()
 
     # Obtener lista única de secciones
@@ -553,7 +703,14 @@ def render_pantalla_verificacion(
     with col_filter:
         vista_filtro = st.selectbox(
             "Filtrar por Estado:",
-            ["Todos", "🟢 Solo Alta Confianza", "🟡 Solo Requieren Revisión", "✏️ Solo Editados", "⚪ Sin Asignar", "⚫ Omitidos (No campo)"],
+            [
+                "Todos",
+                "🟢 Solo Alta Confianza",
+                "🟡 Solo Requieren Revisión",
+                "🚫 Solo Errores Bloqueantes",
+                "✏️ Solo Editados",
+                "⚪ Sin Asignar",
+            ],
             key=f"{key_prefix}_vista_filter_{doc_hash}",
         )
 
@@ -562,45 +719,51 @@ def render_pantalla_verificacion(
     
     if filtro_texto:
         df_filtrado = df_filtrado[
-            df_filtrado["Rótulo en el Formulario"].astype(str).str.lower().str.contains(filtro_texto) |
-            df_filtrado["Sección"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Rótulo / Encabezado"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Celda / Rango"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Hoja"].astype(str).str.lower().str.contains(filtro_texto) |
             df_filtrado["Campo Asignado"].astype(str).str.lower().str.contains(filtro_texto) |
-            df_filtrado["Motivo / Observación"].astype(str).str.lower().str.contains(filtro_texto)
+            df_filtrado["Advertencias"].astype(str).str.lower().str.contains(filtro_texto) |
+            df_filtrado["Sección"].astype(str).str.lower().str.contains(filtro_texto)
         ]
 
     if filtro_seccion != "Todas las secciones":
         df_filtrado = df_filtrado[df_filtrado["Sección"] == filtro_seccion]
 
     if vista_filtro == "🟢 Solo Alta Confianza":
-        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).str.startswith("🟢")]
+        df_filtrado = df_filtrado[df_filtrado["Nivel de Confianza"].astype(str).str.contains("🟢")]
     elif vista_filtro == "🟡 Solo Requieren Revisión":
         df_filtrado = df_filtrado[
-            df_filtrado["Confianza / Estado"].astype(str).str.startswith("🟡") |
-            ((df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (~df_filtrado["Confianza / Estado"].astype(str).isin(["⚫ No es un campo", "⚪ Omitido"])))
+            df_filtrado["Nivel de Confianza"].astype(str).str.contains("🟡") |
+            ((df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (~df_filtrado["Nivel de Confianza"].astype(str).str.contains("⚫")))
+        ]
+    elif vista_filtro == "🚫 Solo Errores Bloqueantes":
+        df_filtrado = df_filtrado[
+            df_filtrado["_bloqueante"].astype(bool) |
+            df_filtrado["Advertencias"].astype(str).str.contains("🚫")
         ]
     elif vista_filtro == "✏️ Solo Editados":
-        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).str.startswith("✏️")]
+        df_filtrado = df_filtrado[df_filtrado["Nivel de Confianza"].astype(str).str.contains("✏️")]
     elif vista_filtro == "⚪ Sin Asignar":
         df_filtrado = df_filtrado[df_filtrado["Campo Asignado"] == OPCION_OMITIR]
-    elif vista_filtro == "⚫ Omitidos (No campo)":
-        df_filtrado = df_filtrado[df_filtrado["Confianza / Estado"].astype(str).isin(["⚫ No es un campo", "⚪ Omitido"])]
 
     # Configuración de columnas interactivas para st.data_editor
     config_columnas = {
         "N°": st.column_config.NumberColumn("N°", width="small", disabled=True),
-        "Sección": st.column_config.TextColumn("Sección / Bloque", width="medium", disabled=True),
-        "Rótulo en el Formulario": st.column_config.TextColumn("Rótulo en Formulario", width="large", disabled=True),
-        "Ubicación": st.column_config.TextColumn("Ubicación", width="small", disabled=True),
-        "Confianza / Estado": st.column_config.TextColumn("Estado", width="medium", disabled=True),
+        "Hoja": st.column_config.TextColumn("Hoja", width="small", disabled=True),
+        "Celda / Rango": st.column_config.TextColumn("Celda / Rango", width="small", disabled=True),
+        "Rótulo / Encabezado": st.column_config.TextColumn("Rótulo / Encabezado", width="large", disabled=True),
+        "Valor Anterior": st.column_config.TextColumn("Valor Anterior", width="medium", disabled=True),
         "Campo Asignado": st.column_config.SelectboxColumn(
-            "Dato de la Empresa",
+            "Campo Asignado",
             help="Selecciona qué dato de tu perfil empresarial debe inyectarse aquí",
             width="large",
             options=opciones_campos,
             required=True,
         ),
-        "Valor a Escribir": st.column_config.TextColumn("Valor a Escribir", width="large", disabled=True),
-        "Motivo / Observación": st.column_config.TextColumn("Motivo / Auditoría", width="large", disabled=True),
+        "Valor Nuevo": st.column_config.TextColumn("Valor Nuevo", width="medium", disabled=True),
+        "Nivel de Confianza": st.column_config.TextColumn("Confianza (0-1)", width="medium", disabled=True),
+        "Advertencias": st.column_config.TextColumn("Advertencias / Reglas", width="large", disabled=True),
         "Dirección": st.column_config.SelectboxColumn(
             "Dirección",
             help="Hacia dónde se inyectará el dato respecto al rótulo",
@@ -608,10 +771,17 @@ def render_pantalla_verificacion(
             options=["derecha", "abajo", "misma"],
             required=True,
         ),
+        "Sección": st.column_config.TextColumn("Sección", width="medium", disabled=True),
         # Columnas internas ocultas
+        "Ubicación": None,
+        "Motivo / Observación": None,
         "_hoja": None,
         "_fila": None,
         "_columna": None,
+        "_fila_destino": None,
+        "_columna_destino": None,
+        "_bloqueante": None,
+        "_confianza_score": None,
         "_requiereMerge": None,
         "_celdasAMergear": None,
         "_anchoLinea": None,
@@ -650,16 +820,53 @@ def render_pantalla_verificacion(
                     hubo_cambios = True
                     master_df.at[idx, "Campo Asignado"] = campo_nuevo
                     master_df.at[idx, "Dirección"] = dir_nueva
+
+                    hoja_act = str(master_df.at[idx, "_hoja"])
+                    fila_act = int(master_df.at[idx, "_fila"])
+                    col_act = int(master_df.at[idx, "_columna"])
+                    f_dest, c_dest, celda_str = _calcular_celda_destino(fila_act, col_act, dir_nueva)
+                    master_df.at[idx, "_fila_destino"] = f_dest
+                    master_df.at[idx, "_columna_destino"] = c_dest
+                    master_df.at[idx, "Celda / Rango"] = celda_str
+
+                    if insp:
+                        v_ant = insp.obtener_valor_anterior(hoja_act, f_dest, c_dest)
+                        master_df.at[idx, "Valor Anterior"] = "-" if v_ant is None or str(v_ant).strip() == "" else str(v_ant)
+
                     if campo_nuevo and campo_nuevo != OPCION_OMITIR:
-                        master_df.at[idx, "Valor a Escribir"] = _resolver_valor_campo(ctx.datos_empresa, campo_nuevo)
-                        master_df.at[idx, "Confianza / Estado"] = "✏️ Asignado por Usuario"
-                        master_df.at[idx, "Motivo / Observación"] = "Asignación manual del usuario"
+                        val_res = _resolver_valor_campo(ctx.datos_empresa, campo_nuevo)
+                        master_df.at[idx, "Valor Nuevo"] = val_res
+                        master_df.at[idx, "Nivel de Confianza"] = "1.00 ✏️ Editado por Usuario"
+                        master_df.at[idx, "_confianza_score"] = 1.0
+
+                        advs = []
+                        bloquea = False
+                        if insp:
+                            if insp.es_celda_formula(hoja_act, f_dest, c_dest):
+                                f_orig = insp.celdas_con_formula.get((hoja_act, f_dest, c_dest), "")
+                                advs.append(f"🚫 FÓRMULA: Celda {celda_str} contiene fórmula ('{f_orig}').")
+                                bloquea = True
+                            if insp.es_celda_protegida(hoja_act, f_dest, c_dest):
+                                advs.append(f"🔒 BLOQUEADA: Celda {celda_str} protegida.")
+                                bloquea = True
+                            reg_dv = insp.obtener_validacion(hoja_act, f_dest, c_dest)
+                            if reg_dv and reg_dv.tipo == "list" and reg_dv.opciones_permitidas:
+                                if not any(str(val_res).strip().lower() == op.strip().lower() for op in reg_dv.opciones_permitidas):
+                                    advs.append(f"⚠️ Opciones: {reg_dv.opciones_permitidas}")
+                        
+                        from core.semantic_validator import validar_formato_dato
+                        ok_fmt, msg_fmt = validar_formato_dato(campo_nuevo, val_res)
+                        if not ok_fmt:
+                            advs.append(f"⚠️ {msg_fmt}")
+
+                        master_df.at[idx, "Advertencias"] = " | ".join(advs) if advs else "Ninguna"
+                        master_df.at[idx, "_bloqueante"] = bloquea
                     else:
-                        master_df.at[idx, "Valor a Escribir"] = ""
-                        estado_prev = str(master_df.at[idx, "Confianza / Estado"])
-                        if estado_prev != "⚫ No es un campo":
-                            master_df.at[idx, "Confianza / Estado"] = "⚪ Sin asignar"
-                            master_df.at[idx, "Motivo / Observación"] = "Omitido por el usuario"
+                        master_df.at[idx, "Valor Nuevo"] = ""
+                        master_df.at[idx, "Nivel de Confianza"] = "0.00 ⚪ Omitido"
+                        master_df.at[idx, "Advertencias"] = "Omitido por el usuario"
+                        master_df.at[idx, "_bloqueante"] = False
+                        master_df.at[idx, "_confianza_score"] = 0.0
 
         if hubo_cambios:
             st.session_state[master_key] = master_df
@@ -695,6 +902,15 @@ def render_pantalla_verificacion(
             help="Inyecta los datos confirmados en el archivo original y genera la descarga.",
         )
         if confirmar_click:
+            # Validación estricta de no bloqueantes antes de autorizar escritura
+            hay_bloqueo = any(
+                r.get("Campo Asignado") != OPCION_OMITIR and (bool(r.get("_bloqueante", False)) or "🚫" in str(r.get("Advertencias", "")))
+                for _, r in master_df.iterrows()
+            )
+            if hay_bloqueo:
+                st.error("❌ Acción bloqueada: Resuelve los conflictos con fórmulas antes de rellenar el formulario.")
+                return False, []
+
             plan_actualizado = aplicar_cambios_verificacion(master_df, plan_activo, ctx.datos_empresa)
             ctx.plan_verificado = plan_actualizado
             ctx.log(f"Plan de mapeo verificado y confirmado por el usuario ({len(plan_actualizado)} campos).")

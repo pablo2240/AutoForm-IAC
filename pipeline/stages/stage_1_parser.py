@@ -24,6 +24,16 @@ def ejecutar_stage_1_parser(ctx: PipelineContext) -> PipelineContext:
     # 2. Validar formato y delegar escaneo al ExcelHandler
     if ctx.tipo_documento == "excel":
         elementos = ExcelHandler.escanear(ctx.archivo_bytes)
+        try:
+            from core.excel_inspector import inspeccionar_libro_excel
+            ctx.inspeccion_excel = inspeccionar_libro_excel(ctx.archivo_bytes)
+            ctx.log(
+                f"[Stage 1 - Parser] Inspección estructurada: {len(ctx.inspeccion_excel.hojas)} hojas, "
+                f"{len(ctx.inspeccion_excel.tablas)} tablas, {len(ctx.inspeccion_excel.celdas_con_formula)} fórmulas protegidas, "
+                f"{len(ctx.inspeccion_excel.validaciones_por_celda)} celdas con validación."
+            )
+        except Exception as exc_insp:
+            ctx.log(f"[Stage 1 - Parser] Advertencia en inspección estructurada: {exc_insp}")
     else:
         raise ValueError(
             f"Formato no soportado para el archivo '{ctx.nombre_archivo}'. "
@@ -35,3 +45,4 @@ def ejecutar_stage_1_parser(ctx: PipelineContext) -> PipelineContext:
     ctx.log(f"[Stage 1 - Parser] Escaneo completado: {len(elementos)} elementos detectados en {duracion:.2f}s.")
 
     return ctx
+

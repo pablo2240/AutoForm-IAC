@@ -18,6 +18,25 @@ def render_pantalla_descarga(ctx: PipelineContext, key_prefix: str = "download_u
         st.error("No se encontró el archivo generado para descargar.")
         return
 
+    # ── Verificación Posterior de Integridad Estructural (Round-Trip) ──
+    res_verif = getattr(ctx, "resultado_verificacion", None)
+    if res_verif is not None:
+        if not res_verif.es_valido:
+            st.error(
+                f"⛔ **Fallo de Integridad Estructural**: No se superó la verificación en memoria "
+                f"({len(res_verif.errores_bloqueantes)} errores detectados). "
+                "El archivo no es seguro para la entrega."
+            )
+            with st.expander("Ver detalles del fallo de integridad", expanded=True):
+                for err in res_verif.errores_bloqueantes:
+                    st.write(f"- ❌ {err}")
+            return
+        else:
+            st.success(
+                f"🛡️ **Integridad Estructural Certificada**: 100% de fórmulas preexistentes preservadas "
+                f"({res_verif.formulas_preservadas} fórmulas intactas) y {res_verif.exitosos} celdas verificadas con éxito en memoria."
+            )
+
     # Determinar extensión y MIME type (Excel OpenXML)
     nombre_base = Path(ctx.nombre_archivo).stem if ctx.nombre_archivo else "Formulario_Rellenado"
     nombre_descarga = f"{nombre_base}_AutoForm.xlsx"
@@ -38,25 +57,24 @@ def render_pantalla_descarga(ctx: PipelineContext, key_prefix: str = "download_u
 
     st.markdown("---")
 
-    # ── Resumen de Métricas de Inyección ──
-    conteos = ctx.contar_por_estado_inyeccion()
-    resumen = ctx.resumen_ejecucion()
-
-    col1, col2, col3, col4 = st.columns(4)
+    # ── Reporte de Auditoría Numérica Estructurada (Pilar 7) ──
+    audit = ctx.generar_reporte_auditoria()
+    col1, col2, col3, col4, col5 = st.columns(5)
     with col1:
-        st.metric("✅ Celdas Escritas", f"{conteos.get('OK', 0)}")
+        st.metric("🎯 Total Objetivos", f"{audit.get('total_targets', 0)}")
     with col2:
-        st.metric("⏭️ Celdas Omitidas", f"{conteos.get('SKIP', 0)}")
+        st.metric("✅ Diligenciados", f"{audit.get('filled', 0)}")
     with col3:
-        st.metric("⚡ Tiempo Total", f"{resumen.get('duracion_segundos', 0)}s")
+        st.metric("⏭️ Omitidos", f"{audit.get('skipped', 0)}")
     with col4:
-        st.metric("📁 Formato", ctx.tipo_documento.upper())
+        st.metric("🚫 Inválidos / Errores", f"{audit.get('invalid', 0)}")
+    with col5:
+        st.metric("🟡 Baja Confianza", f"{audit.get('low_confidence', 0)}")
 
     # ── Reporte Detallado por Campo ──
-    with st.expander("📊 Ver Reporte de Inyección Detallado por Celda", expanded=True):
+    with st.expander("📊 Ver Reporte de Inyección Detallado por Celda", expanded=False):
         if ctx.reporte_inyeccion:
             df_reporte = pd.DataFrame(ctx.reporte_inyeccion)
-            # Renombrar columnas para visualización clara
             columnas_mostrar = {
                 "estado": "Estado",
                 "campo": "Campo Empresa",

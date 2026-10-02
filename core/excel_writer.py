@@ -547,10 +547,11 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
 
     patron_placeholder = r'_{2,}|\.{3,}'
 
-    # Si la celda contiene una fórmula nativa de Excel (=+F51-X51, etc.), PRESERVARLA
+    # Si la celda contiene una fórmula nativa de Excel (=+F51-X51, etc.) o data_type='f', PRESERVARLA
     # sin modificar para que Excel evalúe el cálculo nativamente y no sobreescribir ni desviar abajo.
-    if txt_actual.startswith("="):
+    if getattr(celda, "data_type", None) == "f" or txt_actual.startswith("="):
         return True
+
 
     # Declaraciones explícitas de 'No Aplica' en formularios deben preservarse intactas y nunca sobreescribirse
     if txt_actual.upper() in ("N/A", "NA", "NO APLICA"):

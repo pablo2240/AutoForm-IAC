@@ -1789,9 +1789,15 @@ if uploaded_file is not None:
                     # 1. Análisis Semántico y Validador Determinista (HSP)
                     ctx = PipelineOrchestrator.analizar_formulario(ctx, on_progress=callback_progreso)
 
-                    # 2. Inyección Directa 1-Click (Ponytail: Zero friction, 100% deterministic safety)
-                    callback_progreso("⚡ Inyectando datos en el documento y preservando formato...", 0.9)
-                    ctx = PipelineOrchestrator.rellenar_formulario(ctx)
+                    # Verificar si el análisis arrojó advertencias bloqueantes (fórmulas o celdas protegidas)
+                    hay_bloqueantes = any(bool(item.get("bloqueante", False)) for item in (ctx.plan_mapeo or []))
+
+                    if not hay_bloqueantes:
+                        # 2. Inyección Directa Segura si no hay conflictos bloqueantes
+                        callback_progreso("⚡ Inyectando datos en el documento y preservando formato...", 0.9)
+                        ctx = PipelineOrchestrator.rellenar_formulario(ctx)
+                    else:
+                        ctx.log("Se detectaron celdas con advertencias bloqueantes (fórmulas preexistentes o protegidas); se requiere revisión humana previa.")
 
                     progress_placeholder.empty()
 
@@ -1810,7 +1816,7 @@ if uploaded_file is not None:
                     with st.expander("Ver detalles técnicos del error"):
                         st.text(traceback.format_exc())
 
-    # ── Renderizado del Pipeline Modular (Descarga Directa + Auditoría Opcional) ──
+    # ── Renderizado del Pipeline Modular (Descarga Directa + Auditoría Opcional / Revisión) ──
     if st.session_state.get("pipeline_ctx") is not None and st.session_state.get("processed_file_id") == current_file_id:
         pipeline_context: PipelineContext = st.session_state["pipeline_ctx"]
 
@@ -1818,16 +1824,30 @@ if uploaded_file is not None:
             st.markdown("---")
             render_pantalla_descarga(pipeline_context, key_prefix="app1_main_flow")
 
-            # Acordeón opcional colapsado si el usuario desea inspeccionar o ajustar celdas
-            with st.expander("🔍 Auditoría Detallada y Ajuste Manual de Campos (Opcional)", expanded=False):
+            # Acordeón opcional con vista de cambios propuestos y ajuste manual de celdas
+            with st.expander("🔍 Vista de Cambios Propuestos y Ajuste Manual de Campos (Opcional)", expanded=False):
                 confirmado, plan_verificado = render_pantalla_verificacion(pipeline_context, key_prefix="app1_audit_flow")
                 if confirmado:
-                    with st.spinner("⚡ Re-inyectando datos actualizados en el documento..."):
+                    with st.spinner("⚡ Re-inyectando datos actualizados y verificando integridad..."):
                         pipeline_context = PipelineOrchestrator.rellenar_formulario(pipeline_context)
                         st.session_state["pipeline_ctx"] = pipeline_context
                         _safe_rerun()
 
             if st.button("🔄 Diligenciar Otro Formulario", key="app1_btn_restart_doc"):
+                del st.session_state["pipeline_ctx"]
+                _safe_rerun()
+        else:
+            # Flujo de revisión obligatoria previa cuando existen conflictos bloqueantes
+            st.markdown("---")
+            st.warning("⚠️ **Revisión Requerida**: Se detectaron conflictos bloqueantes con fórmulas o celdas protegidas. Corrige o descarta los campos conflictivos para generar el Excel final.")
+            confirmado, plan_verificado = render_pantalla_verificacion(pipeline_context, key_prefix="app1_audit_flow")
+            if confirmado:
+                with st.spinner("⚡ Inyectando datos confirmados y verificando integridad..."):
+                    pipeline_context = PipelineOrchestrator.rellenar_formulario(pipeline_context)
+                    st.session_state["pipeline_ctx"] = pipeline_context
+                    _safe_rerun()
+
+            if st.button("🔄 Cancelar y Cargar Otro Formulario", key="app1_btn_restart_doc_block"):
                 del st.session_state["pipeline_ctx"]
                 _safe_rerun()
 
