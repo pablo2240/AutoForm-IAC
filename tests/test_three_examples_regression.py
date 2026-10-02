@@ -167,6 +167,18 @@ class TestFMCA07J:
         assert banco is not None
         assert "bancolombia" in banco.lower()
 
+    def test_r66_numero_cuenta(self, ws_fmca):
+        """El número de cuenta 00300833888 debe estar en R66 C24."""
+        num_cta = _cell(ws_fmca, 66, 24)
+        assert num_cta is not None, "R66 C24 (número de cuenta) no debe estar vacío"
+        assert "00300833888" in num_cta, f"Número de cuenta debe ser 00300833888, got: {num_cta!r}"
+
+    def test_r66_tipo_cuenta(self, ws_fmca):
+        """El tipo de cuenta AHORROS debe estar en R66 C31."""
+        tip_cta = _cell(ws_fmca, 66, 31)
+        assert tip_cta is not None, "R66 C31 (tipo de cuenta) no debe estar vacío"
+        assert "ahorros" in tip_cta.lower(), f"Tipo de cuenta debe ser AHORROS, got: {tip_cta!r}"
+
 
 # ══════════════════════════════════════════════════════════════════════════════
 # 01 SC-COM-02-25.xlsx

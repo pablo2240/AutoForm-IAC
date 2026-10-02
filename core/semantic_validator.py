@@ -938,10 +938,23 @@ def validar_item_mapeo(
             "junta", "directiv", "administra", "organo", "pep", "beneficiario", "socio", "accionist"
         ))
         if es_sec_prohibida or not es_contacto:
+            es_sec_rep = any(t in seccion_norm for t in ("legal", "representante", "apoderado", "gerente", "firma", "firmante"))
             if es_sec_prohibida and any(t in rotulo_norm for t in ("email", "mail", "correo")):
                 campo_original = "correo"
                 resultado["campo_final"] = "correo"
                 resultado["motivo"] = "Role Isolation (ADR-0011): Reasignado a correo del representante legal en sección jurídica."
+            elif es_sec_rep and any(t in rotulo_norm for t in ("identificacion", "identificación", "cedula", "cédula", "cc", "documento", "id")):
+                campo_original = "cedula"
+                resultado["campo_final"] = "cedula"
+                resultado["motivo"] = "Role Isolation (ADR-0011): Reasignado a cédula del representante legal en sección jurídica."
+            elif es_sec_rep and any(t in rotulo_norm for t in ("nombre", "nombres", "apellido", "apellidos")):
+                campo_original = "representante_legal"
+                resultado["campo_final"] = "representante_legal"
+                resultado["motivo"] = "Role Isolation (ADR-0011): Reasignado a nombre del representante legal en sección jurídica."
+            elif es_sec_rep and any(t in rotulo_norm for t in ("telefono", "teléfono", "celular", "movil", "móvil")):
+                campo_original = "celular"
+                resultado["campo_final"] = "celular"
+                resultado["motivo"] = "Role Isolation (ADR-0011): Reasignado a celular del representante legal en sección jurídica."
             else:
                 resultado["estado"] = EstadoMapeo.DESCARTADO
                 resultado["campo_final"] = ""

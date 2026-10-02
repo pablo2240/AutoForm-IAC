@@ -617,7 +617,11 @@ def ejecutar_stage_3_mapper(
             campos_llm = []
 
             for c in campos_lote:
-                campo_alias = resolver_campo_por_alias_determinista(c.get("rotulo", "") or c.get("valor", ""))
+                sec_c = c.get("_seccion_titulo") or c.get("seccion", "") or titulo_lote
+                campo_alias = resolver_campo_por_alias_determinista(
+                    c.get("rotulo", "") or c.get("valor", ""),
+                    seccion=sec_c,
+                )
                 if campo_alias and (campo_alias in ctx.datos_empresa or campo_alias in perfil_plano):
                     asignaciones_determ.append({
                         "id": c["id"],

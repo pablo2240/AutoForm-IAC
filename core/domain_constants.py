@@ -508,6 +508,9 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
         "representante legal", "nombre representante legal", "nombre del representante legal",
         "apoderado legal", "nombre representante", "gerente general",
         "nombres y apellidos del representante legal", "representante",
+        "nombre y apellidos", "nombres y apellidos", "nombre y apellido", "nombres y apellido",
+        "nombre completo del representante", "nombres y apellidos representante",
+        "nombres y apellidos del representante", "nombre o razon social", "nombre / razon social",
     ],
     "primer_nombre": [
         "primer nombre", "1er nombre", "primer nombre representante",
@@ -526,6 +529,10 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
         "cc", "c.c.", "documento representante", "documento de identidad",
         "número de documento", "numero de documento", "identificacion representante",
         "cedula rep legal", "cédula rep legal", "no. documento", "nro. documento",
+        "identificacion", "identificación", "numero de identificacion", "número de identificación",
+        "no de identificacion", "no. de identificacion", "no. identificacion", "no identificacion",
+        "nro identificacion", "nro. identificacion", "n° identificacion", "n° de identificacion",
+        "documento de identificacion", "documento de identificación", "identificacion no",
     ],
     "tipo_documento": [
         "tipo de documento", "tipo documento", "tipo id", "tipo de id",
@@ -605,11 +612,13 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
 }
 
 
-def resolver_campo_por_alias_determinista(texto_rotulo: str) -> Optional[str]:
+def resolver_campo_por_alias_determinista(texto_rotulo: str, seccion: str = "") -> Optional[str]:
     """Resuelve determinísticamente el campo maestro a partir de un texto de rótulo o encabezado.
     
     Aplica normalización de tildes, puntuación y mayúsculas/minúsculas.
-    Retorna la clave del campo (ej. 'nit') si hay coincidencia exacta o de alta prioridad.
+    Si se proporciona el contexto de sección, aplica desambiguación contextual
+    estricta (Representante Legal vs Societario vs Financiero vs Empresa).
+    Retorna la clave del campo (ej. 'nit', 'cedula') si hay coincidencia.
     """
     if not texto_rotulo:
         return None
@@ -617,7 +626,54 @@ def resolver_campo_por_alias_determinista(texto_rotulo: str) -> Optional[str]:
     rotulo_limpio = limpiar_rotulo(texto_rotulo).strip().lower()
     if not rotulo_limpio:
         return None
-    
+
+    sec_norm = limpiar_rotulo(seccion).strip().lower() if seccion else ""
+
+    # Desambiguación contextual de alta prioridad por Sección
+    if sec_norm:
+        es_sec_rep = any(t in sec_norm for t in ("representante", "rep legal", "persona natural", "firmante", "firma", "apoderado", "gerente"))
+        es_sec_fin = any(t in sec_norm for t in ("financier", "bancari", "cuenta", "banco", "pago"))
+        es_sec_soc = any(t in sec_norm for t in ("accionist", "socio", "beneficiar", "junta", "composicion", "directiv", "capital"))
+        es_sec_emp = any(t in sec_norm for t in ("empresa", "tributari", "juridic", "sociedad", "proponente"))
+
+        if es_sec_rep:
+            if re.match(r"^\s*(?:identificaci[oó]n|n[uú]mero\s+(?:de\s+)?identificaci[oó]n|no\.?\s*(?:de\s+)?identificaci[oó]n|nro\.?\s*(?:de\s+)?identificaci[oó]n|c\.?c\.?|c[eé]dula|documento(?:\s+de\s+identidad)?)\s*:?\s*$", rotulo_limpio):
+                return "cedula"
+            if re.match(r"^\s*(?:nombre\s+y\s+apellidos|nombres?\s+y\s+apellidos?|nombre\s+completo|nombre|nombres?|representante\s+legal)\s*:?\s*$", rotulo_limpio):
+                return "representante_legal"
+            if re.match(r"^\s*apellidos?\s*:?\s*$", rotulo_limpio):
+                return "representante_apellidos"
+            if re.match(r"^\s*(?:direcci[oó]n|domicilio)\s*:?\s*$", rotulo_limpio):
+                return "direccion"
+
+        elif es_sec_soc:
+            if re.search(r"\b(?:identificaci[oó]n\s*/?\s*tipo\s+id|tipo\s+id\s*/\s*identificaci[oó]n)\b", rotulo_limpio):
+                return "accionista_id_completo"
+            if re.search(r"^\s*(?:tipo\s+id|tipo\s+doc(?:umento)?)\s*:?\s*$", rotulo_limpio):
+                return "accionista_tipo_id"
+            if re.match(r"^\s*(?:identificaci[oó]n|n[uú]mero|n[uú]mero\s+id|no\.?\s*doc(?:umento)?|c\.?c\.?|cedula)\s*:?\s*$", rotulo_limpio):
+                return "accionista_identificacion"
+            if re.match(r"^\s*(?:nombre\s*/?\s*razon\s+social|nombre\s+o\s+razon\s+social|nombres?\s+y\s+apellidos?|nombre|accionista|socio)\s*:?\s*$", rotulo_limpio):
+                return "accionista_nombre"
+            if re.search(r"^\s*(?:porcentaje|%\s*participaci[oó]n|participaci[oó]n(?:\s+accionaria)?)\s*:?\s*$", rotulo_limpio):
+                return "accionista_porcentaje"
+
+        elif es_sec_fin:
+            if re.match(r"^\s*(?:banco|entidad\s+bancaria|nombre\s+(?:del\s+)?banco|instituci[oó]n|entidad\s+financiera)\s*:?\s*$", rotulo_limpio):
+                return "banco"
+            if re.match(r"^\s*sucursal(?:\s+bancaria)?\s*:?\s*$", rotulo_limpio):
+                return "sucursal"
+            if re.match(r"^\s*(?:n[uú]mero\s+(?:de\s+)?cuenta|no\.?\s*(?:de\s+)?cuenta|nro\.?\s*(?:de\s+)?cuenta|cuenta\s+no\.?|cuenta|n[°º]?\s*(?:de\s+)?cuenta)\s*:?\s*$", rotulo_limpio):
+                return "numero_cuenta"
+            if re.match(r"^\s*(?:tipo\s+(?:de\s+)?cuenta|tipo\s+cuenta|clase\s+de\s+cuenta)\s*:?\s*$", rotulo_limpio):
+                return "tipo_cuenta"
+
+        elif es_sec_emp:
+            if re.match(r"^\s*(?:nit(?:\s*\(.*?\))?|nit\s*/\s*tax\s*id|tax\s*id|rut|identificaci[oó]n\s+tributaria(?:\s+no\.?)?|n[uú]mero\s+de\s+identificaci[oó]n\s+tributaria)\s*:?\s*$", rotulo_limpio):
+                return "nit"
+            if re.match(r"^\s*(?:raz[oó]n\s+social|nombre\s+o\s+raz[oó]n\s+social|nombre\s+de\s+la\s+empresa)\s*:?\s*$", rotulo_limpio):
+                return "razon_social"
+
     # 1. Búsqueda exacta en el catálogo de aliases
     for campo_key, aliases in ALIASES_DETERMINISTICOS_CAMPOS.items():
         for alias in aliases:

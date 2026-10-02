@@ -775,7 +775,7 @@ def construir_ir(
                     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
                     r"nombre\s+socio|nombre\s*/?\s*razon\s*social|identificaci[oó]n\s*/?\s*tipo\s+id|"
                     r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|"
-                    r"nombres?|apellidos?|"
+                    r"nombres?|apellidos?|nombres?\s+y\s+apellidos?|"
                     r"porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|participaci[oó]n(?:\s+accionaria)?|valor|parentesco|vinculo)\s*$",
                     texto,
                     re.IGNORECASE
