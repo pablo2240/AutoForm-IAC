@@ -110,7 +110,7 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     (
         PAT_SECCION_REP_LEGAL,
         re.compile(r"^\s*(?:e-?mail|correo)\s+(?:de\s+)?contacto\s*:?\s*$", re.IGNORECASE),
-        "responsable_correo",
+        "correo",
         "derecha",
     ),
     (
@@ -258,8 +258,8 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     # ── Dominio 3: Junta Directiva y Composición Accionaria (Tabla Vertical) ──
     (
         PAT_SECCION_JUNTA_COMP,
-        re.compile(r"^\s*(?:nombre\s*/?\s*razon\s+social|nombres?\s+y\s+apellidos?|nombre\s+completo|accionista|socios?)\s*$", re.IGNORECASE),
-        "representante_legal",
+        re.compile(r"^\s*(?:nombre\s*/?\s*razon\s+social|nombre\s+o\s+razon\s+social|nombres?\s+y\s+apellidos?|nombre\s+completo|accionista|socios?)\s*$", re.IGNORECASE),
+        "accionista_nombre",
         "abajo",
     ),
     (
@@ -277,13 +277,19 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     (
         PAT_SECCION_JUNTA_COMP,
         re.compile(r"^\s*(?:tipo\s+id|tipo\s+doc(?:umento)?)\s*$", re.IGNORECASE),
-        "tipo_documento",
+        "accionista_tipo_id",
         "abajo",
     ),
     (
         PAT_SECCION_JUNTA_COMP,
-        re.compile(r"^\s*(?:n[uú]mero|n[uú]mero\s+id|no\.?\s*id|id|c\.?c\.?|cedula)\s*$", re.IGNORECASE),
-        "cedula",
+        re.compile(r"^\s*(?:identificaci[oó]n(?:\s*/?\s*tipo\s+id)?|n[uú]mero|n[uú]mero\s+id|no\.?\s*id|id|c\.?c\.?|cedula)\s*$", re.IGNORECASE),
+        "accionista_identificacion",
+        "abajo",
+    ),
+    (
+        PAT_SECCION_JUNTA_COMP,
+        re.compile(r"^\s*(?:porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|%\s*de\s+participaci[oó]n|participaci[oó]n(?:\s+accionaria)?)\s*$", re.IGNORECASE),
+        "accionista_porcentaje",
         "abajo",
     ),
 
@@ -421,6 +427,18 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
         re.compile(r"^\s*(?:departamento|depto)(?:\s+de\s+contacto|\s+comercial)?\s*$", re.IGNORECASE),
         "responsable_departamento",
         "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:[aá]rea(?:\s+comercial)?|departamento(?:\s+comercial)?)\s*$", re.IGNORECASE),
+        "responsable_area",
+        "derecha",
+    ),
+    (
+        PAT_SECCION_CONTACTO_COMERCIAL,
+        re.compile(r"^\s*(?:[aá]rea(?:\s+comercial)?|departamento(?:\s+comercial)?)\s*$", re.IGNORECASE),
+        "responsable_area",
+        "abajo",
     ),
 ]
 

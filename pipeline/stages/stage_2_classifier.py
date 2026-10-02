@@ -68,7 +68,7 @@ _PATRON_INSTRUCCIONES_ANEXOS = re.compile(
 )
 
 _PATRON_OPCIONES_SELECCION = re.compile(
-    r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|sucursal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
+    r"^\s*(?:si|no|s|n|ahorros|corriente|ahorro|corrientes|masculino|femenino|m|f|urbano|rural|propia|arrendada|familiar|otro|otra|otros|otras|n/a|na|principal|privada|p[uú]blica|mixta|simplificado|com[uú]n|"
     r"contado|credito|cr[eé]dito|\d+\s*d[ií]as|cumple|no\s+cumple|resultado|aprobado\??|no\s+aprobado|"
     r"tipo\s+\d+|vinculaci[oó]n|tipo\s+de\s+vinculaci[oó]n|"
     r"nit|n\.?i\.?t\.?|cc|c\.?c\.?|ce|c\.?e\.?|ti|t\.?i\.?|pas|pasaporte|pep|ppt|rc|r\.?c\.?|rut|"
@@ -156,7 +156,7 @@ def es_titulo_seccion(texto: str) -> bool:
 
     # 1. Empieza con encabezado de sección explícito (con o sin número)
     if re.search(r"^\s*(?:\d+[\.]|[I|V|X]+\.?\s*)?(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|NUMERAL|ANEXO|COMPOSICI[OÓ]N|DECLARACI[OÓ]N|REFERENCIAS|REPRESENTANTE|[OÓ]RGANOS|CONFLICTO|AUTORIZACI[OÓ]N|CUMPLIMIENTO)\b", t_clean, re.IGNORECASE):
-        if not (len(t_clean.split()) <= 2 and _TERMINOS_CAMPO_CORTO.search(t_clean)):
+        if not (len(t_clean.split()) <= 3 and _TERMINOS_CAMPO_CORTO.search(t_clean)):
             return True
 
     # 2. Mayúsculas sostenidas típicas de títulos

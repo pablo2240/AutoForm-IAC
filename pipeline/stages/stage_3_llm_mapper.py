@@ -38,9 +38,11 @@ from core.domain_constants import (
     CAMPOS_REP_LEGAL,
     CAMPOS_RESPONSABLE_COMERCIAL,
     CAMPOS_EMPRESA,
+    CAMPOS_SOCIETARIO,
     TOKENS_FINANCIEROS_SECCION,
     TOKENS_REP_LEGAL_SECCION,
     TOKENS_CONTACTO_SECCION,
+    TOKENS_SOCIETARIO_SECCION,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
 )
@@ -260,7 +262,7 @@ def _ejecutar_diff_loop_seccion(
     if not ids_omitidos:
         return mapeos_seccion
 
-    # Safe Passivity (ADR-0005): Si la sección es de PEP o Beneficiarios Finales, descartar todo rescate
+    # Safe Passivity (ADR-0005 / ADR-0011): Si la sección es de PEP, descartar todo rescate
     if es_seccion_o_campo_pep(titulo_seccion):
         return mapeos_seccion
 
@@ -268,99 +270,132 @@ def _ejecutar_diff_loop_seccion(
         from core.coverage_engine import (
             PAT_SECCION_REP_LEGAL,
             PAT_SECCION_FINANCIERO,
+            PAT_SECCION_JUNTA_COMP,
             PAT_SECCION_EMPRESA,
             PATRONES_SWEEP,
         )
+        from core.profile_manager import aplanar_perfil
     except ImportError:
         return mapeos_seccion
 
-    titulo_norm = titulo_seccion.lower()
+    perfil_plano = aplanar_perfil(datos_empresa)
     campos_asignados = {m["campo"] for m in mapeos_seccion}
     mapeos_rescatados = list(mapeos_seccion)
     rescates_count = 0
 
-    # Domain Isolation (ADR-0004): Banderas de categoría de sección
-    tiene_datos_op = bool(datos_empresa.get("responsable_nombre") or datos_empresa.get("responsable_correo"))
-    es_sec_financiera = any(t in titulo_norm for t in TOKENS_FINANCIEROS_SECCION)
-    es_sec_rep_legal = any(t in titulo_norm for t in TOKENS_REP_LEGAL_SECCION)
-    es_sec_contacto = any(t in titulo_norm for t in TOKENS_CONTACTO_SECCION) and not es_sec_rep_legal
+    tiene_datos_op = bool(perfil_plano.get("responsable_nombre") or perfil_plano.get("responsable_correo"))
 
     for id_omitido in sorted(ids_omitidos):
         c_info = ids_viables[id_omitido]
         rotulo_txt = c_info["rotulo"]
         rotulo_limpio = limpiar_rotulo(rotulo_txt)
+        sec_indiv = c_info.get("_seccion_titulo") or titulo_seccion
+        sec_indiv_norm = sec_indiv.lower()
 
         # Safe Passivity (ADR-0005): Descartar rótulos genéricos, PEP o contacto comercial sin operador
-        if es_seccion_o_campo_pep(titulo_seccion, rotulo_txt):
+        if es_seccion_o_campo_pep(sec_indiv, rotulo_txt):
             continue
         if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
             continue
-        es_rotulo_email_cont = "contacto" in rotulo_txt.lower() and any(t in rotulo_txt.lower() for t in ("email", "e-mail", "mail", "correo"))
-        es_rotulo_contacto = bool((PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto) and (not es_sec_rep_legal or es_rotulo_email_cont))
+
+        es_sec_rep_legal = any(t in sec_indiv_norm for t in TOKENS_REP_LEGAL_SECCION)
+        es_sec_financiera = any(t in sec_indiv_norm for t in TOKENS_FINANCIEROS_SECCION)
+        es_sec_societario = any(t in sec_indiv_norm for t in TOKENS_SOCIETARIO_SECCION)
+        es_sec_contacto = any(t in sec_indiv_norm for t in TOKENS_CONTACTO_SECCION) and not es_sec_rep_legal and not es_sec_societario
+
+        es_rotulo_contacto = bool(
+            (PATRON_CONTACTO_COMERCIAL.search(rotulo_txt) or es_sec_contacto)
+            and not es_sec_rep_legal
+            and not es_sec_societario
+        )
         if es_rotulo_contacto and not tiene_datos_op:
             continue
 
         for pat_sec, pat_rot, campo_dest, dir_fall in PATRONES_SWEEP:
-            # Domain Isolation: verificar coherencia de dominio antes de asignar
+            # Domain Isolation (ADR-0004 / ADR-0011): verificar coherencia de dominio antes de asignar
             if campo_dest in CAMPOS_BANCARIOS and not es_sec_financiera:
                 continue
-            if campo_dest in CAMPOS_REP_LEGAL and not es_sec_rep_legal and not pat_sec.search(titulo_norm):
+            if campo_dest in CAMPOS_REP_LEGAL and not es_sec_rep_legal and not pat_sec.search(sec_indiv_norm):
+                continue
+            if campo_dest in CAMPOS_SOCIETARIO and not es_sec_societario and not pat_sec.search(sec_indiv_norm):
+                continue
+            # Aislamiento Estricto por Rol (Regla 1): Nunca contacto comercial en sección legal, firma o societario
+            if (es_sec_rep_legal or es_sec_societario) and campo_dest in CAMPOS_RESPONSABLE_COMERCIAL:
                 continue
             if campo_dest in CAMPOS_RESPONSABLE_COMERCIAL and not es_rotulo_contacto:
                 continue
             if es_rotulo_contacto and campo_dest not in CAMPOS_RESPONSABLE_COMERCIAL:
                 continue
 
-            if (pat_sec.search(titulo_norm) or not (PAT_SECCION_REP_LEGAL.search(titulo_norm) or PAT_SECCION_FINANCIERO.search(titulo_norm))):
-                if pat_rot.search(rotulo_txt) or pat_rot.search(rotulo_limpio):
-                    if campo_dest not in campos_asignados and datos_empresa.get(campo_dest):
-                        mapeos_rescatados.append({
-                            "id": id_omitido,
-                            "campo": campo_dest,
-                            "ubicacion": c_info.get("tipoEspacioEscritura", dir_fall),
-                        })
-                        campos_asignados.add(campo_dest)
-                        rescates_count += 1
-                        break
+            aplica_sec = (
+                pat_sec.search(sec_indiv_norm)
+                or (not es_sec_rep_legal and not es_sec_financiera and not es_sec_societario and pat_sec.search(titulo_seccion.lower()))
+            )
+            if aplica_sec and (pat_rot.search(rotulo_txt) or pat_rot.search(rotulo_limpio)):
+                val_candidato = perfil_plano.get(campo_dest) or datos_empresa.get(campo_dest)
+                if campo_dest not in campos_asignados and val_candidato and not isinstance(val_candidato, dict):
+                    mapeos_rescatados.append({
+                        "id": id_omitido,
+                        "campo": campo_dest,
+                        "ubicacion": c_info.get("tipoEspacioEscritura", dir_fall),
+                    })
+                    campos_asignados.add(campo_dest)
+                    rescates_count += 1
+                    break
 
     # ── Capa 3: Rescate Semántico Vectorial Local (FastEmbed / RapidFuzz) ──
     ids_pendientes = set(ids_omitidos) - {m["id"] for m in mapeos_rescatados}
     if ids_pendientes:
         try:
             from core.fastembed_matcher import buscar_rescate_vectorial
-            from core.profile_manager import aplanar_perfil
-            perfil_plano = aplanar_perfil(datos_empresa)
-            candidatos_disponibles = [
+            candidatos_base = [
                 k for k, v in perfil_plano.items()
                 if k not in campos_asignados and v and str(v).strip()
-                and k not in ("empresa", "representante_legal", "financiero")
+                and k not in ("empresa", "representante_legal", "financiero", "societario")
+                and not isinstance(v, dict)
             ]
-            # Domain Isolation: Enjaulado estricto por categoría de sección
-            if not es_sec_financiera:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_BANCARIOS]
-            if not es_sec_rep_legal:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_REP_LEGAL]
-            if es_sec_contacto:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k in CAMPOS_RESPONSABLE_COMERCIAL] if tiene_datos_op else []
-            elif not es_sec_rep_legal:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_RESPONSABLE_COMERCIAL]
-            elif es_sec_rep_legal and tiene_datos_op:
-                candidatos_disponibles = [k for k in candidatos_disponibles if k not in CAMPOS_RESPONSABLE_COMERCIAL or k == "responsable_correo"]
 
             for id_pend in sorted(ids_pendientes):
                 c_info = ids_viables[id_pend]
                 rot_txt = c_info["rotulo"]
                 rot_limpio = limpiar_rotulo(rot_txt)
-                if es_seccion_o_campo_pep(titulo_seccion, rot_txt):
+                sec_indiv = c_info.get("_seccion_titulo") or titulo_seccion
+                sec_indiv_norm = sec_indiv.lower()
+
+                if es_seccion_o_campo_pep(sec_indiv, rot_txt):
                     continue
                 if rot_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
                     continue
-                es_rot_contacto_email = "contacto" in rot_txt.lower() and any(t in rot_txt.lower() for t in ("email", "e-mail", "mail", "correo"))
-                es_rot_contacto_pend = bool(PATRON_CONTACTO_COMERCIAL.search(rot_txt) and (not es_sec_rep_legal or es_rot_contacto_email))
+
+                es_elem_rep_legal = any(t in sec_indiv_norm for t in TOKENS_REP_LEGAL_SECCION)
+                es_elem_financiera = any(t in sec_indiv_norm for t in TOKENS_FINANCIEROS_SECCION)
+                es_elem_societario = any(t in sec_indiv_norm for t in TOKENS_SOCIETARIO_SECCION)
+                es_elem_contacto = any(t in sec_indiv_norm for t in TOKENS_CONTACTO_SECCION) and not es_elem_rep_legal and not es_elem_societario
+
+                es_rot_contacto_pend = bool(
+                    (PATRON_CONTACTO_COMERCIAL.search(rot_txt) or es_elem_contacto)
+                    and not es_elem_rep_legal
+                    and not es_elem_societario
+                )
                 if es_rot_contacto_pend and not tiene_datos_op:
                     continue
 
-                candidatos_elem = [k for k in candidatos_disponibles if (k in CAMPOS_RESPONSABLE_COMERCIAL if es_rot_contacto_pend else k not in CAMPOS_RESPONSABLE_COMERCIAL)]
+                candidatos_elem = list(candidatos_base)
+                if not es_elem_financiera:
+                    candidatos_elem = [k for k in candidatos_elem if k not in CAMPOS_BANCARIOS]
+                if not es_elem_rep_legal:
+                    candidatos_elem = [k for k in candidatos_elem if k not in CAMPOS_REP_LEGAL]
+                if not es_elem_societario:
+                    candidatos_elem = [k for k in candidatos_elem if k not in CAMPOS_SOCIETARIO]
+
+                # Aislamiento Estricto por Rol (Regla 1)
+                if es_elem_rep_legal or es_elem_societario:
+                    candidatos_elem = [k for k in candidatos_elem if k not in CAMPOS_RESPONSABLE_COMERCIAL]
+                elif es_rot_contacto_pend:
+                    candidatos_elem = [k for k in candidatos_elem if k in CAMPOS_RESPONSABLE_COMERCIAL]
+                else:
+                    candidatos_elem = [k for k in candidatos_elem if k not in CAMPOS_RESPONSABLE_COMERCIAL]
+
                 if not candidatos_elem:
                     continue
 
@@ -373,8 +408,8 @@ def _ejecutar_diff_loop_seccion(
                         "ubicacion": c_info.get("tipoEspacioEscritura", "derecha"),
                     })
                     campos_asignados.add(campo_res)
-                    if campo_res in candidatos_disponibles:
-                        candidatos_disponibles.remove(campo_res)
+                    if campo_res in candidatos_base:
+                        candidatos_base.remove(campo_res)
                     rescates_count += 1
                     ctx.log(
                         f"[Stage 3 - FastEmbed] 🧠 Rescate vectorial: '{rot_txt}' → '{campo_res}' (Score: {score*100:.1f}%)"
@@ -438,10 +473,17 @@ def _aplicar_validacion_deterministica(
                     item["motivo"] = f"Hoja alucinada '{h_item}' no existe en el libro Excel original."
                     item["bloqueante"] = True
 
-            # 2. Asignar valor concreto desde datos_empresa si está disponible
+            # 2. Asignar valor concreto desde perfil plano si está disponible
             campo_final = str(item.get("campo_final") or item.get("campo") or "")
-            if campo_final in ctx.datos_empresa:
-                item["valor"] = ctx.datos_empresa[campo_final]
+            from core.profile_manager import aplanar_perfil
+            perfil_plano = aplanar_perfil(ctx.datos_empresa)
+            val_dest = perfil_plano.get(campo_final) or ctx.datos_empresa.get(campo_final)
+            if "rotulo_original" not in item:
+                item["rotulo_original"] = item.get("rotulo") or item.get("valor")
+            if val_dest is not None and not isinstance(val_dest, dict):
+                item["valor"] = val_dest
+            elif isinstance(val_dest, dict):
+                item["valor"] = str(perfil_plano.get(campo_final) or "")
 
             # 3. Enriquecer con reglas de Excel (fórmulas, dropdowns, valores previos)
             item.update(enriquecer_item_con_inspeccion_excel(item, insp))
@@ -569,12 +611,14 @@ def ejecutar_stage_3_mapper(
 
         def _procesar_lote_concurrente(idx: int, titulo_lote: str, campos_lote: List[Dict[str, Any]]):
             from core.domain_constants import resolver_campo_por_alias_determinista
+            from core.profile_manager import aplanar_perfil
+            perfil_plano = aplanar_perfil(ctx.datos_empresa)
             asignaciones_determ = []
             campos_llm = []
 
             for c in campos_lote:
                 campo_alias = resolver_campo_por_alias_determinista(c.get("rotulo", ""))
-                if campo_alias and campo_alias in ctx.datos_empresa:
+                if campo_alias and (campo_alias in ctx.datos_empresa or campo_alias in perfil_plano):
                     asignaciones_determ.append({
                         "id": c["id"],
                         "campo": campo_alias,

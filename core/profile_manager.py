@@ -186,10 +186,10 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
                     if prefijo:
                         plano[f"{prefijo}.{k}"] = v
 
-    # Extraer datos de las 3 ramas principales si son diccionarios anidados
+    # Extraer datos de las ramas principales si son diccionarios anidados
     es_jerarquico = any(
         isinstance(datos.get(k), dict)
-        for k in ("empresa", "representante_legal", "financiero")
+        for k in ("empresa", "representante_legal", "financiero", "societario")
     )
     if es_jerarquico:
         if isinstance(datos.get("empresa"), dict):
@@ -198,13 +198,35 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
             _extraer(datos["representante_legal"], "representante_legal")
         if isinstance(datos.get("financiero"), dict):
             _extraer(datos["financiero"], "financiero")
+        if isinstance(datos.get("societario"), dict):
+            plano["societario"] = datos["societario"]
+            accs = datos["societario"].get("accionistas") or []
+            if accs and isinstance(accs, list) and len(accs) > 0 and isinstance(accs[0], dict):
+                a0 = accs[0]
+                plano["accionista_nombre"] = a0.get("nombre", "")
+                plano["accionista_tipo_id"] = a0.get("tipo_identificacion", "C.C")
+                plano["accionista_identificacion"] = a0.get("identificacion", "")
+                plano["accionista_porcentaje"] = a0.get("porcentaje_participacion", 100)
+                plano["socio_nombre"] = a0.get("nombre", "")
+                plano["socio_tipo_id"] = a0.get("tipo_identificacion", "C.C")
+                plano["socio_identificacion"] = a0.get("identificacion", "")
+                plano["socio_porcentaje"] = a0.get("porcentaje_participacion", 100)
+            bens = datos["societario"].get("beneficiarios_finales") or []
+            if bens and isinstance(bens, list) and len(bens) > 0 and isinstance(bens[0], dict):
+                b0 = bens[0]
+                plano["beneficiario_nombre"] = b0.get("nombre", "")
+                plano["beneficiario_tipo_id"] = b0.get("tipo_identificacion", "C.C")
+                plano["beneficiario_identificacion"] = b0.get("identificacion", "")
+                plano["beneficiario_porcentaje"] = b0.get("porcentaje_participacion", 100)
         # Mantener claves adicionales que puedan estar en la raíz
         for k, v in datos.items():
-            if k not in ("empresa", "representante_legal", "financiero") and not isinstance(v, dict):
+            if k not in ("empresa", "representante_legal", "financiero", "societario") and not isinstance(v, dict):
                 plano[k] = v
     else:
         # Ya es plano
         plano = dict(datos)
+        if isinstance(datos.get("societario"), dict):
+            plano["societario"] = datos["societario"]
 
     # Generación dinámica de representante_legal, nombres y apellidos
     rep_full = str(plano.get("representante_legal", "")).strip()
@@ -353,6 +375,24 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
                 "total_ingresos_anuales": str(plano.get("total_ingresos_anuales") or plano.get("ingresos_anuales") or ""),
                 "total_egresos_anuales": str(plano.get("total_egresos_anuales") or plano.get("egresos_anuales") or ""),
             }
+        },
+        "societario": plano.get("societario") or {
+            "accionistas": [
+                {
+                    "nombre": str(plano.get("accionista_nombre") or plano.get("socio_nombre") or ""),
+                    "tipo_identificacion": str(plano.get("accionista_tipo_id") or "C.C"),
+                    "identificacion": str(plano.get("accionista_identificacion") or plano.get("socio_identificacion") or ""),
+                    "porcentaje_participacion": plano.get("accionista_porcentaje") or plano.get("socio_porcentaje") or 100,
+                }
+            ] if (plano.get("accionista_nombre") or plano.get("socio_nombre")) else [],
+            "beneficiarios_finales": [
+                {
+                    "nombre": str(plano.get("beneficiario_nombre") or ""),
+                    "tipo_identificacion": str(plano.get("beneficiario_tipo_id") or "C.C"),
+                    "identificacion": str(plano.get("beneficiario_identificacion") or ""),
+                    "porcentaje_participacion": plano.get("beneficiario_porcentaje") or 100,
+                }
+            ] if plano.get("beneficiario_nombre") else [],
         }
     }
 
@@ -368,7 +408,10 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
         "numero_cuenta", "tipo_cuenta", "moneda", "total_activos", "activos", "total_pasivos", "pasivos",
         "total_patrimonio", "patrimonio", "total_ingresos_mensuales", "ingresos_mensuales",
         "total_egresos_mensuales", "egresos_mensuales", "total_ingresos_anuales", "ingresos_anuales",
-        "total_egresos_anuales", "egresos_anuales", "ciudad_departamento"
+        "total_egresos_anuales", "egresos_anuales", "ciudad_departamento",
+        "societario", "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_porcentaje",
+        "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_porcentaje",
+        "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_porcentaje"
     }
     for k, v in plano.items():
         if k not in claves_procesadas and "." not in k and v:
@@ -590,6 +633,15 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "total_egresos_mensuales": "",
         "total_ingresos_anuales": "",
         "total_egresos_anuales": "",
+        "responsable_area": "Comercial",
+        "accionista_nombre": "",
+        "accionista_tipo_id": "C.C",
+        "accionista_identificacion": "",
+        "accionista_porcentaje": "",
+        "beneficiario_nombre": "",
+        "beneficiario_tipo_id": "C.C",
+        "beneficiario_identificacion": "",
+        "beneficiario_porcentaje": "",
     }
 
 

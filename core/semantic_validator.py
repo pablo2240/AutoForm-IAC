@@ -87,9 +87,11 @@ from core.domain_constants import (
     CAMPOS_REP_LEGAL,
     CAMPOS_RESPONSABLE_COMERCIAL,
     CAMPOS_EMPRESA,
+    CAMPOS_SOCIETARIO,
     TOKENS_FINANCIEROS_SECCION,
     TOKENS_BALANCE_SECCION,
     TOKENS_REP_LEGAL_SECCION,
+    TOKENS_SOCIETARIO_SECCION,
     TOKENS_CONTACTO_SECCION,
     TOKENS_CONTACTO_COMERCIAL,
     TOKENS_REFERENCIAS_EXCLUIDAS,
@@ -97,6 +99,8 @@ from core.domain_constants import (
     CONTACTO_COMERCIAL_REMAP,
     limpiar_rotulo,
     es_seccion_o_campo_pep,
+    es_seccion_o_campo_societario,
+    PATRON_PEP_CONDICIONAL_POSITIVO,
     SINONIMOS_CIUDAD_RESIDENCIA,
 )
 
@@ -109,6 +113,7 @@ _ROTULOS_GENERICOS_BLOQUEADOS = ROTULOS_GENERICOS_BLOQUEADOS
 _CAMPOS_BANCARIOS = CAMPOS_BANCARIOS
 _CAMPOS_REP_LEGAL = CAMPOS_REP_LEGAL
 _CAMPOS_RESPONSABLE_COMERCIAL = CAMPOS_RESPONSABLE_COMERCIAL
+_CAMPOS_SOCIETARIO = CAMPOS_SOCIETARIO
 _BARE_LABELS_CONTACTO_COMERCIAL = BARE_LABELS_CONTACTO_COMERCIAL
 _CONTACTO_COMERCIAL_REMAP = CONTACTO_COMERCIAL_REMAP
 
@@ -136,18 +141,19 @@ def _normalizar(txt: str) -> str:
 
 
 def _aplanar_datos_empresa(datos_empresa: Dict[str, Any]) -> Dict[str, Any]:
-    """Aplana el perfil jerárquico en un dict plano {clave: valor}.
-
-    Ejemplo: {"empresa": {"identidad": {"nit": "8110..."}}} → {"nit": "8110..."}
-    """
-    plano: Dict[str, Any] = {}
+    """Aplana el perfil jerárquico en un dict plano {clave: valor}."""
+    try:
+        from core.profile_manager import aplanar_perfil
+        plano = aplanar_perfil(datos_empresa)
+    except Exception:
+        plano = {}
 
     def _recorrer(obj: Any, prefijo: str = "") -> None:
         if isinstance(obj, dict):
             for k, v in obj.items():
                 _recorrer(v, k)
         else:
-            if prefijo:
+            if prefijo and prefijo not in plano:
                 plano[prefijo] = obj
 
     _recorrer(datos_empresa)
@@ -365,25 +371,26 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if campo != "representante_legal":
             return "representante_legal", "Rótulo 'Razón Social o Nombres y Apellidos' → asignado a 'representante_legal'."
 
-    # 2b. 'Nombre' / 'Nombre :' en sección de Representante Legal o Firma -> representante_legal (NUNCA razon_social ni empresa)
+    # 2b. 'Nombre' / 'Nombre :' en sección de Representante Legal, Firma o Societario
     es_rotulo_nombre = bool(re.match(r"^\s*(?:nombre|nombres|nombre\s+completo|nombres?\s+y\s+apellidos?)\s*:?\s*$", rotulo_normalizado, re.IGNORECASE))
+    es_sec_societario = any(t in seccion_normalizada for t in ("accionista", "socio", "beneficiario", "composicion", "capital"))
     es_sec_rep_o_firma = (
         any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
         or "firma" in seccion_normalizada
         or "firmante" in seccion_normalizada
     )
     es_sec_contacto = any(t in seccion_normalizada for t in ("contacto", "comercial", "asesor", "operacion", "operativo", "responsable"))
-    if es_rotulo_nombre and es_sec_rep_o_firma and not es_sec_contacto:
+    if es_rotulo_nombre and es_sec_societario:
+        return "accionista_nombre", "Rótulo 'Nombre' en contexto Societario / Accionistas → asignado a 'accionista_nombre' (ADR-0011)."
+    elif es_rotulo_nombre and es_sec_rep_o_firma and not es_sec_contacto:
         if campo in ("razon_social", "empresa", "responsable_nombre", "contacto", "representante_nombres") or not campo:
             return "representante_legal", "Rótulo 'Nombre' en contexto de Firma / Representante Legal → corregido a 'representante_legal' (persona natural firmante)."
 
-    # 2c. Correo en sección de Representante Legal -> correo (del representante legal) o responsable_correo si pide contacto
+    # 2c. Correo en sección de Representante Legal -> correo (del representante legal, NUNCA contacto comercial)
     if any(t in rotulo_normalizado for t in ("email", "e-mail", "correo")) and any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL):
         if not any(t in seccion_normalizada for t in ("contacto comercial", "asesor", "operacion", "operativo")):
-            if "contacto" in rotulo_normalizado:
-                return "responsable_correo", "Rótulo de contacto en sección de Representante Legal → asignado a 'responsable_correo'."
             if campo != "correo":
-                return "correo", "Rótulo de correo en sección de Representante Legal → asignado a 'correo'."
+                return "correo", "Rótulo de correo en sección de Representante Legal → asignado a 'correo' (ADR-0011)."
 
     # 3. Nombre Comercial -> razon_social
     if "nombre comercial" in rotulo_normalizado:
@@ -395,9 +402,12 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if campo != "nit":
             return "nit", "Rótulo 'NIT / TAX ID' → asignado a 'nit'."
 
-    # 5. Tipo de Identificación -> tipo_documento
+    # 5. Tipo de Identificación -> tipo_documento o accionista_tipo_id
     if "tipo" in rotulo_normalizado and any(k in rotulo_normalizado for k in ("documento", "identificacion", "id")):
-        if campo != "tipo_documento":
+        if es_sec_societario:
+            if campo != "accionista_tipo_id":
+                return "accionista_tipo_id", "Rótulo 'Tipo de Identificación' en contexto Societario → asignado a 'accionista_tipo_id' (ADR-0011)."
+        elif campo != "tipo_documento":
             return "tipo_documento", "Rótulo 'Tipo de Identificación' → asignado a 'tipo_documento'."
 
     # 5b. Número de Cuenta / No. de Cuenta / Cuenta No. -> numero_cuenta
@@ -406,7 +416,7 @@ def _regla_autocorrecciones_semanticas_adicionales(
             if campo != "numero_cuenta":
                 return "numero_cuenta", "Rótulo 'No. de Cuenta / Cuenta' → asignado a 'numero_cuenta'."
 
-    # 6. Desambiguación Contextual de 'Número', 'No.', 'N°', 'Identificación' (Empresa vs Representante vs Bancario)
+    # 6. Desambiguación Contextual de 'Número', 'No.', 'N°', 'Identificación' (Empresa vs Representante vs Bancario vs Societario)
     es_rotulo_numero_o_id = bool(
         re.match(r"^\s*(?:n[uú]mero|no|n|nro|num|identificaci[oó]n|documento|id|no\s*doc)[°º\.:]?\s*$", rotulo_normalizado, re.IGNORECASE)
         or re.search(r"\b(?:n[uú]mero|nro|no|n[°º]?)\s*(?:de\s+)?(?:identificaci[oó]n|documento|id|nit|c[eé]dula|cuenta)\b", rotulo_normalizado)
@@ -418,6 +428,11 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if any(t in seccion_normalizada for t in _TOKENS_SECCION_BANCARIA):
             if campo != "numero_cuenta":
                 return "numero_cuenta", "Rótulo 'Número' en contexto Bancario → asignado a 'numero_cuenta'."
+
+        # Contexto Societario / Accionistas / Beneficiarios Finales
+        elif es_sec_societario:
+            if campo != "accionista_identificacion":
+                return "accionista_identificacion", "Rótulo 'Identificación' en contexto Societario → asignado a 'accionista_identificacion' (ADR-0011)."
 
         # Contexto Representante Legal / Persona Natural (o si el campo ya apuntaba a representante o contexto de fila)
         elif (
@@ -437,8 +452,13 @@ def _regla_autocorrecciones_semanticas_adicionales(
                 return "nit", "Rótulo 'Número/Identificación' en contexto de Empresa/Persona Jurídica → asignado a 'nit'."
 
         # Si no hay sección específica pero dice Identificación -> cedula por defecto
-        elif campo not in ("cedula", "nit", "numero_cuenta"):
+        elif campo not in ("cedula", "nit", "numero_cuenta", "accionista_identificacion"):
             return "cedula", "Rótulo 'Identificación / Número' → asignado a 'cedula'."
+
+    # 6b. Porcentaje / Participación en contexto Societario
+    if any(t in rotulo_normalizado for t in ("porcentaje", "%", "participacion", "participación")) and es_sec_societario:
+        if campo != "accionista_porcentaje":
+            return "accionista_porcentaje", "Rótulo '%' / 'Participación' en contexto Societario → asignado a 'accionista_porcentaje' (ADR-0011)."
 
     # 7. Sinónimos de Entidad Financiera / Bancaria -> banco (BANCOLOMBIA)
     if any(sin in rotulo_normalizado for sin in (
@@ -533,7 +553,7 @@ def validar_item_mapeo(
         datos_planos = _aplanar_datos_empresa(datos_empresa)
 
     campo_original = str(plan_item.get("campo") or "").strip()
-    rotulo = str(plan_item.get("valor") or plan_item.get("rotulo") or "").strip()
+    rotulo = str(plan_item.get("rotulo_original") or plan_item.get("rotulo") or plan_item.get("valor") or "").strip()
     seccion = str(plan_item.get("seccion") or plan_item.get("seccion_padre") or "").strip()
     tipo_elemento = str(plan_item.get("tipo_elemento") or "FIELD").strip()
 
@@ -586,7 +606,7 @@ def validar_item_mapeo(
 
     pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
     es_bloque_exclusivo = (
-        pertinencia_item == "OMITIR_USO_INTERNO"
+        pertinencia_item in ("OMITIR_USO_INTERNO", "OMITIR_LEGAL")
         or bool(_PATRON_USO_EXCLUSIVO.search(seccion))
         or any(tok in seccion_norm for tok in TOKENS_USO_INTERNO_EXCLUSIVO)
         or bool(_PATRON_USO_EXCLUSIVO.search(rotulo))
@@ -597,16 +617,28 @@ def validar_item_mapeo(
     if es_bloque_exclusivo:
         resultado["estado"] = EstadoMapeo.DESCARTADO
         resultado["campo_final"] = ""
-        resultado["motivo"] = f"Domain Isolation: Área de uso exclusivo de la entidad receptora o evaluación interna ('{rotulo}' en '{seccion}')."
+        resultado["motivo"] = f"Domain Isolation: Área de uso exclusivo o zona legal omitida ('{rotulo}' en '{seccion}')."
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
-    # ── Safe Passivity (ADR-0005): Secciones o campos de PEP / Beneficiarios Finales ──
+    # ── Safe Passivity (ADR-0005 / ADR-0011): Zona PEP Condicional Afirmativa ──
+    if (
+        pertinencia_item == "OMITIR_LEGAL"
+        or bool(PATRON_PEP_CONDICIONAL_POSITIVO.search(seccion))
+        or bool(PATRON_PEP_CONDICIONAL_POSITIVO.search(rotulo))
+    ):
+        resultado["estado"] = EstadoMapeo.DESCARTADO
+        resultado["campo_final"] = ""
+        resultado["motivo"] = "Safe Passivity (ADR-0011): Zona condicional PEP afirmativa omitida por respuesta negativa explícita."
+        resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+        return resultado
+
+    # ── Safe Passivity (ADR-0005): Secciones o campos de PEP genéricos ──
     contexto_item = str(plan_item.get("contexto_fila") or "").strip()
     if es_seccion_o_campo_pep(seccion_norm, rotulo_norm, contexto_item):
         resultado["estado"] = EstadoMapeo.DESCARTADO
         resultado["campo_final"] = ""
-        resultado["motivo"] = f"Safe Passivity (ADR-0005): Sección/Campo de PEP o Beneficiario Final '{rotulo}' reservado para llenado manual."
+        resultado["motivo"] = f"Safe Passivity (ADR-0005): Sección/Campo de PEP '{rotulo}' reservado para llenado manual."
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
@@ -621,6 +653,7 @@ def validar_item_mapeo(
     # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007 / ADR-0009): Contacto comercial ──
     pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
     es_sec_rep_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in seccion_norm)
+    es_sec_societario = any(t in seccion_norm for t in ("accionista", "socio", "beneficiario", "composicion", "capital"))
     es_sec_contacto = (
         pertinencia_item == "CONTACTO_COMERCIAL"
         or (
@@ -628,6 +661,7 @@ def validar_item_mapeo(
             and any(t in seccion_norm for t in _TOKENS_CONTACTO_COMERCIAL)
             and not any(t in seccion_norm for t in _TOKENS_REFERENCIAS_EXCLUIDAS)
             and not es_sec_rep_legal
+            and not es_sec_societario
         )
     )
     es_rotulo_contacto = (
@@ -636,6 +670,7 @@ def validar_item_mapeo(
             "diligenciado por", "funcionario que diligencia", "ejecutivo de cuenta",
             "atencion comercial", "atención comercial", "encargado de ventas",
             "nombre encargado de ventas", "contacto de ventas", "asesor de ventas",
+            "area", "área", "area comercial", "área comercial",
         ))
         or (
             any(t in rotulo_norm for t in (
@@ -644,6 +679,7 @@ def validar_item_mapeo(
                 "encargado de ventas", "ventas",
             ))
             and not es_sec_rep_legal
+            and not es_sec_societario
         )
     )
     es_rotulo_email_contacto = "contacto" in rotulo_norm and any(t in rotulo_norm for t in ("email", "e-mail", "mail", "correo"))
@@ -794,15 +830,36 @@ def validar_item_mapeo(
             return resultado
 
 
-    # ── Domain Isolation (ADR-0004): Junta Directiva y Accionistas ──
-    es_sec_junta_o_socios = any(t in seccion_norm for t in ("junta directiva", "accionistas", "socios"))
+    # ── Domain Isolation (ADR-0004 / ADR-0011): Junta Directiva y Accionistas ──
+    es_sec_junta_o_socios = any(t in seccion_norm for t in ("junta directiva", "accionistas", "socios", "beneficiario", "composicion del capital", "composicion"))
     if es_sec_junta_o_socios:
-        if campo_original in ("razon_social", "empresa", "nombre_empresa") and any(t in rotulo_norm for t in ("nombre", "miembro", "socio", "accionista")):
-            resultado["estado"] = EstadoMapeo.DESCARTADO
-            resultado["campo_final"] = ""
-            resultado["motivo"] = f"Domain Isolation: Razón social no aplicable a nombres de miembros en '{seccion}'."
-            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-            return resultado
+        if campo_original in ("razon_social", "empresa", "nombre_empresa") and any(t in rotulo_norm for t in ("nombre", "miembro", "socio", "accionista", "beneficiario")):
+            if datos_planos.get("accionista_nombre"):
+                campo_original = "accionista_nombre"
+                resultado["campo_final"] = "accionista_nombre"
+                resultado["motivo"] = "Domain Isolation (ADR-0011): Reasignado a 'accionista_nombre' desde datos societarios autorizados."
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = f"Domain Isolation: Razón social no aplicable a nombres de miembros en '{seccion}'."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
+        elif campo_original in ("representante_legal", "primer_nombre", "segundo_nombre"):
+            if datos_planos.get("accionista_nombre"):
+                campo_original = "accionista_nombre"
+                resultado["campo_final"] = "accionista_nombre"
+                resultado["motivo"] = "Domain Isolation (ADR-0011): Reasignado a 'accionista_nombre' desde datos societarios autorizados."
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = f"Domain Isolation: Representante legal no asumible como accionista/socio en '{seccion}'."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
+        elif campo_original == "cedula":
+            if datos_planos.get("accionista_identificacion"):
+                campo_original = "accionista_identificacion"
+                resultado["campo_final"] = "accionista_identificacion"
+                resultado["motivo"] = "Domain Isolation (ADR-0011): Reasignado a 'accionista_identificacion' desde datos societarios autorizados."
 
     # ── Domain Isolation (ADR-0006): Cifras de Balance y Estados Financieros ──
     # Condición estricta: SECCIÓN AND RÓTULO (nunca OR).
@@ -857,16 +914,23 @@ def validar_item_mapeo(
             resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
             return resultado
 
-    # ADR-0007: Barrera estricta - El Responsable Comercial NUNCA entra a Representante Legal, Junta Directiva ni PEP
-    # Salvo cuando el rótulo solicita explícitamente el correo de contacto ("E-mail contacto:")
+    # ADR-0007 / ADR-0011: Barrera estricta por rol - El Responsable Comercial NUNCA entra a Representante Legal, Firma, Junta Directiva, Socios ni PEP
     if campo_original in _CAMPOS_RESPONSABLE_COMERCIAL:
-        es_sec_prohibida = any(t in seccion_norm for t in ("legal", "declaracion", "firmante", "apoderado", "gerente", "junta", "directiv", "administra", "organo", "pep", "beneficiario"))
-        if (es_sec_prohibida and not es_rotulo_email_contacto) or not es_contacto:
-            resultado["estado"] = EstadoMapeo.DESCARTADO
-            resultado["campo_final"] = ""
-            resultado["motivo"] = f"Domain Isolation (ADR-0007): Datos de Responsable Comercial '{campo_original}' prohibidos en sección legal, directiva o fuera de contacto comercial ('{seccion}')."
-            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
-            return resultado
+        es_sec_prohibida = any(t in seccion_norm for t in (
+            "legal", "declaracion", "firmante", "firma", "apoderado", "gerente",
+            "junta", "directiv", "administra", "organo", "pep", "beneficiario", "socio", "accionist"
+        ))
+        if es_sec_prohibida or not es_contacto:
+            if es_sec_prohibida and any(t in rotulo_norm for t in ("email", "mail", "correo")):
+                campo_original = "correo"
+                resultado["campo_final"] = "correo"
+                resultado["motivo"] = "Role Isolation (ADR-0011): Reasignado a correo del representante legal en sección jurídica."
+            else:
+                resultado["estado"] = EstadoMapeo.DESCARTADO
+                resultado["campo_final"] = ""
+                resultado["motivo"] = f"Domain Isolation (ADR-0007/ADR-0011): Datos de Responsable Comercial '{campo_original}' prohibidos en sección legal, directiva, societaria o fuera de contacto comercial ('{seccion}')."
+                resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+                return resultado
 
     # ── Autocorrecciones estructurales y semánticas previas (R4, R5, R5b) ────
     if campo_original not in _CAMPOS_RESPONSABLE_COMERCIAL:
@@ -989,7 +1053,7 @@ def validar_plan_mapeo(
     for item in plan_mapeo:
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
-        r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        r_txt = _normalizar(str(item.get("rotulo_original") or item.get("rotulo") or item.get("valor") or ""))
         sec_txt = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
         es_sec_rep_it = any(t in sec_txt for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in sec_txt)
         if es_sec_rep_it:
@@ -1005,25 +1069,25 @@ def validar_plan_mapeo(
             filas_contacto_comercial.add((h, f))
             filas_con_rotulo_contacto.add((h, f))
 
-    # Extender a filas contiguas del mismo bloque si contienen atributos del contacto (cargo, correo, celular)
+    # Extender a filas contiguas del mismo bloque si contienen atributos del contacto (cargo, correo, celular, area)
     for item in plan_mapeo:
         h = str(item.get("hoja") or "")
         f = int(item.get("fila") or 0)
-        r_txt = _normalizar(str(item.get("rotulo") or item.get("valor") or ""))
+        r_txt = _normalizar(str(item.get("rotulo_original") or item.get("rotulo") or item.get("valor") or ""))
         sec_it = _normalizar(str(item.get("seccion") or item.get("seccion_padre") or ""))
         es_sec_rep_it = any(t in sec_it for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in sec_it)
         if es_sec_rep_it:
             continue
         if (h, f) not in filas_sede_principal:
             es_sec_expl_cont = any(t in sec_it for t in _TOKENS_CONTACTO_COMERCIAL)
-            if es_sec_expl_cont:
+            if es_sec_expl_cont or "contacto" in sec_it:
                 aplica_contiguo = any(abs(f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)
             else:
-                aplica_contiguo = any(1 <= (f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)
+                aplica_contiguo = any(0 <= (f - fc) <= 2 for hc, fc in filas_con_rotulo_contacto if hc == h)
 
             if aplica_contiguo:
                 r_compacto = r_txt.replace(" ", "")
-                if any(t in r_txt or t in r_compacto for t in ("cargo", "email", "e-mail", "mail", "correo", "celular", "movil", "móvil")):
+                if any(t in r_txt or t in r_compacto for t in ("cargo", "email", "e-mail", "mail", "correo", "celular", "movil", "móvil", "area", "área")):
                     filas_contacto_comercial.add((h, f))
 
     for item in plan_mapeo:
@@ -1103,19 +1167,27 @@ def validar_plan_mapeo(
 
         plan_validado.append(resultado)
 
-    # ── Regla de Consecutividad Contacto Comercial (ADR-0009) ──────────────────
+    # ── Regla de Consecutividad Contacto Comercial (ADR-0009 / ADR-0011) ──────────
     # Si un ítem fue validado como 'responsable_nombre', cualquier campo subsiguiente contiguo
     # (1 a 2 filas después) que pida correo o celular se asocia a los datos del contacto comercial.
+    # NUNCA aplica en secciones de Representante Legal, Firma, Junta Directiva, Socios ni PEP.
     filas_nombre_responsable = {
         (it.get("hoja"), int(it.get("fila") or 0))
         for it in plan_validado
         if (it.get("campo") == "responsable_nombre" or it.get("campo_final") == "responsable_nombre")
         and it.get("estado") != EstadoMapeo.DESCARTADO
+        and not (
+            any(t in str(it.get("seccion") or it.get("seccion_padre") or "").lower() for t in _TOKENS_SECCION_REP_LEGAL)
+            or any(t in str(it.get("seccion") or it.get("seccion_padre") or "").lower() for t in ("firma", "firmante", "legal", "socio", "accionist", "beneficiar"))
+        )
     }
     if filas_nombre_responsable and (datos_planos.get("responsable_correo") or datos_planos.get("responsable_celular") or datos_planos.get("responsable_telefono")):
         for it in plan_validado:
             h_it = it.get("hoja")
             f_it = int(it.get("fila") or 0)
+            sec_it = str(it.get("seccion") or it.get("seccion_padre") or "").lower()
+            if any(t in sec_it for t in _TOKENS_SECCION_REP_LEGAL) or any(t in sec_it for t in ("firma", "firmante", "legal", "socio", "accionist", "beneficiar")):
+                continue
             if any(h_it == hc and 1 <= (f_it - fc) <= 2 for hc, fc in filas_nombre_responsable):
                 r_norm = _normalizar(str(it.get("rotulo") or it.get("valor") or ""))
                 r_comp = r_norm.replace(" ", "")

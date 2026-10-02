@@ -23,7 +23,9 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.domain_constants import (
     es_seccion_o_campo_pep,
+    es_seccion_o_campo_societario,
     PATRON_PEP_BENEFICIARIOS,
+    PATRON_PEP_CONDICIONAL_POSITIVO,
     TOKENS_CONTACTO_COMERCIAL,
     TOKENS_REFERENCIAS_EXCLUIDAS,
     TOKENS_TITULO_SECCION_PRIORITARIO,
@@ -204,7 +206,7 @@ _PATRON_OPCIONES = re.compile(
     r"^\s*(?:si|no|s|n|x|ahorros|corriente|ahorro|corrientes|"
     r"masculino|femenino|m|f|"
     r"urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|"
-    r"principal|sucursal|privada|p[uú]blica|mixta|simplificado|"
+    r"principal|privada|p[uú]blica|mixta|simplificado|"
     r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica|"
     r"contado|credito|cr[eé]dito|\d+\s*d[ií]as|cumple|no\s+cumple|aprobado\??|no\s+aprobado)\s*$",
     re.IGNORECASE,
@@ -330,6 +332,10 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if re.search(r"\d+\s*%", t_clean):
         return False
 
+    # Bloque condicional PEP afirmativo (ADR-0011): "En caso de que su respuesta haya sido positiva..."
+    if PATRON_PEP_CONDICIONAL_POSITIVO.search(t_clean):
+        return True
+
     # Textos condicionales o descriptivos que empiezan por 'según' o 'en' (ej. 'Según producto o servicio')
     if re.match(r"^\s*seg[uú]n\b", t_clean, re.IGNORECASE):
         return False
@@ -373,7 +379,7 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
             return False
         return True
 
-    # Encabezados en mayúsculas
+    # Encabezados en mayúsculas (con guarda estricta para no fragmentar campos cortos como IDENTIFICACION)
     if re.search(
         r"^\s*(?:\d+(?:\.\d+)*[\.]\s*)?(?:DATOS|INFORMACI[OÓ]N|DOCUMENTACI[OÓ]N|"
         r"PROPONENTE|OFERENTE|TITULO|SECCI[OÓ]N|BLOQUE|CAP[IÍ]TULO|"
@@ -383,6 +389,8 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
         t_clean,
         re.IGNORECASE,
     ):
+        if len(t_clean.split()) <= 3 and _TERMINOS_CAMPO_CORTO.search(t_clean):
+            return False
         return True
 
     # Títulos típicos normalizados
@@ -516,7 +524,12 @@ def clasificar_tipo_elemento(texto: str, propiedades: Optional[Dict[str, Any]] =
 
     # 2b. Rótulos fijos de categoría de tabla (Área, Comercial, Cartera, etc.)
     if _PATRON_CATEGORIAS_TABLA_DECORATIVAS.match(txt):
-        if propiedades and (propiedades.get("abajoVacia") or propiedades.get("abajoEsMerge")):
+        if propiedades and (
+            propiedades.get("abajoVacia")
+            or propiedades.get("abajoEsMerge")
+            or propiedades.get("derechaVacia")
+            or propiedades.get("derechaEsMerge")
+        ):
             pass
         else:
             return TipoElemento.DECORATIVE
@@ -757,7 +770,7 @@ def construir_ir(
                 ab_vacia = bool(elem.get("abajoVacia", False))
                 ab_es_merge = bool(elem.get("abajoEsMerge", False))
                 der_es_merge = bool(elem.get("derechaEsMerge", False))
-                es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta)\s*$", texto, re.IGNORECASE))
+                es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta|[aá]rea|cargo)\s*$", texto, re.IGNORECASE))
                 if re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "misma"
                 elif ab_vacia and (not der_vacia or es_cabecera_tabla or (ab_es_merge and not der_es_merge)):
@@ -813,9 +826,13 @@ def construir_ir(
             pert_c, motivo_c = clasificar_seccion_contacto(titulo_sec, filas_ordenadas)
             es_uso_exclusivo_propio = bool(_PATRON_USO_EXCLUSIVO.search(titulo_sec) or any(t in titulo_sec_norm for t in TOKENS_USO_INTERNO_EXCLUSIVO))
 
-            if es_seccion_o_campo_pep(titulo_sec):
+            if PATRON_PEP_CONDICIONAL_POSITIVO.search(titulo_sec):
                 pert_sec = PertinenciaSeccion.OMITIR_LEGAL
-                motivo_sec = "Sección o bloque de PEP / Beneficiarios Finales (Safe Passivity ADR-0005)"
+                motivo_sec = "Zona condicional PEP afirmativa omitida por respuesta negativa explícita (ADR-0011)"
+                en_bloque_uso_interno = False
+            elif es_seccion_o_campo_pep(titulo_sec):
+                pert_sec = PertinenciaSeccion.OMITIR_LEGAL
+                motivo_sec = "Sección o bloque de PEP (Safe Passivity ADR-0005 / ADR-0011)"
                 en_bloque_uso_interno = False
             elif es_uso_exclusivo_propio:
                 pert_sec = PertinenciaSeccion.OMITIR_USO_INTERNO

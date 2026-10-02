@@ -23,14 +23,34 @@ class DomainCategory(str, Enum):
     NO_APLICA = "no_aplica"
 
 
-# ── Triggers de PEP y Beneficiarios Finales para Safe Passivity (ADR-0005) ─────
-TOKENS_PEP_BENEFICIARIOS_SECCION: Set[str] = {
+# ── Triggers de PEP para Safe Passivity (ADR-0005 / ADR-0011) ─────────────────
+TOKENS_PEP_SECCION: Set[str] = {
     "pep", "peps", "persona expuesta", "politicamente expuesta", "politicamente expuesto",
-    "beneficiario final", "beneficiarios finales", "beneficiario real", "beneficiarios reales"
+    "personas expuestas", "politica expuesta", "expuesta politicamente",
 }
 
-PATRON_PEP_BENEFICIARIOS = re.compile(
-    r"\b(?:pep|peps|persona\s+expuesta|pol[ií]ticamente\s+expuest[ao]s?|beneficiario\s+final|beneficiarios\s+finales|beneficiario\s+real|beneficiarios\s+reales)\b",
+PATRON_PEP = re.compile(
+    r"\b(?:pep|peps|persona\s+expuesta|pol[ií]ticamente\s+expuest[ao]s?)\b",
+    re.IGNORECASE
+)
+PATRON_PEP_BENEFICIARIOS = PATRON_PEP
+
+PATRON_PEP_CONDICIONAL_POSITIVO = re.compile(
+    r"(?:en\s+caso\s+de\s+que\s+(?:su\s+respuesta\s+)?(?:haya\s+sido|sea)\s+positiva|"
+    r"en\s+caso\s+afirmativo|si\s+(?:su\s+)?respuesta\s+es\s+(?:positiva|si\b)|"
+    r"indique\s+(?:el\s+)?nombre\s+completo\s+e\s+identificaci[oó]n\s+del\s+pep)",
+    re.IGNORECASE
+)
+
+# ── Triggers de Composición Accionaria y Beneficiarios Finales (ADR-0011) ──────
+TOKENS_SOCIETARIO_SECCION: Set[str] = {
+    "composicion accionaria", "composición accionaria", "accionistas", "accionista",
+    "socios", "socio", "participacion accionaria", "participación accionaria",
+    "beneficiarios finales", "beneficiario final", "beneficiarios reales", "beneficiario real",
+}
+
+PATRON_SOCIETARIO = re.compile(
+    r"\b(?:composici[oó]n\s+accionaria|accionistas?|socios?|participaci[oó]n\s+accionaria|beneficiari[ao]s?\s+final(?:es)?|beneficiari[ao]s?\s+real(?:es)?)\b",
     re.IGNORECASE
 )
 
@@ -95,6 +115,13 @@ CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
 CAMPOS_EMPRESA: Set[str] = {
     "razon_social", "nit", "nit_cert_bancaria", "nit_bancario", "nit_titular",
     "direccion", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
+}
+
+# Campos de Composición Accionaria y Beneficiarios Finales (ADR-0011)
+CAMPOS_SOCIETARIO: Set[str] = {
+    "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_porcentaje",
+    "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_porcentaje",
+    "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_porcentaje",
 }
 
 # ── Tokens de sección para clasificación de dominio ────────────────────────────
@@ -247,12 +274,9 @@ BARE_LABELS_CONTACTO_COMERCIAL: Dict[str, str] = {
     "área": "responsable_area",
 }
 
-# ADR-0009: Remapeo determinista en HSP para campos legales/corporativos que caigan en bloque comercial
+# ADR-0009 / ADR-0011: Remapeo determinista en HSP para campos genéricos que caigan en bloque comercial
+# NUNCA remapear representante_legal, representante_nombres o representante_apellidos a contacto comercial
 CONTACTO_COMERCIAL_REMAP: Dict[str, str] = {
-    "razon_social": "responsable_nombre",
-    "representante_legal": "responsable_nombre",
-    "representante_nombres": "responsable_nombre",
-    "representante_apellidos": "responsable_nombre",
     "cargo": "responsable_cargo",
     "cedula": "responsable_cedula",
     "lugar_expedicion": "",
@@ -280,15 +304,29 @@ def limpiar_rotulo(rotulo: str) -> str:
 
 
 def es_seccion_o_campo_pep(seccion: str = "", rotulo: str = "", contexto: str = "") -> bool:
-    """Determina si una sección, rótulo o contexto circundante pertenece al ámbito de PEP o Beneficiario Final (ADR-0005)."""
+    """Determina si una sección, rótulo o contexto circundante pertenece al ámbito de PEP (ADR-0005 / ADR-0011)."""
     sec_norm = (seccion or "").lower()
     rot_norm = (rotulo or "").lower()
     ctx_norm = (contexto or "").lower()
-    if any(t in sec_norm for t in TOKENS_PEP_BENEFICIARIOS_SECCION) or bool(PATRON_PEP_BENEFICIARIOS.search(sec_norm)):
+    if any(t in sec_norm for t in TOKENS_PEP_SECCION) or bool(PATRON_PEP.search(sec_norm)):
         return True
-    if any(t in rot_norm for t in ("pep", "peps", "beneficiario final", "beneficiarios finales", "beneficiario real")) or bool(PATRON_PEP_BENEFICIARIOS.search(rot_norm)):
+    if any(t in rot_norm for t in ("pep", "peps", "persona expuesta")) or bool(PATRON_PEP.search(rot_norm)):
         return True
-    if ctx_norm and (any(t in ctx_norm for t in ("pep", "peps", "beneficiario final", "beneficiarios finales", "beneficiario real")) or bool(PATRON_PEP_BENEFICIARIOS.search(ctx_norm))):
+    if ctx_norm and (any(t in ctx_norm for t in ("pep", "peps")) or bool(PATRON_PEP.search(ctx_norm))):
+        return True
+    return False
+
+
+def es_seccion_o_campo_societario(seccion: str = "", rotulo: str = "", contexto: str = "") -> bool:
+    """Determina si una sección o rótulo pertenece al ámbito societario o de beneficiarios finales (ADR-0011)."""
+    sec_norm = (seccion or "").lower()
+    rot_norm = (rotulo or "").lower()
+    ctx_norm = (contexto or "").lower()
+    if any(t in sec_norm for t in TOKENS_SOCIETARIO_SECCION) or bool(PATRON_SOCIETARIO.search(sec_norm)):
+        return True
+    if any(t in rot_norm for t in ("accionista", "accionistas", "socio", "socios", "beneficiario final", "beneficiarios finales", "beneficiario real", "beneficiarios reales", "participacion accionaria")):
+        return True
+    if ctx_norm and (any(t in ctx_norm for t in ("accionista", "socios", "beneficiario final")) or bool(PATRON_SOCIETARIO.search(ctx_norm))):
         return True
     return False
 
@@ -535,6 +573,27 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
     ],
     "total_egresos_mensuales": [
         "egresos mensuales", "total egresos mensuales", "gastos mensuales",
+    ],
+    "responsable_area": [
+        "area", "área", "area comercial", "área comercial", "departamento comercial",
+    ],
+    "accionista_nombre": [
+        "nombre accionista", "nombre socio", "nombre/razon social", "nombre / razon social",
+        "accionista nombre", "nombre del accionista", "nombre o razon social",
+    ],
+    "accionista_identificacion": [
+        "identificacion accionista", "identificacion/tipo id", "identificación/tipo id",
+        "identificacion socio", "numero identificacion accionista",
+    ],
+    "accionista_porcentaje": [
+        "porcentaje participacion", "porcentaje participación", "porcentaje participacion accionaria",
+        "% participacion", "% de participacion", "% participacion accionaria",
+    ],
+    "beneficiario_nombre": [
+        "nombre beneficiario final", "beneficiario final nombre", "nombre del beneficiario final",
+    ],
+    "beneficiario_identificacion": [
+        "identificacion beneficiario final", "identificacion beneficiario real",
     ],
 }
 

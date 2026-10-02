@@ -61,5 +61,24 @@
       "total_ingresos_anuales": "",
       "total_egresos_anuales": ""
     }
-  }
+  },
+  "societario": {
+    "accionistas": [
+      {
+        "nombre": "Guillermo Humberto Cañón Sarria",
+        "tipo_identificacion": "C.C",
+        "identificacion": "98555384",
+        "porcentaje_participacion": 100
+      }
+    ],
+    "beneficiarios_finales": [
+      {
+        "nombre": "Guillermo Humberto Cañón Sarria",
+        "tipo_identificacion": "C.C",
+        "identificacion": "98555384",
+        "porcentaje_participacion": 100
+      }
+    ]
+  },
+  "responsable_area": "Comercial"
 }
