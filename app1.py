@@ -528,7 +528,7 @@ if not st.session_state.get("usuario_activo"):
                 elif p_val != pc_val:
                     st.error("Las contraseñas no coinciden.")
                 else:
-                    with st.spinner("Enviando solicitud de registro corporativo..."):
+                    with st.spinner("Creando cuenta corporativa..."):
                         ok_reg, msg_reg = auth_manager.registrar_solicitud_corporativa(
                             nombre=n_val,
                             correo=c_val,
@@ -536,11 +536,11 @@ if not st.session_state.get("usuario_activo"):
                             cargo=cg_val,
                             telefono=t_val,
                             ciudad=ci_val,
-                            requiere_aprobacion=True,
+                            requiere_aprobacion=False,
                         )
                     if ok_reg:
-                        st.success("✅ Tu solicitud de acceso corporativo ha sido registrada exitosamente.")
-                        st.info("ℹ️ Por políticas de seguridad institucional, un administrador corporativo debe verificar y autorizar tu cuenta antes de tu primer ingreso. Podrás iniciar sesión desde la pestaña 'Iniciar Sesión' en cuanto sea aprobada.")
+                        st.success("✅ ¡Cuenta corporativa creada y activada exitosamente!")
+                        st.info("ℹ️ Ya puedes ingresar a la plataforma directamente desde la pestaña **'Iniciar Sesión'**.")
                     else:
                         st.error(f"❌ {msg_reg}")
 
