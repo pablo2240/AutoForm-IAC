@@ -14,6 +14,7 @@ Inspecciona un libro openpyxl extrayendo:
 from __future__ import annotations
 
 import io
+import zipfile
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
@@ -85,6 +86,12 @@ class InspeccionLibroExcel:
     
     # Celdas combinadas por hoja: {hoja: [(min_r, max_r, min_c, max_c)]}
     celdas_combinadas: Dict[str, List[Tuple[int, int, int, int]]] = field(default_factory=dict)
+    formulas_firma: Dict[Tuple[str, int, int], str] = field(default_factory=dict)
+    estilos_firma: Dict[Tuple[str, int, int], int] = field(default_factory=dict)
+    validaciones_firma: Dict[str, Tuple[Tuple[str, str, str], ...]] = field(default_factory=dict)
+    tablas_firma: Dict[str, Tuple[Tuple[str, str], ...]] = field(default_factory=dict)
+    hojas_firma: Dict[str, str] = field(default_factory=dict)
+    tiene_controles_vml: bool = False
 
     def es_celda_formula(self, hoja: str, fila: int, col: int) -> bool:
         return (hoja, fila, col) in self.celdas_con_formula
@@ -115,10 +122,12 @@ def inspeccionar_libro_excel(
     archivo_o_libro: Union[bytes, bytearray, io.BytesIO, openpyxl.Workbook]
 ) -> InspeccionLibroExcel:
     """Inspecciona un archivo Excel extrayendo toda su topología estructural, fórmulas y restricciones."""
+    bytes_original: Optional[bytes] = None
     if isinstance(archivo_o_libro, openpyxl.Workbook):
         wb = archivo_o_libro
     elif isinstance(archivo_o_libro, (bytes, bytearray)):
-        wb = openpyxl.load_workbook(filename=io.BytesIO(archivo_o_libro), data_only=False)
+        bytes_original = bytes(archivo_o_libro)
+        wb = openpyxl.load_workbook(filename=io.BytesIO(bytes_original), data_only=False, keep_vba=True)
     elif hasattr(archivo_o_libro, "read"):
         archivo_o_libro.seek(0)
         wb = openpyxl.load_workbook(filename=archivo_o_libro, data_only=False)
@@ -126,6 +135,12 @@ def inspeccionar_libro_excel(
         raise TypeError(f"Tipo no soportado para inspeccionar Excel: {type(archivo_o_libro)}")
 
     resultado = InspeccionLibroExcel()
+    if bytes_original:
+        try:
+            with zipfile.ZipFile(io.BytesIO(bytes_original)) as paquete:
+                resultado.tiene_controles_vml = any(n.startswith("xl/ctrlProps/") for n in paquete.namelist())
+        except zipfile.BadZipFile:
+            pass
     resultado.hojas = list(wb.sheetnames)
 
     # 1. Hojas y estados de visibilidad
@@ -163,6 +178,7 @@ def inspeccionar_libro_excel(
         for rng in ws.merged_cells.ranges:
             merges_hoja.append((rng.min_row, rng.max_row, rng.min_col, rng.max_col))
         resultado.celdas_combinadas[nombre_hoja] = merges_hoja
+        resultado.hojas_firma[nombre_hoja] = ws.sheet_state
 
         # 3.2 Tablas formales (ws.tables)
         if hasattr(ws, "tables") and ws.tables:
@@ -235,6 +251,10 @@ def inspeccionar_libro_excel(
                     for r_val in range(sq.min_row, sq.max_row + 1):
                         for c_val in range(sq.min_col, sq.max_col + 1):
                             resultado.validaciones_por_celda[(nombre_hoja, r_val, c_val)] = regla
+            resultado.validaciones_firma[nombre_hoja] = tuple(sorted(
+                (str(dv.type or "custom"), str(dv.formula1 or ""), str(dv.sqref or ""))
+                for dv in ws.data_validations.dataValidation
+            ))
 
         # 3.4 Celdas: Fórmulas, Valores existentes y Protección
         for row in ws.iter_rows():
@@ -242,6 +262,8 @@ def inspeccionar_libro_excel(
                 r_idx = cell.row
                 c_idx = cell.column
                 v = cell.value
+                if cell.has_style:
+                    resultado.estilos_firma[(nombre_hoja, r_idx, c_idx)] = int(cell.style_id)
 
                 # A. Detección de Fórmulas
                 es_formula = (
@@ -250,6 +272,7 @@ def inspeccionar_libro_excel(
                 )
                 if es_formula:
                     resultado.celdas_con_formula[(nombre_hoja, r_idx, c_idx)] = str(v)
+                    resultado.formulas_firma[(nombre_hoja, r_idx, c_idx)] = str(v)
 
                 # B. Valores existentes no-fórmula
                 if v is not None and not es_formula:
@@ -263,4 +286,7 @@ def inspeccionar_libro_excel(
                     if cell.protection is None or cell.protection.locked:
                         resultado.celdas_protegidas.add((nombre_hoja, r_idx, c_idx))
 
+        resultado.tablas_firma[nombre_hoja] = tuple(sorted(
+            (str(nombre), str(getattr(tabla, "ref", tabla))) for nombre, tabla in ws.tables.items()
+        ))
     return resultado

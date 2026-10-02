@@ -26,6 +26,7 @@ def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
             archivo_bytes=ctx.archivo_bytes,
             plan_mapeo=plan_final,
             datos_empresa=ctx.datos_empresa,
+            nombre_archivo=ctx.nombre_archivo,
         )
 
         # ── VERIFICACIÓN POSTERIOR DE INTEGRIDAD (ROUND-TRIP VERIFICATION) ──

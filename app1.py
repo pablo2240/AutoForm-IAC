@@ -1702,7 +1702,7 @@ st.markdown("### 📥 Cargar Formulario de Terceros")
 
 uploaded_file = st.file_uploader(
     "Arrastra y suelta tu archivo Excel (.xlsx, .xlsm, .xls) aquí",
-    type=["xlsx", "xls", "xlsm"],
+    type=["xlsx", "xlsm"],
     help="Sube la plantilla de licitación o formulario del proveedor para iniciar el diligenciamiento automático.",
 )
 

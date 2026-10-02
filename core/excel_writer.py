@@ -785,15 +785,85 @@ def _preservar_vml_y_controles(bytes_original: bytes, bytes_openpyxl: bytes) -> 
         return bytes_openpyxl
 
 
+def _rellenar_plan_estricto(
+    bytes_excel: bytes,
+    plan_mapeo: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+    keep_vba: bool,
+) -> Tuple[bytes, List[Dict[str, Any]]]:
+    """Ejecuta exclusivamente destinos ya resueltos, sin tocar estructura del libro."""
+    # openpyxl mantiene una referencia al ZIP de origen cuando ``keep_vba`` es
+    # verdadero; el buffer debe vivir hasta después de ``save``.
+    libro_origen = BytesIO(bytes_excel)
+    workbook = load_workbook(filename=libro_origen, data_only=False, keep_vba=keep_vba)
+    reporte: List[Dict[str, Any]] = []
+    ocupadas: set[Tuple[str, int, int]] = set()
+
+    for item in plan_mapeo:
+        hoja = str(item.get("hoja") or "")
+        fila = item.get("fila_destino")
+        columna = item.get("columna_destino")
+        if str(item.get("estado", "")).upper() == "DESCARTADO" or item.get("bloqueante") or item.get("operacion") == "OMITIR":
+            reporte.append(_log_item("BLOCKED", item, None, int(fila or 0), int(columna or 0), "Directiva no autorizada por el validador"))
+            continue
+        if not hoja or hoja not in workbook.sheetnames or not fila or not columna:
+            reporte.append(_log_item("ERROR", item, None, int(fila or 0), int(columna or 0), "Destino final ausente o inválido"))
+            continue
+
+        fila_i, columna_i = int(fila), int(columna)
+        clave = (hoja, fila_i, columna_i)
+        if clave in ocupadas:
+            reporte.append(_log_item("BLOCKED", item, None, fila_i, columna_i, "Colisión con otra directiva aprobada"))
+            continue
+        valor = item.get("valor_a_escribir")
+        if valor is None:
+            valor = _obtener_valor_datos(datos_empresa, str(item.get("campo") or ""))
+        if valor is None:
+            reporte.append(_log_item("NULL", item, None, fila_i, columna_i, "Valor ausente en el perfil"))
+            continue
+
+        celda = _obtener_celda_escribible(workbook[hoja], fila_i, columna_i)
+        actual = celda.value
+        actual_txt = str(actual or "").strip()
+        esperado_txt = str(valor).strip()
+        if getattr(celda, "data_type", None) == "f" or actual_txt.startswith("="):
+            reporte.append(_log_item("BLOCKED", item, valor, fila_i, columna_i, "La celda destino contiene una fórmula"))
+            continue
+        if actual_txt and actual_txt.lower() != esperado_txt.lower() and not re.fullmatch(r"[\s_.:-]+", actual_txt):
+            reporte.append(_log_item("BLOCKED", item, valor, fila_i, columna_i, "La celda destino ya contiene información"))
+            continue
+
+        if not actual_txt or actual_txt.lower() != esperado_txt.lower():
+            if isinstance(valor, (int, float)) and "%" in str(celda.number_format or "") and valor > 1:
+                celda.value = valor / 100.0
+            else:
+                celda.value = valor
+        ocupadas.add(clave)
+        reporte.append(_log_item("OK", item, valor, fila_i, columna_i))
+
+    salida = BytesIO()
+    workbook.save(salida)
+    if workbook.vba_archive is not None:
+        # ``save`` ya consumió el archivo macro. Cerrarlo explícitamente evita
+        # que ZipFile intente cerrar por segunda vez un buffer liberado.
+        try:
+            workbook.vba_archive.close()
+        except ValueError:
+            pass
+        workbook.vba_archive = None
+    return salida.getvalue(), reporte
+
+
 # ---------------------------------------------------------------------------
 # Función principal de escritura
 # ---------------------------------------------------------------------------
 
-def rellenar_formulario_excel(
+def _rellenar_formulario_legacy(
     bytes_excel: bytes,
     plan_mapeo: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
     celdas_prellenadas: Optional[Dict] = None,
+    keep_vba: bool = False,
 ) -> Tuple[bytes, List[Dict[str, Any]]]:
     """Escribe el plan de mapeo en el Excel conservando estilos originales.
 
@@ -806,7 +876,9 @@ def rellenar_formulario_excel(
         Tuple[bytes_excel_modificado, reporte_de_inyeccion]
         El reporte contiene una entrada por ítem con estado OK/SKIP/NULL/ERROR/PRESERVED.
     """
-    workbook = load_workbook(filename=BytesIO(bytes_excel), data_only=False)
+    # Mantener el buffer evita invalidar el archivo VBA opaco antes del guardado.
+    libro_origen = BytesIO(bytes_excel)
+    workbook = load_workbook(filename=libro_origen, data_only=False, keep_vba=keep_vba)
     reporte: List[Dict[str, Any]] = []
     _celdas_pre = celdas_prellenadas or {}
     # ADR-0005: Registro global de celdas físicas ocupadas durante la sesión de escritura
@@ -1161,3 +1233,15 @@ def rellenar_formulario_excel(
         print(summary_msg.encode("ascii", errors="replace").decode("ascii"))
 
     return bytes_finales, reporte
+
+
+def rellenar_formulario_excel(
+    bytes_excel: bytes,
+    plan_mapeo: List[Dict[str, Any]],
+    datos_empresa: Dict[str, Any],
+    celdas_prellenadas: Optional[Dict] = None,
+    keep_vba: bool = False,
+) -> Tuple[bytes, List[Dict[str, Any]]]:
+    """Ejecuta el plan resuelto de Fase 1 sin redireccionar ni modificar estructura."""
+    del celdas_prellenadas
+    return _rellenar_plan_estricto(bytes_excel, plan_mapeo, datos_empresa, keep_vba)

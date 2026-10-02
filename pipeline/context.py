@@ -8,10 +8,42 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Literal, Optional
+from enum import Enum
+from typing import Any, Dict, List, Literal, Optional, Tuple
 
 
 TipoDocumento = Literal["excel", "desconocido"]
+
+
+class OperacionEscritura(str, Enum):
+    """Operaciones permitidas por el plan de Excel de Fase 1."""
+
+    ESCRIBIR = "ESCRIBIR"
+    OMITIR = "OMITIR"
+    EXCEDENTE_NO_ASIGNADO = "EXCEDENTE_NO_ASIGNADO"
+
+
+@dataclass(frozen=True)
+class DestinoExcel:
+    """Coordenada final previamente validada para una escritura."""
+
+    hoja: str
+    fila: int
+    columna: int
+    candidato_id: str
+    tabla: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class DirectivaEscrituraExcel:
+    """Fuente única de verdad entre el mapeador, validador y writer."""
+
+    operacion: OperacionEscritura
+    destino: Optional[DestinoExcel]
+    campo: str
+    valor: Any
+    motivo: str = ""
+    confianza: float = 0.0
 
 
 @dataclass
@@ -45,6 +77,7 @@ class PipelineContext:
     # Etapa 1: Parser & Inspección Estructurada
     elementos_raw: List[Dict[str, Any]] = field(default_factory=list)
     inspeccion_excel: Optional[Any] = None  # core.excel_inspector.InspeccionLibroExcel
+    directivas_escritura: Tuple[DirectivaEscrituraExcel, ...] = ()
     
     # Etapa 2: Classifier
     elementos_clasificados: List[Dict[str, Any]] = field(default_factory=list)

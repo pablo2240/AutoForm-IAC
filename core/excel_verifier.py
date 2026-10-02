@@ -95,6 +95,9 @@ def verificar_integridad_excel(
         res.errores_bloqueantes.append(f"El archivo generado está corrupto o no pudo ser abierto por Excel: {exc}")
         return res
 
+    from core.excel_inspector import inspeccionar_libro_excel
+    insp_generado = inspeccionar_libro_excel(archivo_generado_bytes)
+
     # 1. VERIFICACIÓN DE FÓRMULAS ORIGINALES
     for (hoja_f, fila_f, col_f), formula_orig in inspeccion_original.celdas_con_formula.items():
         if hoja_f not in wb_generado.sheetnames:
@@ -108,7 +111,7 @@ def verificar_integridad_excel(
             (val_gen is not None and isinstance(val_gen, str) and val_gen.startswith("="))
         )
 
-        if not es_formula_actual:
+        if not es_formula_actual or str(val_gen) != str(formula_orig):
             res.formulas_danadas += 1
             res.es_valido = False
             msg_err = (
@@ -118,6 +121,19 @@ def verificar_integridad_excel(
             res.errores_bloqueantes.append(msg_err)
         else:
             res.formulas_preservadas += 1
+
+    # 1b. La escritura de Fase 1 no puede alterar estructura ni restricciones.
+    for hoja in inspeccion_original.hojas:
+        if insp_generado.hojas_firma.get(hoja) != inspeccion_original.hojas_firma.get(hoja):
+            res.errores_bloqueantes.append(f"Estado de hoja alterado: '{hoja}'.")
+        if insp_generado.celdas_combinadas.get(hoja, []) != inspeccion_original.celdas_combinadas.get(hoja, []):
+            res.errores_bloqueantes.append(f"Rangos combinados alterados en '{hoja}'.")
+        if insp_generado.validaciones_firma.get(hoja, ()) != inspeccion_original.validaciones_firma.get(hoja, ()):
+            res.errores_bloqueantes.append(f"Validaciones alteradas en '{hoja}'.")
+        if insp_generado.tablas_firma.get(hoja, ()) != inspeccion_original.tablas_firma.get(hoja, ()):
+            res.errores_bloqueantes.append(f"Tabla o rango de tabla alterado en '{hoja}'.")
+    if insp_generado.estilos_firma != inspeccion_original.estilos_firma:
+        res.errores_bloqueantes.append("Se alteraron formatos o estilos de celdas existentes.")
 
     # 2. VERIFICACIÓN DE VALORES INYECTADOS
     # Si tenemos reporte de inyección detallado, verificar las celdas reportadas como escritas
@@ -137,8 +153,20 @@ def verificar_integridad_excel(
                         "campo": r_item.get("campo"),
                     })
 
+    destinos_autorizados = {
+        (str(item.get("hoja") or ""), int(item.get("fila_destino") or 0), int(item.get("columna_destino") or 0))
+        for item in (reporte_inyeccion or []) if str(item.get("estado", "")).upper() == "OK"
+    }
+    for coord, valor_original in inspeccion_original.valores_existentes.items():
+        if coord in destinos_autorizados:
+            continue
+        if insp_generado.valores_existentes.get(coord) != valor_original:
+            res.errores_bloqueantes.append(
+                f"Valor existente alterado en {coord[0]}!R{coord[1]}C{coord[2]}."
+            )
 
-    if not items_a_verificar:
+
+    if not items_a_verificar and reporte_inyeccion is None:
         for item in plan_mapeo:
             estado_item = str(item.get("estado", "")).upper()
             if estado_item in ("DESCARTADO", "SKIP", "OMITIDO"):
@@ -200,6 +228,8 @@ def verificar_integridad_excel(
                 f"Esperado '{val_esperado}', Encontrado '{val_actual}'"
             )
             res.advertencias.append(advertencia)
+            res.errores_bloqueantes.append(advertencia)
+            res.es_valido = False
             res.detalles.append({
                 "hoja": hoja_it,
                 "fila": fila_it,
@@ -216,7 +246,7 @@ def verificar_integridad_excel(
         res.validaciones_preservadas += cant_dv
 
     # Si hubo fórmulas dañadas o el archivo está vacío, invalidar
-    if res.formulas_danadas > 0:
+    if res.formulas_danadas > 0 or res.errores_bloqueantes:
         res.es_valido = False
 
     return res

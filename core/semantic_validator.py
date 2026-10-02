@@ -1375,8 +1375,10 @@ def enriquecer_item_con_inspeccion_excel(
     col = int(res.get("columna") or 0)
     ubic = str(res.get("ubicacion") or "derecha").lower()
 
-    # Calcular celda destino
-    if ubic == "abajo":
+    # El parser resuelve el destino físico. Este módulo jamás lo vuelve a inferir.
+    if res.get("fila_destino") and res.get("columna_destino"):
+        f_dest, c_dest = int(res["fila_destino"]), int(res["columna_destino"])
+    elif ubic == "abajo":
         f_dest, c_dest = fila + 1, col
     elif ubic == "misma":
         f_dest, c_dest = fila, col
@@ -1434,6 +1436,13 @@ def enriquecer_item_con_inspeccion_excel(
             )
 
     # 5. Validación de formato de dato
+    # Fase 1 no autoriza reemplazar información existente. La UI debe pedir
+    # reasignación para este caso, nunca permitir una sobreescritura silenciosa.
+    if val_ant is not None and str(val_ant).strip() != "" and str(val_ant).strip().lower() != str(valor or "").strip().lower():
+        res["bloqueante"] = True
+        es_bloqueante = True
+        res["estado"] = EstadoMapeo.REVISION
+
     ok_fmt, msg_fmt = validar_formato_dato(campo, valor)
     if not ok_fmt:
         advertencias.append(f"⚠️ Formato: {msg_fmt}")

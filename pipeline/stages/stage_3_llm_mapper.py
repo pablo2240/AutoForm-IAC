@@ -23,7 +23,12 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.llm_client import consultar_llm_seccion_instructor, invocar_llm
-from pipeline.context import PipelineContext
+from pipeline.context import (
+    DestinoExcel,
+    DirectivaEscrituraExcel,
+    OperacionEscritura,
+    PipelineContext,
+)
 from template_store.store import (
     calcular_hash_formulario,
     cargar_plantilla,
@@ -465,6 +470,17 @@ def _aplicar_validacion_deterministica(
         from core.semantic_validator import enriquecer_item_con_inspeccion_excel
         insp = ctx.inspeccion_excel
         for item in plan_validado:
+            if not (item.get("fila_destino") and item.get("columna_destino")):
+                origen = next((e for e in ctx.elementos_raw if (
+                    str(e.get("hoja", "")) == str(item.get("hoja", ""))
+                    and int(e.get("fila", 0) or 0) == int(item.get("fila", 0) or 0)
+                    and int(e.get("columna", 0) or 0) == int(item.get("columna", 0) or 0)
+                )), None)
+                if origen:
+                    propuesta = (origen.get("destinosPropuestos") or {}).get(str(item.get("ubicacion") or "derecha").lower())
+                    if propuesta:
+                        item.update(propuesta)
+                        item["destino_resuelto"] = True
             # 1. Anti-alucinación de hojas
             if insp and insp.hojas:
                 h_item = str(item.get("hoja") or "")
@@ -500,6 +516,15 @@ def _aplicar_validacion_deterministica(
                 item["confianza"] = 0.50
             else:
                 item["confianza"] = 0.30
+
+            # La automatización sólo puede ejecutar mapeos deterministas o de
+            # alta confianza. Las ambigüedades llegan a la UI de revisión.
+            if item.get("estado") == EstadoMapeo.REVISION:
+                item["bloqueante"] = True
+                advertencias = list(item.get("advertencias") or [])
+                if "Revisión humana requerida antes de escribir." not in advertencias:
+                    advertencias.append("Revisión humana requerida antes de escribir.")
+                item["advertencias"] = advertencias
     except Exception as exc_insp_val:
         ctx.log(f"[Stage 3b - Validador] Advertencia en enriquecimiento de inspección: {exc_insp_val}")
 
@@ -524,8 +549,72 @@ def _aplicar_validacion_deterministica(
                 f"→ {ac['original']} → {ac['corregido']}"
             )
 
+    directivas = []
+    for indice, item in enumerate(plan_validado):
+        bloqueado = bool(item.get("bloqueante")) or str(item.get("estado", "")).upper() == "DESCARTADO"
+        tiene_destino = bool(item.get("fila_destino") and item.get("columna_destino"))
+        destino = None
+        if tiene_destino:
+            destino = DestinoExcel(
+                hoja=str(item.get("hoja") or ""), fila=int(item["fila_destino"]),
+                columna=int(item["columna_destino"]), candidato_id=f"{item.get('hoja')}:{item.get('fila')}:{item.get('columna')}:{indice}",
+            )
+        operacion = OperacionEscritura.ESCRIBIR if (not bloqueado and destino) else OperacionEscritura.OMITIR
+        directivas.append(DirectivaEscrituraExcel(
+            operacion=operacion, destino=destino, campo=str(item.get("campo") or ""),
+            valor=item.get("valor"), motivo=str(item.get("motivo") or ""), confianza=float(item.get("confianza") or 0),
+        ))
+        item["operacion"] = operacion.value
+    ctx.directivas_escritura = tuple(directivas)
+
     # Retornar plan validado enriquecido (no descartar todavía para poder mostrar en auditoría)
     return plan_validado
+
+
+def _expandir_listas_societarias(plan: List[Dict[str, Any]], ctx: PipelineContext) -> List[Dict[str, Any]]:
+    """Distribuye listas solo en filas vacías de tablas formales ya existentes."""
+    if ctx.inspeccion_excel is None:
+        return plan
+    resultado = [p for p in plan if not str(p.get("campo", "")).startswith(("accionista_", "beneficiario_"))]
+    excedentes: List[Dict[str, Any]] = []
+    for prefijo, clave_lista in (("accionista_", "accionistas"), ("beneficiario_", "beneficiarios_finales")):
+        bases = [p for p in plan if str(p.get("campo", "")).startswith(prefijo)]
+        if not bases:
+            continue
+        entradas = ((ctx.datos_empresa.get("societario") or {}).get(clave_lista) or [])
+        if not isinstance(entradas, list) or not entradas:
+            resultado.extend(bases)
+            continue
+        tabla = next((ctx.inspeccion_excel.obtener_tabla(str(p.get("hoja", "")), int(p.get("fila", 0) or 0), int(p.get("columna", 0) or 0)) for p in bases), None)
+        if tabla is None:
+            resultado.extend(bases)
+            if len(entradas) > 1:
+                excedentes.extend(entradas[1:])
+            continue
+        filas = []
+        for fila in range(tabla.fila_inicio_datos, tabla.fila_fin_datos + 1):
+            destinos = [(str(p.get("hoja", "")), fila, int(p.get("columna_destino", 0) or 0)) for p in bases]
+            if all(c > 0 and d not in ctx.inspeccion_excel.valores_existentes and d not in ctx.inspeccion_excel.celdas_con_formula and d not in ctx.inspeccion_excel.celdas_protegidas for d in destinos for c in [d[2]]):
+                filas.append(fila)
+        atributos = {"nombre": "nombre", "tipo_id": "tipo_identificacion", "identificacion": "identificacion", "id_completo": "identificacion", "porcentaje": "porcentaje_participacion"}
+        for indice, entrada in enumerate(entradas):
+            if indice >= len(filas):
+                excedentes.append(entrada)
+                continue
+            for base in bases:
+                clon = dict(base)
+                clon["fila_destino"] = filas[indice]
+                sufijo = str(clon.get("campo", ""))[len(prefijo):]
+                valor = entrada.get(atributos.get(sufijo, sufijo)) if isinstance(entrada, dict) else None
+                if sufijo == "id_completo" and isinstance(entrada, dict):
+                    valor = " ".join(str(entrada.get(k, "")).strip() for k in ("tipo_identificacion", "identificacion") if entrada.get(k) not in (None, ""))
+                clon["valor_a_escribir"] = valor
+                clon["operacion"] = "ESCRIBIR"
+                resultado.append(clon)
+    if excedentes:
+        ctx.metadatos["excedentes_no_asignados"] = excedentes
+        ctx.log(f"[Stage 3 - Capacidad] {len(excedentes)} registros societarios exceden las filas existentes; no se insertaron filas.")
+    return resultado
 
 
 
@@ -759,6 +848,10 @@ def ejecutar_stage_3_mapper(
                 "tipo_elemento": c_info.get("tipo_elemento", "FIELD"),
                 "contexto_fila": c_info.get("contexto_fila", ""),
             }
+            propuesta = (elem_orig.get("destinosPropuestos") or {}).get(ubic)
+            if propuesta:
+                plan_item.update(propuesta)
+                plan_item["destino_resuelto"] = True
 
             # Preservar metadatos de PDF
             for k in ("_pdf_page", "_pdf_bbox", "_pdf_target_rect", "_pdf_es_caja", "_pdf_es_casilla", "_pdf_es_acroform", "_pdf_widget_name"):
@@ -797,6 +890,7 @@ def ejecutar_stage_3_mapper(
         and str(item.get("estado", "")).upper() != "DESCARTADO"
         and item.get("valor") not in (None, "")
     ]
+    plan_final = _expandir_listas_societarias(plan_final, ctx)
 
     ctx.plan_mapeo = plan_final
 

@@ -49,6 +49,27 @@ def _celda_vacia(hoja: Worksheet, fila: int, col: int) -> bool:
     return celda.value is None or str(celda.value).strip() == ""
 
 
+def resolver_destino_definitivo(
+    hoja: Worksheet, fila: int, columna: int, ubicacion: str, inicio_linea_col: int = 0
+) -> Dict[str, int]:
+    """Resuelve una vez el destino físico; el writer no puede redirigirlo."""
+    rango = next((r for r in hoja.merged_cells.ranges if r.min_row <= fila <= r.max_row and r.min_col <= columna <= r.max_col), None)
+    direccion = str(ubicacion or "derecha").lower()
+    if direccion == "misma":
+        fila_destino, columna_destino = (rango.min_row, rango.min_col) if rango else (fila, columna)
+    elif direccion == "abajo":
+        fila_destino, columna_destino = ((rango.max_row + 1), rango.min_col) if rango else (fila + 1, columna)
+    else:
+        fila_destino = rango.min_row if rango else fila
+        columna_destino = (rango.max_col + 1) if rango else (columna + 1)
+        if inicio_linea_col >= columna_destino:
+            columna_destino = inicio_linea_col
+    destino_merge = next((r for r in hoja.merged_cells.ranges if r.min_row <= fila_destino <= r.max_row and r.min_col <= columna_destino <= r.max_col), None)
+    if destino_merge:
+        fila_destino, columna_destino = destino_merge.min_row, destino_merge.min_col
+    return {"fila_destino": fila_destino, "columna_destino": columna_destino}
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # PARSER-01: Detección de bordes visuales de celdas
 # ──────────────────────────────────────────────────────────────────────────────
@@ -679,6 +700,10 @@ def escanear_mapa_formularios(libro) -> List[Dict[str, Any]]:
                         "coordMerge":       coord_merge,
                         "esCasillaVerificacion": es_casilla,
                         "colorFondo": color_fondo,
+                        "destinosPropuestos": {
+                            direccion: resolver_destino_definitivo(hoja, fila, columna, direccion, c_inicio_linea)
+                            for direccion in ("derecha", "abajo", "misma")
+                        },
                     }
                 )
     return formulario
