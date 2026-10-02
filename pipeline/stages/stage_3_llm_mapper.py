@@ -617,7 +617,7 @@ def ejecutar_stage_3_mapper(
             campos_llm = []
 
             for c in campos_lote:
-                campo_alias = resolver_campo_por_alias_determinista(c.get("rotulo", ""))
+                campo_alias = resolver_campo_por_alias_determinista(c.get("rotulo", "") or c.get("valor", ""))
                 if campo_alias and (campo_alias in ctx.datos_empresa or campo_alias in perfil_plano):
                     asignaciones_determ.append({
                         "id": c["id"],
@@ -735,13 +735,16 @@ def ejecutar_stage_3_mapper(
                 if ubic not in ("derecha", "abajo", "misma"):
                     ubic = "derecha"
 
+            rot_label = str(c_info.get("rotulo") or elem_orig.get("rotulo") or elem_orig.get("valor") or "").strip()
             plan_item = {
                 "hoja": str(elem_orig.get("hoja", "Hoja1")),
                 "fila": int(elem_orig.get("fila", 1) or 1),
                 "columna": int(elem_orig.get("columna", 1) or 1),
                 "inicioLineaCol": int(elem_orig.get("inicioLineaCol", 0) or 0),
                 "finLineaCol": int(elem_orig.get("finLineaCol", 0) or 0),
-                "valor": c_info["rotulo"],
+                "rotulo": rot_label,
+                "rotulo_original": rot_label,
+                "valor": rot_label,
                 "ubicacion": ubic,
                 "campo": campo_empresa,
                 "requiereMerge": bool(ancho_l > 1 and ubic == "derecha"),

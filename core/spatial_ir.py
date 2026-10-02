@@ -293,6 +293,7 @@ _TERMINOS_CAMPO_CORTO = re.compile(
     r"lugar\s+(?:de\s+)?expedici[oó]n|ciiu|c[oó]digo\s+ciiu|c[oó]digo|codigo|[aá]rea|area|"
     r"fecha|fecha\s+de\s+diligenciamiento|diligenciamiento|"
     r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento|"
+    r"porcentaje|participaci[oó]n|participacion|%\s*participaci[oó]n|"
     r"empresa|contacto|activos?|pasivos?|patrimonio|ingresos?|egresos?|gastos?|ventas?)\b",
     re.IGNORECASE,
 )
@@ -328,8 +329,8 @@ def _es_titulo_seccion(texto: str, propiedades: Optional[Dict[str, Any]] = None)
     if _PATRON_ROTULOS_TABLA_O_CATEGORIA.match(t_clean):
         return False
 
-    # Valores porcentuales o avances nunca son títulos de sección (ej. 'En 1ra auditoria interna 50%')
-    if re.search(r"\d+\s*%", t_clean):
+    # Valores porcentuales, participaciones o avances nunca son títulos de sección
+    if re.search(r"\d+\s*%", t_clean) or re.search(r"\b(?:porcentaje|participaci[oó]n)\b", t_clean, re.IGNORECASE):
         return False
 
     # Bloque condicional PEP afirmativo (ADR-0011): "En caso de que su respuesta haya sido positiva..."
@@ -770,10 +771,20 @@ def construir_ir(
                 ab_vacia = bool(elem.get("abajoVacia", False))
                 ab_es_merge = bool(elem.get("abajoEsMerge", False))
                 der_es_merge = bool(elem.get("derechaEsMerge", False))
-                es_cabecera_tabla = bool(re.search(r"^\s*(?:apellidos?|nombres?|tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero(?:\s*id)?|identificaci[oó]n|porcentaje|%\s*participaci[oó]n|banco|sucursal|no\.?\s*cuenta|[aá]rea|cargo)\s*$", texto, re.IGNORECASE))
+                es_cabecera_tabla = bool(re.search(
+                    r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
+                    r"nombre\s+socio|nombre\s*/?\s*razon\s*social|identificaci[oó]n\s*/?\s*tipo\s+id|"
+                    r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|"
+                    r"nombres?|apellidos?|"
+                    r"porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|participaci[oó]n(?:\s+accionaria)?|valor|parentesco|vinculo)\s*$",
+                    texto,
+                    re.IGNORECASE
+                ))
                 if re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "misma"
-                elif ab_vacia and (not der_vacia or es_cabecera_tabla or (ab_es_merge and not der_es_merge)):
+                elif es_cabecera_tabla:
+                    dir_esc = "abajo"
+                elif ab_vacia and (not der_vacia or (ab_es_merge and not der_es_merge)):
                     dir_esc = "abajo"
                 else:
                     dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()

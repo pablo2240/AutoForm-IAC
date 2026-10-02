@@ -575,7 +575,7 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
         if isinstance(valor, (int, float)):
             try:
                 num_actual = _convertir_a_numero_crudo(txt_actual)
-                if num_actual == valor:
+                if num_actual == valor or (isinstance(num_actual, (int, float)) and (num_actual * 100 == valor or num_actual == valor / 100)):
                     return True
             except Exception:
                 pass
@@ -593,7 +593,10 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
             return False
 
         try:
-            celda.value = valor
+            if isinstance(valor, (int, float)) and celda.number_format and "%" in celda.number_format and valor > 1:
+                celda.value = valor / 100.0
+            else:
+                celda.value = valor
             return True
         except AttributeError:
             return False
@@ -602,7 +605,10 @@ def _escribir_valor_en_celda(celda, valor: Any, es_misma_celda: bool, hoja: Opti
     if es_formula_o_vacio_visualmente:
         # Celda estaba vacía o solo contenía líneas/guiones puros
         try:
-            celda.value = valor
+            if isinstance(valor, (int, float)) and celda.number_format and "%" in celda.number_format and valor > 1:
+                celda.value = valor / 100.0
+            else:
+                celda.value = valor
             return True
         except AttributeError:
             return False

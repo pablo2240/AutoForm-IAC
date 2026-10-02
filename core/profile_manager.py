@@ -205,6 +205,10 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
                 a0 = accs[0]
                 plano["accionista_nombre"] = a0.get("nombre", "")
                 plano["accionista_tipo_id"] = a0.get("tipo_identificacion", "C.C")
+                t_id = a0.get("tipo_identificacion", "C.C")
+                n_id = str(a0.get("identificacion", "")).strip()
+                plano["accionista_id_completo"] = f"{t_id} {n_id}".strip() if t_id and n_id else (n_id or t_id)
+                plano["socio_id_completo"] = plano["accionista_id_completo"]
                 plano["accionista_identificacion"] = a0.get("identificacion", "")
                 plano["accionista_porcentaje"] = a0.get("porcentaje_participacion", 100)
                 plano["socio_nombre"] = a0.get("nombre", "")
@@ -217,6 +221,9 @@ def aplanar_perfil(datos: Dict[str, Any]) -> Dict[str, Any]:
                 plano["beneficiario_nombre"] = b0.get("nombre", "")
                 plano["beneficiario_tipo_id"] = b0.get("tipo_identificacion", "C.C")
                 plano["beneficiario_identificacion"] = b0.get("identificacion", "")
+                tb_id = b0.get("tipo_identificacion", "C.C")
+                nb_id = str(b0.get("identificacion", "")).strip()
+                plano["beneficiario_id_completo"] = f"{tb_id} {nb_id}".strip() if tb_id and nb_id else (nb_id or tb_id)
                 plano["beneficiario_porcentaje"] = b0.get("porcentaje_participacion", 100)
         # Mantener claves adicionales que puedan estar en la raíz
         for k, v in datos.items():
@@ -409,9 +416,9 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
         "total_patrimonio", "patrimonio", "total_ingresos_mensuales", "ingresos_mensuales",
         "total_egresos_mensuales", "egresos_mensuales", "total_ingresos_anuales", "ingresos_anuales",
         "total_egresos_anuales", "egresos_anuales", "ciudad_departamento",
-        "societario", "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_porcentaje",
-        "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_porcentaje",
-        "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_porcentaje"
+        "societario", "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_id_completo", "accionista_porcentaje",
+        "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_id_completo", "socio_porcentaje",
+        "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_id_completo", "beneficiario_porcentaje"
     }
     for k, v in plano.items():
         if k not in claves_procesadas and "." not in k and v:

@@ -295,6 +295,49 @@ class TestGEF021:
         assert tipo is not None, "R40 C7 (tipo ID beneficiario) no debe estar vacío"
         assert "c.c" in tipo.lower() or "cc" in tipo.lower()
 
+    # R10 → País y Departamento
+    def test_r10_pais_y_departamento(self, ws_ge):
+        """R10 debe contener el País (Colombia en C6) y Departamento (Antioquia en C9)."""
+        pais = _cell(ws_ge, 10, 6)
+        depto = _cell(ws_ge, 10, 9)
+        assert pais == "Colombia", f"R10 C6 (país) debe ser Colombia, got: {pais!r}"
+        assert depto == "Antioquia", f"R10 C9 (departamento) debe ser Antioquia, got: {depto!r}"
+
+    # R24 → Junta Directiva
+    def test_r24_junta_directiva(self, ws_ge):
+        """R24 debe contener la identificación y datos de la junta directiva."""
+        tipo_id = _cell(ws_ge, 24, 3)
+        numero = _cell(ws_ge, 24, 4)
+        nombre = _cell(ws_ge, 24, 5)
+        apellidos = _cell(ws_ge, 24, 10)
+        assert tipo_id == "C.C", f"R24 C3 (tipo id) debe ser C.C, got: {tipo_id!r}"
+        assert numero == "98555384", f"R24 C4 (número id) debe ser 98555384, got: {numero!r}"
+        assert nombre is not None and "guillermo" in nombre.lower(), f"R24 C5 (nombre) debe ser Guillermo, got: {nombre!r}"
+        assert apellidos is not None and "cañón" in apellidos.lower() or "canon" in apellidos.lower(), f"R24 C10 (apellidos) debe ser Cañón Sarria, got: {apellidos!r}"
+
+    # R32 / R40 → ID Completo y Porcentaje
+    def test_r32_composicion_accionaria_completa(self, ws_ge):
+        """R32 debe contener ID completo (C.C 98555384) y porcentaje de participación."""
+        id_comp = _cell(ws_ge, 32, 7)
+        pct = _cell(ws_ge, 32, 11)
+        assert id_comp is not None and "98555384" in id_comp and "c.c" in id_comp.lower(), (
+            f"R32 C7 debe contener C.C 98555384, got: {id_comp!r}"
+        )
+        assert pct in ("1", "1.0", "100", "100%", "100.00%"), (
+            f"R32 C11 (porcentaje participación) debe ser 1 o 100%, got: {pct!r}"
+        )
+
+    def test_r40_beneficiarios_finales_completo(self, ws_ge):
+        """R40 debe contener ID completo (C.C 98555384) y porcentaje de participación."""
+        id_comp = _cell(ws_ge, 40, 7)
+        pct = _cell(ws_ge, 40, 11)
+        assert id_comp is not None and "98555384" in id_comp and "c.c" in id_comp.lower(), (
+            f"R40 C7 debe contener C.C 98555384, got: {id_comp!r}"
+        )
+        assert pct in ("1", "1.0", "100", "100%", "100.00%"), (
+            f"R40 C11 (porcentaje participación) debe ser 1 o 100%, got: {pct!r}"
+        )
+
     # Aislamiento de roles: ninguna sección legal debe tener datos del contacto comercial
     def test_no_antonio_in_legal_sections(self, ws_ge):
         """ADR-0011 Q1: En ninguna fila de secciones legales debe aparecer 'Antonio'
@@ -313,3 +356,4 @@ class TestGEF021:
                     pytest.fail(
                         f"R{row} C{col}: 'Antonio' (contacto comercial) encontrado en sección legal: {val!r}"
                     )
+

@@ -39,6 +39,12 @@ def _celda_vacia(hoja: Worksheet, fila: int, col: int) -> bool:
     if fila > (hoja.max_row or 0) or col > (hoja.max_column or 0):
         return True
         
+    # Si la celda está en un merge, su valor real reside en la celda superior izquierda
+    for rango in hoja.merged_cells.ranges:
+        if rango.min_row <= fila <= rango.max_row and rango.min_col <= col <= rango.max_col:
+            celda_m = hoja.cell(row=rango.min_row, column=rango.min_col)
+            return celda_m.value is None or str(celda_m.value).strip() == ""
+
     celda = hoja.cell(row=fila, column=col)
     return celda.value is None or str(celda.value).strip() == ""
 

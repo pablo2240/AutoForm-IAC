@@ -38,7 +38,7 @@ PAT_SECCION_FINANCIERO = re.compile(
     re.IGNORECASE,
 )
 PAT_SECCION_JUNTA_COMP = re.compile(
-    r"\b(?:junta\s+directiva|composici[oó]n|accionistas?|socios?|administraci[oó]n)\b",
+    r"\b(?:junta\s+directiva|composici[oó]n|accionistas?|socios?|administraci[oó]n|beneficiarios?(?:\s+finales?)?)\b",
     re.IGNORECASE,
 )
 PAT_SECCION_CONTACTO_COMERCIAL = re.compile(
@@ -282,7 +282,13 @@ PATRONES_SWEEP: List[Tuple[re.Pattern, re.Pattern, str, str]] = [
     ),
     (
         PAT_SECCION_JUNTA_COMP,
-        re.compile(r"^\s*(?:identificaci[oó]n(?:\s*/?\s*tipo\s+id)?|n[uú]mero|n[uú]mero\s+id|no\.?\s*id|id|c\.?c\.?|cedula)\s*$", re.IGNORECASE),
+        re.compile(r"^\s*(?:identificaci[oó]n\s*/?\s*tipo\s+id|tipo\s+id\s*/\s*identificaci[oó]n)\s*$", re.IGNORECASE),
+        "accionista_id_completo",
+        "abajo",
+    ),
+    (
+        PAT_SECCION_JUNTA_COMP,
+        re.compile(r"^\s*(?:identificaci[oó]n|n[uú]mero|n[uú]mero\s+id|no\.?\s*id|no\.?\s*doc|c\.?c\.?|cedula)\s*$", re.IGNORECASE),
         "accionista_identificacion",
         "abajo",
     ),

@@ -53,7 +53,7 @@ class PipelineOrchestrator:
         try:
             from core.spatial_ir import construir_ir
             ctx.documento_ir = construir_ir(
-                ctx.elementos_raw,
+                todos_clasif,
                 nombre_archivo=ctx.nombre_archivo,
                 tipo_documento=ctx.tipo_documento,
             )

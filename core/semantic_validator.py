@@ -373,7 +373,7 @@ def _regla_autocorrecciones_semanticas_adicionales(
 
     # 2b. 'Nombre' / 'Nombre :' en sección de Representante Legal, Firma o Societario
     es_rotulo_nombre = bool(re.match(r"^\s*(?:nombre|nombres|nombre\s+completo|nombres?\s+y\s+apellidos?)\s*:?\s*$", rotulo_normalizado, re.IGNORECASE))
-    es_sec_societario = any(t in seccion_normalizada for t in ("accionista", "socio", "beneficiario", "composicion", "capital"))
+    es_sec_societario = any(t in seccion_normalizada for t in ("accionista", "socio", "beneficiario", "composicion", "capital", "junta", "directiva", "administracion", "organos"))
     es_sec_rep_o_firma = (
         any(t in seccion_normalizada for t in _TOKENS_SECCION_REP_LEGAL)
         or "firma" in seccion_normalizada
@@ -402,8 +402,17 @@ def _regla_autocorrecciones_semanticas_adicionales(
         if campo != "nit":
             return "nit", "Rótulo 'NIT / TAX ID' → asignado a 'nit'."
 
-    # 5. Tipo de Identificación -> tipo_documento o accionista_tipo_id
-    if "tipo" in rotulo_normalizado and any(k in rotulo_normalizado for k in ("documento", "identificacion", "id")):
+    # 5a. Identificación Compuesta (Identificación / Tipo ID) -> accionista_id_completo
+    es_id_compuesta = any(p in rotulo_normalizado for p in ("identificacion/tipo", "identificacion / tipo", "tipo/identificacion", "tipo / identificacion", "identificacion tipo id"))
+    if es_id_compuesta:
+        if es_sec_societario:
+            if campo != "accionista_id_completo":
+                return "accionista_id_completo", "Rótulo 'Identificación/TIPO ID' en contexto Societario → asignado a 'accionista_id_completo' (ADR-0011)."
+        elif campo != "cedula_completa":
+            return "cedula_completa", "Rótulo 'Identificación/Tipo' → asignado a 'cedula_completa'."
+
+    # 5b. Tipo de Identificación puro -> tipo_documento o accionista_tipo_id
+    if ("tipo" in rotulo_normalizado and any(k in rotulo_normalizado for k in ("documento", "identificacion", "id"))) and not es_id_compuesta and not any(p in rotulo_normalizado for p in ("numero", "nro")):
         if es_sec_societario:
             if campo != "accionista_tipo_id":
                 return "accionista_tipo_id", "Rótulo 'Tipo de Identificación' en contexto Societario → asignado a 'accionista_tipo_id' (ADR-0011)."
@@ -417,6 +426,14 @@ def _regla_autocorrecciones_semanticas_adicionales(
                 return "numero_cuenta", "Rótulo 'No. de Cuenta / Cuenta' → asignado a 'numero_cuenta'."
 
     # 6. Desambiguación Contextual de 'Número', 'No.', 'N°', 'Identificación' (Empresa vs Representante vs Bancario vs Societario)
+    ctx_f_norm = str(contexto_fila or "").lower()
+    es_columna_secuencia = (
+        rotulo_normalizado in ("id", "item", "no", "nro")
+        and ("tipo id" in ctx_f_norm or ("numero" in ctx_f_norm and any(k in ctx_f_norm for k in ("nombre", "apellido"))))
+    )
+    if es_columna_secuencia:
+        return "", "Columna 'ID' es índice secuencial de tabla con 'Número'/'Tipo ID' separados → no es cédula."
+
     es_rotulo_numero_o_id = bool(
         re.match(r"^\s*(?:n[uú]mero|no|n|nro|num|identificaci[oó]n|documento|id|no\s*doc)[°º\.:]?\s*$", rotulo_normalizado, re.IGNORECASE)
         or re.search(r"\b(?:n[uú]mero|nro|no|n[°º]?)\s*(?:de\s+)?(?:identificaci[oó]n|documento|id|nit|c[eé]dula|cuenta)\b", rotulo_normalizado)
@@ -653,7 +670,7 @@ def validar_item_mapeo(
     # ── Safe Passivity y Domain Isolation (ADR-0004 / ADR-0007 / ADR-0009): Contacto comercial ──
     pertinencia_item = str(plan_item.get("seccion_pertinencia") or plan_item.get("pertinencia") or "").upper()
     es_sec_rep_legal = any(t in seccion_norm for t in _TOKENS_SECCION_REP_LEGAL) and not ("aplica persona natural" in seccion_norm)
-    es_sec_societario = any(t in seccion_norm for t in ("accionista", "socio", "beneficiario", "composicion", "capital"))
+    es_sec_societario = any(t in seccion_norm for t in ("accionista", "socio", "beneficiario", "composicion", "capital", "junta", "directiva", "administracion", "organos"))
     es_sec_contacto = (
         pertinencia_item == "CONTACTO_COMERCIAL"
         or (

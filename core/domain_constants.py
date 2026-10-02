@@ -119,9 +119,9 @@ CAMPOS_EMPRESA: Set[str] = {
 
 # Campos de Composición Accionaria y Beneficiarios Finales (ADR-0011)
 CAMPOS_SOCIETARIO: Set[str] = {
-    "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_porcentaje",
-    "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_porcentaje",
-    "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_porcentaje",
+    "accionista_nombre", "accionista_tipo_id", "accionista_identificacion", "accionista_id_completo", "accionista_porcentaje",
+    "socio_nombre", "socio_tipo_id", "socio_identificacion", "socio_id_completo", "socio_porcentaje",
+    "beneficiario_nombre", "beneficiario_tipo_id", "beneficiario_identificacion", "beneficiario_id_completo", "beneficiario_porcentaje",
 }
 
 # ── Tokens de sección para clasificación de dominio ────────────────────────────
@@ -582,18 +582,25 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
         "accionista nombre", "nombre del accionista", "nombre o razon social",
     ],
     "accionista_identificacion": [
-        "identificacion accionista", "identificacion/tipo id", "identificación/tipo id",
-        "identificacion socio", "numero identificacion accionista",
+        "identificacion accionista", "identificacion socio", "numero identificacion accionista",
+    ],
+    "accionista_id_completo": [
+        "identificacion/tipo id", "identificación/tipo id", "identificacion / tipo id",
+        "tipo id / identificacion", "tipo/identificacion", "identificacion tipo id",
     ],
     "accionista_porcentaje": [
         "porcentaje participacion", "porcentaje participación", "porcentaje participacion accionaria",
-        "% participacion", "% de participacion", "% participacion accionaria",
+        "porcentaje participación accionaria", "% participacion", "% de participacion", "% participacion accionaria",
+        "participacion accionaria", "participación accionaria",
     ],
     "beneficiario_nombre": [
         "nombre beneficiario final", "beneficiario final nombre", "nombre del beneficiario final",
     ],
     "beneficiario_identificacion": [
         "identificacion beneficiario final", "identificacion beneficiario real",
+    ],
+    "beneficiario_id_completo": [
+        "identificacion/tipo id", "identificación/tipo id", "identificacion / tipo id",
     ],
 }
 

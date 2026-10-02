@@ -311,7 +311,7 @@ def preparar_tabla_verificacion(
         hoja = str(item.get("hoja", "") or "Hoja1")
         fila = int(item.get("fila", 0) or 0)
         col = int(item.get("columna", 0) or 0)
-        rotulo = str(item.get("valor") or item.get("rotulo") or item.get("encabezado") or "").strip()
+        rotulo = str(item.get("rotulo_original") or item.get("rotulo") or item.get("encabezado") or item.get("valor") or "").strip()
         campo = str(item.get("campo", "")).strip()
         seccion = str(item.get("seccion") or item.get("seccion_padre") or "INFORMACIÓN GENERAL").strip()
         

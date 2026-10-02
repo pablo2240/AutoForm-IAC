@@ -104,16 +104,17 @@ _TERMINOS_CAMPO_CORTO = re.compile(
     r"\b(nit|rut|c\.?c\.?|c\.?e\.?|cedula|raz[oó]n\s+social|nombre|tel[eé]fono|celular|direcci[oó]n|"
     r"correo|email|ciudad|municipio|departamento|pa[ií]s|cargo|banco|cuenta|"
     r"p[aá]gina|web|objeto|actividad|lugar_expedici[oó]n|expedici[oó]n|matr[ií]cula|"
+    r"porcentaje|participaci[oó]n|participacion|"
     r"sucursal|dv|d[ií]gito|establecimiento|domicilio|sede|n[uú]mero|nro|no|num|identificaci[oó]n|documento)\b",
     re.IGNORECASE
 )
 
 _PATRON_CABECERAS_TABLA = re.compile(
     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
-    r"nombre\s+socio|identificaci[oó]n\s*/?\s*tipo\s+id|"
-    r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|id|"
+    r"nombre\s+socio|nombre\s*/?\s*razon\s*social|identificaci[oó]n\s*/?\s*tipo\s+id|"
+    r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|"
     r"nombres?|apellidos?|"
-    r"porcentaje|%\s*participaci[oó]n|valor|parentesco|vinculo)\s*$",
+    r"porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|participaci[oó]n(?:\s+accionaria)?|valor|parentesco|vinculo)\s*$",
     re.IGNORECASE
 )
 
@@ -356,13 +357,14 @@ def clasificar_elementos_formulario(
             )
 
             # Heurística de orientación vertical en formularios corporativos:
-            # Si abajo hay una celda combinada vacía para captura (abajo_es_merge y abajo_vacia)
-            # y a la derecha NO es un merge propio de captura, la dirección es estrictamente "abajo".
+            # Si abajo hay una celda combinada vacía para captura (abajo_es_merge y abajo_vacia),
+            # a la derecha NO está vacía y a la derecha NO es un merge propio de captura, la dirección es estrictamente "abajo".
             es_captura_vertical = (
                 abajo_vacia
                 and abajo_es_merge
                 and not derecha_es_merge
                 and not tiene_guiones_inline
+                and not derecha_vacia
             )
 
             if tiene_guiones_inline:
