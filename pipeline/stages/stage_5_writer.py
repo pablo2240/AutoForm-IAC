@@ -42,6 +42,7 @@ def ejecutar_stage_5_writer(ctx: PipelineContext) -> PipelineContext:
                 archivo_generado_bytes=archivo_resultado,
                 plan_mapeo=plan_final,
                 inspeccion_original=insp,
+                reporte_inyeccion=reporte,
             )
             ctx.resultado_verificacion = res_verif
             ctx.log(
