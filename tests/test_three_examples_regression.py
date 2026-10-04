@@ -27,9 +27,6 @@ import openpyxl
 import pytest
 
 # ── Configuración del entorno ──────────────────────────────────────────────────
-os.environ.setdefault("APP_ENVIRONMENT", "development")
-os.environ.setdefault("USE_SQLITE", "true")
-
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
@@ -43,6 +40,13 @@ from pipeline.orchestrator import PipelineOrchestrator
 EXAMPLE_DIR = ROOT / "example"
 OUTPUT_DIR  = ROOT / "scratch" / "excel_output_test"
 CONFIG_PATH = ROOT / "config" / "datos_empresa.json"
+
+
+@pytest.fixture(autouse=True)
+def _aislar_persistencia_local(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Limita SQLite a cada prueba de regresión y restaura el entorno al finalizar."""
+    monkeypatch.setenv("APP_ENVIRONMENT", "development")
+    monkeypatch.setenv("USE_SQLITE", "true")
 
 
 def _cargar_datos_empresa() -> dict:
@@ -368,4 +372,3 @@ class TestGEF021:
                     pytest.fail(
                         f"R{row} C{col}: 'Antonio' (contacto comercial) encontrado en sección legal: {val!r}"
                     )
-

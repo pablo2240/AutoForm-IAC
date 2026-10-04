@@ -32,7 +32,7 @@ import unittest
 from unittest import mock
 import uuid
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Set
 
 import httpcore
 import httpx
@@ -76,10 +76,19 @@ class TestRemoteStagingValidation(unittest.TestCase):
     created_auth_users: List[str] = []
     created_perfiles_empresa: List[str] = []
     created_migration_runs: List[str] = []
+    linea_base: Dict[str, Set[str]] = {}
+    _entorno_original: Dict[str, str | None] = {}
 
     @classmethod
     def setUpClass(cls):
-        # Asegurar carga de variables
+        # El entorno remoto se aísla del resto de la suite: SQLite nunca es
+        # una opción para esta clase y las variables previas se restauran.
+        cls._entorno_original = {
+            clave: os.environ.get(clave)
+            for clave in ("APP_ENVIRONMENT", "USE_SQLITE", "USE_SUPABASE")
+        }
+        os.environ["APP_ENVIRONMENT"] = "staging"
+        os.environ["USE_SQLITE"] = "false"
         os.environ["USE_SUPABASE"] = "true"
         if not os.environ.get("AUTOFORM_EXCEL_STAGING_PROJECT_REF"):
             os.environ["AUTOFORM_EXCEL_STAGING_PROJECT_REF"] = STAGING_REF
@@ -99,11 +108,49 @@ class TestRemoteStagingValidation(unittest.TestCase):
 
         cls.client_admin = database.obtener_cliente_admin()
         cls.client_public = database.obtener_cliente_publico()
+        cls.linea_base = cls._capturar_linea_base(cls.client_admin)
 
     @classmethod
     def tearDownClass(cls):
         """Teardown Quirúrgico FK-Safe: elimina estrictamente las entidades creadas por exact ID."""
-        cls._ejecutar_teardown_quirurgico()
+        try:
+            cls._ejecutar_teardown_quirurgico()
+        finally:
+            for clave, valor in cls._entorno_original.items():
+                if valor is None:
+                    os.environ.pop(clave, None)
+                else:
+                    os.environ[clave] = valor
+
+    @staticmethod
+    def _identificadores(registros: List[Any], clave: str) -> Set[str]:
+        """Extrae identificadores sin inspeccionar ni modificar datos de negocio."""
+        identificadores: Set[str] = set()
+        for registro in registros or []:
+            valor = registro.get(clave) if isinstance(registro, dict) else getattr(registro, clave, None)
+            if valor is not None:
+                identificadores.add(str(valor))
+        return identificadores
+
+    @classmethod
+    def _capturar_linea_base(cls, admin: Any) -> Dict[str, Set[str]]:
+        """Obtiene una línea base de solo lectura para tolerar datos externos en staging."""
+        return {
+            "perfiles_empresa": cls._identificadores(
+                admin.table("perfiles_empresa").select("id").execute().data, "id"
+            ),
+            "perfiles_usuario": cls._identificadores(
+                admin.table("perfiles_usuario").select("id").execute().data, "id"
+            ),
+            "operadores": cls._identificadores(
+                admin.table("operadores").select("id").execute().data, "id"
+            ),
+            "migration_runs": cls._identificadores(
+                admin.table("migration_runs").select("batch_id").execute().data, "batch_id"
+            ),
+            "auth_users": cls._identificadores(admin.auth.admin.list_users(), "id"),
+            "storage_buckets": cls._identificadores(admin.storage.list_buckets(), "id"),
+        }
 
     @classmethod
     def _ejecutar_teardown_quirurgico(cls):
@@ -526,26 +573,11 @@ class TestRemoteStagingValidation(unittest.TestCase):
         self.assertEqual(res_dep.data[0]["environment"], "staging")
         self.assertEqual(res_dep.data[0]["project_ref"], STAGING_REF)
 
-        # Tablas públicas de aplicación deben estar en 0
-        res_emp = self.client_admin.table("perfiles_empresa").select("*").execute()
-        self.assertEqual(len(res_emp.data), 0, "perfiles_empresa debe tener 0 filas")
-
-        res_usr = self.client_admin.table("perfiles_usuario").select("*").execute()
-        self.assertEqual(len(res_usr.data), 0, "perfiles_usuario debe tener 0 filas")
-
-        res_op = self.client_admin.table("operadores").select("*").execute()
-        self.assertEqual(len(res_op.data), 0, "operadores debe tener 0 filas")
-
-        res_mig = self.client_admin.table("migration_runs").select("*").execute()
-        self.assertEqual(len(res_mig.data), 0, "migration_runs debe tener 0 filas")
-
-        # auth.users debe tener 0 usuarios
-        users = self.client_admin.auth.admin.list_users()
-        self.assertEqual(len(users or []), 0, "auth.users debe tener 0 usuarios")
-
-        # storage debe tener 0 buckets y 0 objetos
-        buckets = self.client_admin.storage.list_buckets()
-        self.assertEqual(len(buckets or []), 0, "storage no debe tener buckets ni objetos")
+        # Staging es compartido: debe volver exactamente a la línea base de
+        # solo lectura capturada antes de crear datos sintéticos. Nunca se
+        # elimina ni se presupone que no exista información externa.
+        linea_final = self._capturar_linea_base(self.client_admin)
+        self.assertEqual(linea_final, self.linea_base, "El teardown dejó residuos o alteró datos externos")
 
 
 if __name__ == "__main__":
