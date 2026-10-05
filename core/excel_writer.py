@@ -864,7 +864,9 @@ def _rellenar_plan_estricto(
         except ValueError:
             pass
         workbook.vba_archive = None
-    return salida.getvalue(), reporte
+    bytes_guardados = salida.getvalue()
+    bytes_finales = _preservar_vml_y_controles(bytes_excel, bytes_guardados)
+    return bytes_finales, reporte
 
 
 # ---------------------------------------------------------------------------
@@ -1228,7 +1230,7 @@ def _rellenar_formulario_legacy(
     bytes_guardados = salida.getvalue()
 
     # Serialización limpia en formato nativo OpenXML (100% compatible con Microsoft Excel)
-    bytes_finales = bytes_guardados
+    bytes_finales = _preservar_vml_y_controles(bytes_excel, bytes_guardados)
 
     # Resumen final en consola
     ok_count        = sum(1 for r in reporte if r["estado"] == "OK")
