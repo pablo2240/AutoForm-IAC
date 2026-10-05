@@ -18,8 +18,13 @@ except ImportError:
 
 import sys
 import importlib
+import threading
 
-for modulo in [
+# Hot-reload exclusivo de desarrollo local. En staging/production NO se recargan módulos:
+# importlib.reload sobre sys.modules compartido provoca condiciones de carrera entre sesiones
+# concurrentes de Streamlit Cloud (KeyError / "not in sys.modules") que dejan la app caída.
+_HOT_RELOAD_LOCK = threading.Lock()
+_HOT_RELOAD_MODULOS = [
     "core.database", "core.auth_manager", "core.llm_client", "core.excel_parser", "core.excel_writer", "core.mapper",
     "core.profile_manager", "core.spatial_ir", "core.semantic_validator", "core.fastembed_matcher",
     "core.coverage_engine", "core.embedding_engine", "core.field_detection_engine", "core.schema_models",
@@ -28,9 +33,18 @@ for modulo in [
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
     "pipeline.stages.stage_3_llm_mapper", "pipeline.stages.stage_5_writer",
     "ui.page_verify", "ui.page_download", "ui.page_upload", "template_store.store",
-]:
-    if modulo in sys.modules:
-        importlib.reload(sys.modules[modulo])
+]
+
+if os.getenv("APP_ENVIRONMENT", "production").strip().lower() == "development":
+    with _HOT_RELOAD_LOCK:
+        for modulo in _HOT_RELOAD_MODULOS:
+            _modulo_cargado = sys.modules.get(modulo)
+            if _modulo_cargado is None:
+                continue
+            try:
+                importlib.reload(_modulo_cargado)
+            except (ImportError, KeyError) as exc_reload:
+                print(f"[AutoForm AI] Hot-reload omitido para '{modulo}': {exc_reload}")
 
 from core import excel_parser, excel_writer, mapper, profile_manager, llm_client, auth_manager
 from core.mapper import get_debug_info as _get_debug_info
