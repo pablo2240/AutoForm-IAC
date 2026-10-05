@@ -803,6 +803,17 @@ def _rellenar_plan_estricto(
         hoja = str(item.get("hoja") or "")
         fila = item.get("fila_destino")
         columna = item.get("columna_destino")
+        if (fila is None or columna is None) and item.get("fila") and item.get("columna"):
+            f_orig = int(item["fila"])
+            c_orig = int(item["columna"])
+            ub = str(item.get("ubicacion") or "derecha").lower()
+            if ub == "abajo":
+                fila, columna = f_orig + 1, c_orig
+            elif ub == "misma":
+                fila, columna = f_orig, c_orig
+            else:
+                fila, columna = f_orig, c_orig + 1
+
         if str(item.get("estado", "")).upper() == "DESCARTADO" or item.get("bloqueante") or item.get("operacion") == "OMITIR":
             reporte.append(_log_item("BLOCKED", item, None, int(fila or 0), int(columna or 0), "Directiva no autorizada por el validador"))
             continue
@@ -816,6 +827,8 @@ def _rellenar_plan_estricto(
             reporte.append(_log_item("BLOCKED", item, None, fila_i, columna_i, "Colisión con otra directiva aprobada"))
             continue
         valor = item.get("valor_a_escribir")
+        if valor is None:
+            valor = item.get("valor")
         if valor is None:
             valor = _obtener_valor_datos(datos_empresa, str(item.get("campo") or ""))
         if valor is None:

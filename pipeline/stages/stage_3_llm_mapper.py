@@ -517,14 +517,13 @@ def _aplicar_validacion_deterministica(
             else:
                 item["confianza"] = 0.30
 
-            # La automatización sólo puede ejecutar mapeos deterministas o de
-            # alta confianza. Las ambigüedades llegan a la UI de revisión.
+            # Sugerencias parciales o campos en revisión se reportan sin bloquear la exportación
             if item.get("estado") == EstadoMapeo.REVISION:
-                item["bloqueante"] = True
                 advertencias = list(item.get("advertencias") or [])
-                if "Revisión humana requerida antes de escribir." not in advertencias:
-                    advertencias.append("Revisión humana requerida antes de escribir.")
+                if "Sugerencia parcial pendiente de confirmar." not in advertencias:
+                    advertencias.append("Sugerencia parcial pendiente de confirmar.")
                 item["advertencias"] = advertencias
+                item["bloqueante"] = False
     except Exception as exc_insp_val:
         ctx.log(f"[Stage 3b - Validador] Advertencia en enriquecimiento de inspección: {exc_insp_val}")
 

@@ -351,14 +351,30 @@ def preparar_tabla_verificacion(
 
         if inspeccion_excel:
             if inspeccion_excel.es_celda_formula(hoja, f_dest, c_dest):
-                es_bloqueante = True
                 f_val = inspeccion_excel.celdas_con_formula.get((hoja, f_dest, c_dest), "")
-                if not any("FÓRMULA" in a.upper() for a in advertencias_lista):
-                    advertencias_lista.append(f"🚫 FÓRMULA: Celda {celda} contiene cálculo original ('{f_val}').")
-            if inspeccion_excel.es_celda_protegida(hoja, f_dest, c_dest):
-                es_bloqueante = True
-                if not any("BLOQUEADA" in a.upper() for a in advertencias_lista):
-                    advertencias_lista.append(f"🔒 BLOQUEADA: Celda {celda} protegida.")
+                # Re-enrutar si la dirección alternativa está libre
+                dir_alt = "abajo" if ubicacion == "derecha" else ("derecha" if ubicacion == "abajo" else None)
+                re_enrutado = False
+                if dir_alt:
+                    f_alt, c_alt = (fila + 1, col) if dir_alt == "abajo" else (fila, col + 1)
+                    if not inspeccion_excel.es_celda_formula(hoja, f_alt, c_alt) and not inspeccion_excel.es_celda_protegida(hoja, f_alt, c_alt):
+                        f_dest, c_dest = f_alt, c_alt
+                        ubicacion = dir_alt
+                        celda = f"{get_column_letter(c_dest)}{f_dest}"
+                        re_enrutado = True
+                        advertencias_lista.append(f"ℹ️ Re-enrutado a {dir_alt} ({celda}) para proteger fórmula original.")
+                if not re_enrutado:
+                    campo_select = OPCION_OMITIR
+                    valor_real = ""
+                    badge = "0.00 🛡️ Preservada"
+                    advertencias_lista.append(f"ℹ️ Celda {celda} calculada por fórmula ('{f_val}'); preservada intacta sin sobreescritura.")
+                    es_bloqueante = False
+            elif inspeccion_excel.es_celda_protegida(hoja, f_dest, c_dest):
+                campo_select = OPCION_OMITIR
+                valor_real = ""
+                badge = "0.00 🛡️ Protegida"
+                advertencias_lista.append(f"ℹ️ Celda {celda} protegida en plantilla; preservada sin sobreescritura.")
+                es_bloqueante = False
 
         adv_display = " | ".join(advertencias_lista) if advertencias_lista else "Ninguna"
 
@@ -475,11 +491,11 @@ def preparar_tabla_verificacion(
             if inspeccion_excel:
                 v_ant_e = inspeccion_excel.obtener_valor_anterior(hoja_e, f_dest_e, c_dest_e)
                 if inspeccion_excel.es_celda_formula(hoja_e, f_dest_e, c_dest_e):
-                    bloqueante_e = True
-                    advs_e.append(f"🚫 FÓRMULA: Celda {celda_str_e} contiene fórmula.")
+                    bloqueante_e = False
+                    advs_e.append(f"ℹ️ FÓRMULA: Celda {celda_str_e} contiene cálculo de la plantilla.")
                 if inspeccion_excel.es_celda_protegida(hoja_e, f_dest_e, c_dest_e):
-                    bloqueante_e = True
-                    advs_e.append(f"🔒 BLOQUEADA: Celda {celda_str_e} protegida.")
+                    bloqueante_e = False
+                    advs_e.append(f"ℹ️ PROTEGIDA: Celda {celda_str_e} protegida.")
             val_ant_e_str = "-" if v_ant_e is None or str(v_ant_e).strip() == "" else str(v_ant_e)
 
             adv_e_str = " | ".join(advs_e) if advs_e else (motivo_desc if "Descartado" in motivo_desc else "Ninguna")
@@ -666,18 +682,18 @@ def render_pantalla_verificacion(
         st.metric("🟢 Alta Confianza", f"{total_alta_confianza}", help="Campos validados y aprobados automáticamente")
     with col3:
         st.metric("🟡 Requieren Revisión", f"{total_revision}", help="Campos con sugerencia parcial o pendientes de asignar")
+    total_preservadas = sum(1 for _, r in master_df.iterrows() if "preservad" in str(r.get("Advertencias", "")).lower() or "protegid" in str(r.get("Advertencias", "")).lower())
     with col4:
-        if total_bloqueantes > 0:
-            st.metric("🚫 Bloqueantes", f"{total_bloqueantes}", delta="-Conflicto", delta_color="inverse", help="Campos que intentarían sobrescribir fórmulas o celdas bloqueadas")
+        if total_preservadas > 0:
+            st.metric("🛡️ Preservadas", f"{total_preservadas}", help="Celdas con fórmulas o protegidas preservadas automáticamente")
         else:
             st.metric("✏️ Asignados", f"{total_asignados}", delta=f"{total_editados} manuales" if total_editados > 0 else None)
 
-    # ── Alerta Visual de Errores Bloqueantes ──
-    if total_bloqueantes > 0:
-        st.error(
-            f"⛔ **BLOQUEO DE SEGURIDAD**: Se detectaron {total_bloqueantes} celdas con errores bloqueantes "
-            "(intento de sobreescritura de fórmulas originales o celdas protegidas). "
-            "Debes cambiar el campo a **'-- Omitir / Dejar vacío --'** o reasignar la celda antes de generar el Excel final."
+    # ── Mensaje informativo de integridad ──
+    if total_preservadas > 0:
+        st.info(
+            f"🛡️ **Protección de Fórmulas y Cálculos Activa**: Se preservaron {total_preservadas} celdas calculadas o protegidas "
+            "intactas para garantizar la lógica original de la plantilla. El documento puede descargarse normalmente."
         )
 
     # ── Filtros y Búsqueda Avanzada ──
@@ -707,7 +723,7 @@ def render_pantalla_verificacion(
                 "Todos",
                 "🟢 Solo Alta Confianza",
                 "🟡 Solo Requieren Revisión",
-                "🚫 Solo Errores Bloqueantes",
+                "🛡️ Celdas con Fórmulas / Protegidas",
                 "✏️ Solo Editados",
                 "⚪ Sin Asignar",
             ],
@@ -737,10 +753,9 @@ def render_pantalla_verificacion(
             df_filtrado["Nivel de Confianza"].astype(str).str.contains("🟡") |
             ((df_filtrado["Campo Asignado"] == OPCION_OMITIR) & (~df_filtrado["Nivel de Confianza"].astype(str).str.contains("⚫")))
         ]
-    elif vista_filtro == "🚫 Solo Errores Bloqueantes":
+    elif vista_filtro == "🛡️ Celdas con Fórmulas / Protegidas":
         df_filtrado = df_filtrado[
-            df_filtrado["_bloqueante"].astype(bool) |
-            df_filtrado["Advertencias"].astype(str).str.contains("🚫")
+            df_filtrado["Advertencias"].astype(str).str.contains("FÓRMULA|formula|protegid", case=False)
         ]
     elif vista_filtro == "✏️ Solo Editados":
         df_filtrado = df_filtrado[df_filtrado["Nivel de Confianza"].astype(str).str.contains("✏️")]
@@ -844,11 +859,11 @@ def render_pantalla_verificacion(
                         if insp:
                             if insp.es_celda_formula(hoja_act, f_dest, c_dest):
                                 f_orig = insp.celdas_con_formula.get((hoja_act, f_dest, c_dest), "")
-                                advs.append(f"🚫 FÓRMULA: Celda {celda_str} contiene fórmula ('{f_orig}').")
-                                bloquea = True
+                                advs.append(f"ℹ️ FÓRMULA: Celda {celda_str} tiene fórmula ('{f_orig}'). Se preservará el cálculo.")
+                                bloquea = False
                             if insp.es_celda_protegida(hoja_act, f_dest, c_dest):
-                                advs.append(f"🔒 BLOQUEADA: Celda {celda_str} protegida.")
-                                bloquea = True
+                                advs.append(f"ℹ️ Celda {celda_str} protegida; se preservará sin sobreescribir.")
+                                bloquea = False
                             reg_dv = insp.obtener_validacion(hoja_act, f_dest, c_dest)
                             if reg_dv and reg_dv.tipo == "list" and reg_dv.opciones_permitidas:
                                 if not any(str(val_res).strip().lower() == op.strip().lower() for op in reg_dv.opciones_permitidas):
@@ -902,15 +917,6 @@ def render_pantalla_verificacion(
             help="Inyecta los datos confirmados en el archivo original y genera la descarga.",
         )
         if confirmar_click:
-            # Validación estricta de no bloqueantes antes de autorizar escritura
-            hay_bloqueo = any(
-                r.get("Campo Asignado") != OPCION_OMITIR and (bool(r.get("_bloqueante", False)) or "🚫" in str(r.get("Advertencias", "")))
-                for _, r in master_df.iterrows()
-            )
-            if hay_bloqueo:
-                st.error("❌ Acción bloqueada: Resuelve los conflictos con fórmulas antes de rellenar el formulario.")
-                return False, []
-
             plan_actualizado = aplicar_cambios_verificacion(master_df, plan_activo, ctx.datos_empresa)
             ctx.plan_verificado = plan_actualizado
             ctx.log(f"Plan de mapeo verificado y confirmado por el usuario ({len(plan_actualizado)} campos).")

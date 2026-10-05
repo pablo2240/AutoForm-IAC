@@ -1362,20 +1362,19 @@ def enriquecer_item_con_inspeccion_excel(
     item: Dict[str, Any],
     inspeccion: Any,
 ) -> Dict[str, Any]:
-    """Aplica las reglas de integridad de la Inspección Estructurada a un ítem de mapeo."""
+    """Aplica las reglas de integridad de la Inspección Estructurada a un ítem de mapeo sin bloquear indebidamente."""
     if inspeccion is None:
         return item
 
     res = dict(item)
     advertencias = list(res.get("advertencias") or [])
-    es_bloqueante = bool(res.get("bloqueante", False))
+    es_bloqueante = False
 
     hoja = str(res.get("hoja") or "")
     fila = int(res.get("fila") or 0)
     col = int(res.get("columna") or 0)
     ubic = str(res.get("ubicacion") or "derecha").lower()
 
-    # El parser resuelve el destino físico. Este módulo jamás lo vuelve a inferir.
     if res.get("fila_destino") and res.get("columna_destino"):
         f_dest, c_dest = int(res["fila_destino"]), int(res["columna_destino"])
     elif ubic == "abajo":
@@ -1397,25 +1396,46 @@ def enriquecer_item_con_inspeccion_excel(
     campo = str(res.get("campo") or "")
     valor = res.get("valor")
 
-    # 1. Regla: Nunca sobrescribir fórmulas
-    if inspeccion.es_celda_formula(hoja, f_dest, c_dest):
-        formula_existente = inspeccion.celdas_con_formula.get((hoja, f_dest, c_dest), "")
-        advertencias.append(
-            f"🚫 CUIDADO: La celda destino {res['celda']} contiene la fórmula '{formula_existente}'. "
-            "No se sobreescribirá para preservar el cálculo original."
-        )
-        res["bloqueante"] = True
-        es_bloqueante = True
-        res["estado"] = EstadoMapeo.REVISION
+    # 1. Heurística Inteligente: Evitar escribir sobre celdas calculadas o protegidas
+    es_formula_dest = inspeccion.es_celda_formula(hoja, f_dest, c_dest)
+    es_protegida_dest = inspeccion.es_celda_protegida(hoja, f_dest, c_dest)
 
-    # 2. Regla: Respetar celdas protegidas
-    if inspeccion.es_celda_protegida(hoja, f_dest, c_dest):
-        advertencias.append(f"🔒 La celda destino {res['celda']} está protegida o bloqueada en la hoja.")
-        res["bloqueante"] = True
-        es_bloqueante = True
-        res["estado"] = EstadoMapeo.REVISION
+    if es_formula_dest or es_protegida_dest:
+        # Intento de re-enrutamiento automático a dirección alternativa libre
+        dir_alt = "abajo" if ubic == "derecha" else ("derecha" if ubic == "abajo" else None)
+        re_enrutado = False
+        if dir_alt:
+            f_alt, c_alt = (fila + 1, col) if dir_alt == "abajo" else (fila, col + 1)
+            if not inspeccion.es_celda_formula(hoja, f_alt, c_alt) and not inspeccion.es_celda_protegida(hoja, f_alt, c_alt):
+                f_dest, c_dest = f_alt, c_alt
+                ubic = dir_alt
+                res["ubicacion"] = dir_alt
+                res["fila_destino"] = f_dest
+                res["columna_destino"] = c_dest
+                try:
+                    res["celda"] = f"{get_column_letter(c_dest)}{f_dest}"
+                except Exception:
+                    res["celda"] = f"R{f_dest}C{c_dest}"
+                re_enrutado = True
+                advertencias.append(f"ℹ️ Re-enrutado a {dir_alt} ({res['celda']}) para no interferir con celda calculada/protegida.")
 
-    # 3. Regla: Validar contra listas desplegables (DataValidation)
+        if not re_enrutado:
+            # Si no hay dirección libre, la celda es un cálculo nativo:
+            # Se preserva intacta la fórmula u omite escritura sin bloquear la exportación
+            if es_formula_dest:
+                formula_existente = inspeccion.celdas_con_formula.get((hoja, f_dest, c_dest), "")
+                advertencias.append(
+                    f"ℹ️ Celda {res['celda']} calculada por fórmula original ('{formula_existente}'). Se preserva el cálculo intacto."
+                )
+            elif es_protegida_dest:
+                advertencias.append(f"ℹ️ Celda {res['celda']} protegida en el Excel original. Se preserva sin sobreescribir.")
+
+            res["campo"] = ""  # Omitir escritura sobre esta celda para proteger la fórmula
+            res["estado"] = EstadoMapeo.DESCARTADO
+            res["bloqueante"] = False
+            es_bloqueante = False
+
+    # 2. Regla: Validar contra listas desplegables (DataValidation)
     regla_dv = inspeccion.obtener_validacion(hoja, f_dest, c_dest)
     if regla_dv and regla_dv.tipo == "list" and regla_dv.opciones_permitidas:
         opciones = regla_dv.opciones_permitidas
@@ -1426,7 +1446,7 @@ def enriquecer_item_con_inspeccion_excel(
                 f"⚠️ El valor '{val_str}' no figura entre las opciones de la lista desplegable: {opciones}."
             )
 
-    # 4. Regla: Detectar valores preexistentes
+    # 3. Regla: Detectar valores preexistentes (Informativo, no bloqueante)
     val_ant = inspeccion.obtener_valor_anterior(hoja, f_dest, c_dest)
     if val_ant is not None and str(val_ant).strip() != "":
         res["valor_anterior"] = val_ant
@@ -1435,14 +1455,7 @@ def enriquecer_item_con_inspeccion_excel(
                 f"ℹ️ La celda contenía previamente el valor '{val_ant}'."
             )
 
-    # 5. Validación de formato de dato
-    # Fase 1 no autoriza reemplazar información existente. La UI debe pedir
-    # reasignación para este caso, nunca permitir una sobreescritura silenciosa.
-    if val_ant is not None and str(val_ant).strip() != "" and str(val_ant).strip().lower() != str(valor or "").strip().lower():
-        res["bloqueante"] = True
-        es_bloqueante = True
-        res["estado"] = EstadoMapeo.REVISION
-
+    # 4. Validación de formato de dato
     ok_fmt, msg_fmt = validar_formato_dato(campo, valor)
     if not ok_fmt:
         advertencias.append(f"⚠️ Formato: {msg_fmt}")

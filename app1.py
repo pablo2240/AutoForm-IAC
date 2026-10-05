@@ -1789,15 +1789,9 @@ if uploaded_file is not None:
                     # 1. Análisis Semántico y Validador Determinista (HSP)
                     ctx = PipelineOrchestrator.analizar_formulario(ctx, on_progress=callback_progreso)
 
-                    # Verificar si el análisis arrojó advertencias bloqueantes (fórmulas o celdas protegidas)
-                    hay_bloqueantes = any(bool(item.get("bloqueante", False)) for item in (ctx.plan_mapeo or []))
-
-                    if not hay_bloqueantes:
-                        # 2. Inyección Directa Segura si no hay conflictos bloqueantes
-                        callback_progreso("⚡ Inyectando datos en el documento y preservando formato...", 0.9)
-                        ctx = PipelineOrchestrator.rellenar_formulario(ctx)
-                    else:
-                        ctx.log("Se detectaron celdas con advertencias bloqueantes (fórmulas preexistentes o protegidas); se requiere revisión humana previa.")
+                    # 2. Inyección Segura (Preservando fórmulas y celdas protegidas automáticamente)
+                    callback_progreso("⚡ Inyectando datos en el documento y preservando formato...", 0.9)
+                    ctx = PipelineOrchestrator.rellenar_formulario(ctx)
 
                     progress_placeholder.empty()
 
