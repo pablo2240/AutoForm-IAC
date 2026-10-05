@@ -374,11 +374,13 @@ def clasificar_elementos_formulario(
 
             if tiene_guiones_inline:
                 ubicacion_sugerida = "misma"
+            elif tipo_clasif == ClasificacionElemento.TABLA_CABECERA:
+                ubicacion_sugerida = "abajo"
             elif tiene_espacio_derecha_amplio:
                 ubicacion_sugerida = "derecha"
             elif (
                 (not derecha_vacia and abajo_vacia)
-                or tipo_clasif == ClasificacionElemento.TABLA_CABECERA
+
                 or es_captura_vertical
             ):
                 ubicacion_sugerida = "abajo"

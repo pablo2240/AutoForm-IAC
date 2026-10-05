@@ -840,17 +840,38 @@ def _rellenar_plan_estricto(
         actual = celda.value
         actual_txt = str(actual or "").strip()
         esperado_txt = str(valor).strip()
+        rot_orig = str(item.get("rotulo_original") or item.get("rotulo") or "").strip()
+        if rot_orig and esperado_txt.lower() == rot_orig.lower():
+            reporte.append(_log_item("NULL", item, None, fila_i, columna_i, "El valor es idéntico al rótulo; no se inyecta título como dato"))
+            continue
         if getattr(celda, "data_type", None) == "f" or actual_txt.startswith("="):
             reporte.append(_log_item("BLOCKED", item, valor, fila_i, columna_i, "La celda destino contiene una fórmula"))
             continue
-        if actual_txt and actual_txt.lower() != esperado_txt.lower() and not re.fullmatch(r"[\s_.:-]+", actual_txt):
+        es_mismo_valor = (actual_txt.lower() == esperado_txt.lower())
+        if not es_mismo_valor and actual is not None:
+            try:
+                num_act = float(actual_txt.replace(",", ".").replace("$", "").replace("%", "").strip())
+                num_esp = float(esperado_txt.replace(",", ".").replace("$", "").replace("%", "").strip())
+                if abs(num_act - num_esp) < 0.0001 or abs(num_act * 100.0 - num_esp) < 0.0001 or abs(num_act - num_esp / 100.0) < 0.0001:
+                    es_mismo_valor = True
+            except Exception:
+                pass
+
+        if actual_txt and not es_mismo_valor and not re.fullmatch(r"[\s_.:-]+", actual_txt):
             reporte.append(_log_item("BLOCKED", item, valor, fila_i, columna_i, "La celda destino ya contiene información"))
             continue
 
-        if not actual_txt or actual_txt.lower() != esperado_txt.lower():
-            if isinstance(valor, (int, float)) and "%" in str(celda.number_format or "") and valor > 1:
-                celda.value = valor / 100.0
-            else:
+        if not es_mismo_valor:
+            es_porcentaje = "%" in str(celda.number_format or "")
+            try:
+                num_v = float(str(valor).replace(",", ".").replace("%", "").strip())
+                if es_porcentaje and num_v > 1:
+                    celda.value = num_v / 100.0
+                elif isinstance(valor, (int, float)):
+                    celda.value = valor
+                else:
+                    celda.value = valor
+            except Exception:
                 celda.value = valor
 
         # Merge horizontal seguro para campos con ancho mayor a 1 columna

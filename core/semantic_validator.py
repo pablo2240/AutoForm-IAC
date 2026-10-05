@@ -857,7 +857,19 @@ def validar_item_mapeo(
 
 
     # ── Domain Isolation (ADR-0004 / ADR-0011): Junta Directiva y Accionistas ──
-    es_sec_junta_o_socios = any(t in seccion_norm for t in ("junta directiva", "accionistas", "socios", "beneficiario", "composicion del capital", "composicion"))
+    # Separar Junta Directiva (órgano administrativo) de Accionistas/Socios (propiedad del capital)
+    es_sec_junta = "junta directiva" in seccion_norm or "organos de administracion" in seccion_norm or "órganos de administración" in seccion_norm
+    if es_sec_junta:
+        # Si la empresa no tiene junta directiva registrada en su perfil, descartar campos de esta sección
+        tiene_junta = bool(datos_planos.get("junta_directiva") or (isinstance(datos_empresa.get("junta_directiva"), list) and datos_empresa.get("junta_directiva")))
+        if not tiene_junta:
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = "Safe Passivity: La empresa no registra Junta Directiva en su perfil corporativo."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
+    es_sec_junta_o_socios = any(t in seccion_norm for t in ("accionistas", "socios", "beneficiario", "composicion del capital", "composicion"))
     if es_sec_junta_o_socios:
         if campo_original in ("razon_social", "empresa", "nombre_empresa") and any(t in rotulo_norm for t in ("nombre", "miembro", "socio", "accionista", "beneficiario")):
             if datos_planos.get("accionista_nombre"):

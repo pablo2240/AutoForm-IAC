@@ -392,7 +392,7 @@ def _es_casilla_verificacion(
 
     if texto_rotulo:
         texto_limpio = str(texto_rotulo).strip()
-        if len(texto_limpio) <= 20 or _PATRON_OPCION_CASILLA.search(texto_limpio):
+        if _PATRON_OPCION_CASILLA.search(texto_limpio):
             return True
 
     return False

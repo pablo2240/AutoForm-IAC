@@ -787,11 +787,11 @@ def construir_ir(
                 ))
                 if re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "misma"
-                elif tiene_espacio_derecha_amplio:
-                    dir_esc = "derecha"
                 elif es_cabecera_tabla:
                     dir_esc = "abajo"
-                elif ab_vacia and (not der_vacia or (ab_es_merge and not der_es_merge)):
+                elif tiene_espacio_derecha_amplio or der_vacia:
+                    dir_esc = "derecha"
+                elif ab_vacia:
                     dir_esc = "abajo"
                 else:
                     dir_esc = str(elem.get("tipoEspacioEscritura", "derecha")).lower()

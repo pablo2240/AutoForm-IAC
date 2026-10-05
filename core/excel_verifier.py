@@ -67,11 +67,14 @@ def _son_valores_equivalentes(val_esperado: Any, val_encontrado: Any) -> bool:
     if str_esp.lower() in str_enc.lower():
         return True
 
-    # Comparación numérica
+    # Comparación numérica y porcentajes (ej. 100 vs 1.0 en formato porcentaje)
     try:
         f_esp = float(str_esp.replace(",", ".").replace("$", "").replace("%", "").strip())
         f_enc = float(str_enc.replace(",", ".").replace("$", "").replace("%", "").strip())
-        return abs(f_esp - f_enc) < 0.0001
+        if abs(f_esp - f_enc) < 0.0001:
+            return True
+        if abs(f_esp / 100.0 - f_enc) < 0.0001 or abs(f_esp - f_enc / 100.0) < 0.0001:
+            return True
     except Exception:
         pass
 

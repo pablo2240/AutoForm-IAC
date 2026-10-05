@@ -836,7 +836,7 @@ def ejecutar_stage_3_mapper(
                 "finLineaCol": int(elem_orig.get("finLineaCol", 0) or 0),
                 "rotulo": rot_label,
                 "rotulo_original": rot_label,
-                "valor": rot_label,
+                "valor": None,
                 "ubicacion": ubic,
                 "campo": campo_empresa,
                 "requiereMerge": bool(ancho_l > 1 and ubic == "derecha"),
