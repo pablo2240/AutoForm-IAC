@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
+from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Tuple, Union, Optional
 
@@ -19,6 +21,172 @@ ACTIVE_PROFILE_FILE = CONFIG_DIR / "perfil_activo.txt"
 
 
 from core import database
+
+
+class TipoPerfil(str, Enum):
+    """Naturaleza de una identidad que puede diligenciar un formulario."""
+
+    PERSONA = "PERSONA"
+    EMPRESA = "EMPRESA"
+    CONTRATISTA = "CONTRATISTA"
+
+
+class EstadoPerfil(str, Enum):
+    """Estado visible de un PerfilDiligenciamiento."""
+
+    ACTIVO = "ACTIVO"
+    ARCHIVADO = "ARCHIVADO"
+
+
+@dataclass(frozen=True)
+class PerfilResumen:
+    """Información mínima necesaria para el selector de perfiles."""
+
+    id: str
+    nombre: str
+    tipo: TipoPerfil
+    estado: EstadoPerfil
+    version: int
+
+
+@dataclass(frozen=True)
+class PerfilDiligenciamiento:
+    """Snapshot canónico de datos fijos usado por una ejecución del pipeline."""
+
+    id: str
+    nombre: str
+    tipo: TipoPerfil
+    datos: Dict[str, Any]
+    version: int
+    estado: EstadoPerfil
+
+
+class PerfilNoDisponibleError(ValueError):
+    """El perfil solicitado no existe o no puede emplearse en una nueva ejecución."""
+
+
+def _a_perfil(registro: Dict[str, Any]) -> PerfilDiligenciamiento:
+    """Convierte el contrato del adaptador de datos al modelo de dominio."""
+    try:
+        tipo = TipoPerfil(str(registro.get("tipo_perfil") or TipoPerfil.EMPRESA.value))
+    except ValueError:
+        tipo = TipoPerfil.EMPRESA
+    try:
+        estado = EstadoPerfil(str(registro.get("estado") or EstadoPerfil.ACTIVO.value))
+    except ValueError:
+        estado = EstadoPerfil.ACTIVO
+    return PerfilDiligenciamiento(
+        id=str(registro["id"]),
+        nombre=str(registro["nombre"]),
+        tipo=tipo,
+        datos=aplanar_perfil(registro.get("datos") or {}),
+        version=int(registro.get("version") or 1),
+        estado=estado,
+    )
+
+
+def listar_perfiles_diligenciamiento() -> List[PerfilResumen]:
+    """Lista los perfiles compartidos que están habilitados para una nueva ejecución."""
+    return [
+        PerfilResumen(p.id, p.nombre, p.tipo, p.estado, p.version)
+        for p in (_a_perfil(registro) for registro in database.listar_catalogo_perfiles_db())
+        if p.estado is EstadoPerfil.ACTIVO
+    ]
+
+
+def obtener_perfil_diligenciamiento(profile_id: str) -> PerfilDiligenciamiento:
+    """Carga un perfil activo por su id canónico; nunca por el perfil global anterior."""
+    registro = database.obtener_catalogo_perfil_db(profile_id)
+    if not registro:
+        raise PerfilNoDisponibleError("El perfil seleccionado ya no existe.")
+    perfil = _a_perfil(registro)
+    if perfil.estado is not EstadoPerfil.ACTIVO:
+        raise PerfilNoDisponibleError("El perfil seleccionado está archivado.")
+    return perfil
+
+
+def _slug_unico(nombre: str) -> str:
+    """Construye un slug legible sin permitir colisiones en el catálogo."""
+    base = _slugify(nombre) or "perfil"
+    existentes = {
+        registro["slug"]
+        for registro in database.listar_catalogo_perfiles_db(incluir_archivados=True)
+    }
+    candidato = base
+    contador = 2
+    while candidato in existentes:
+        candidato = f"{base}_{contador}"
+        contador += 1
+    return candidato
+
+
+def crear_perfil_diligenciamiento(
+    nombre: str,
+    tipo: TipoPerfil,
+    datos: Dict[str, Any],
+    actor_id: str,
+) -> PerfilDiligenciamiento:
+    """Crea un perfil compartido con sus datos normalizados y auditables."""
+    nombre_limpio = nombre.strip()
+    if not nombre_limpio:
+        raise ValueError("El nombre del perfil es obligatorio.")
+    if not actor_id:
+        raise ValueError("Se requiere una cuenta corporativa activa para crear un perfil.")
+    registro = database.crear_catalogo_perfil_db(
+        slug=_slug_unico(nombre_limpio),
+        nombre=nombre_limpio,
+        datos=estructurar_perfil_taxonomia(datos),
+        tipo_perfil=tipo.value,
+        actor_id=actor_id,
+    )
+    return _a_perfil(registro)
+
+
+def actualizar_perfil_diligenciamiento(
+    profile_id: str,
+    nombre: str,
+    tipo: TipoPerfil,
+    datos: Dict[str, Any],
+    version_esperada: int,
+    actor_id: str,
+) -> PerfilDiligenciamiento:
+    """Edita datos fijos con control optimista para evitar sobrescritura silenciosa."""
+    if not actor_id:
+        raise ValueError("Se requiere una cuenta corporativa activa para editar un perfil.")
+    registro = database.actualizar_catalogo_perfil_db(
+        profile_id=profile_id,
+        nombre=nombre.strip(),
+        datos=estructurar_perfil_taxonomia(datos),
+        tipo_perfil=tipo.value,
+        version_esperada=version_esperada,
+        actor_id=actor_id,
+    )
+    return _a_perfil(registro)
+
+
+def archivar_perfil_diligenciamiento(
+    profile_id: str,
+    version_esperada: int,
+    actor_id: str,
+    es_admin: bool,
+) -> bool:
+    """Archiva un perfil de forma reversible; el servidor también lo fuerza mediante RLS."""
+    if not es_admin:
+        raise PermissionError("Solo un administrador puede archivar perfiles.")
+    return database.archivar_catalogo_perfil_db(profile_id, version_esperada, actor_id)
+
+
+def obtener_preferencia_perfil(usuario_id: str) -> Optional[str]:
+    """Obtiene la preferencia individual de perfil de una cuenta."""
+    return database.obtener_preferencia_perfil_usuario_db(usuario_id)
+
+
+def guardar_preferencia_perfil(usuario_id: str, profile_id: str, actor_id: str) -> bool:
+    """Guarda la preferencia individual sin alterar las preferencias de otros usuarios."""
+    perfil = obtener_perfil_diligenciamiento(profile_id)
+    if perfil.estado is not EstadoPerfil.ACTIVO:
+        raise PerfilNoDisponibleError("No se puede usar un perfil archivado como predeterminado.")
+    return database.guardar_preferencia_perfil_usuario_db(usuario_id, profile_id, actor_id)
 
 
 def asegurar_directorio_config() -> None:
@@ -557,8 +725,6 @@ def crear_nuevo_perfil(nombre_perfil: str, datos: Dict[str, Any]) -> Tuple[bool,
     etiqueta = f"🏢 {nombre_perfil.strip()}"
 
     exito = guardar_perfil(ruta_nueva, datos, nombre_visible=etiqueta)
-    if exito:
-        guardar_perfil_activo_seleccionado(etiqueta)
     return exito, ruta_nueva, etiqueta
 
 
@@ -589,8 +755,6 @@ def importar_perfil_json(contenido_str: str, nombre_sugerido: str = "") -> Tuple
             etiqueta = f"🏢 {nombre.title()}"
 
         exito = guardar_perfil(ruta_destino, datos_planos, nombre_visible=etiqueta)
-        if exito:
-            guardar_perfil_activo_seleccionado(etiqueta)
         return exito, ruta_destino, etiqueta
     except Exception as exc:
         print(f"[AutoForm AI] Error importando perfil JSON: {exc}")

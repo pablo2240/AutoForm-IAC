@@ -32,7 +32,7 @@ _HOT_RELOAD_MODULOS = [
     "pipeline.handlers.document_detector", "pipeline.handlers.excel_handler",
     "pipeline.stages.stage_1_parser", "pipeline.stages.stage_2_classifier",
     "pipeline.stages.stage_3_llm_mapper", "pipeline.stages.stage_5_writer",
-    "ui.page_verify", "ui.page_download", "ui.page_upload", "template_store.store",
+    "ui.page_verify", "ui.page_download", "ui.page_upload", "ui.page_profile_selector", "ui.page_profile_editor", "template_store.store",
 ]
 
 if os.getenv("APP_ENVIRONMENT", "production").strip().lower() == "development":
@@ -53,6 +53,8 @@ from pipeline.context import PipelineContext
 from pipeline.orchestrator import PipelineOrchestrator
 from ui.page_verify import render_pantalla_verificacion
 from ui.page_download import render_pantalla_descarga
+from ui.page_profile_selector import render_selector_perfil
+from ui.page_profile_editor import render_creador_perfil, render_editor_perfil
 
 # ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
 try:
@@ -756,35 +758,22 @@ with st.sidebar:
 
     # 🏢 Fase 2: Gestión de Perfiles Empresariales (Multi-Perfil)
     st.markdown("### 🪪 **Perfil Empresarial Activo**")
-    dict_perfiles = profile_manager.listar_perfiles()
-    nombres_perfiles = list(dict_perfiles.keys())
-
-    perfil_guardado = profile_manager.obtener_perfil_activo_guardado()
-    if "perfil_activo_nombre" not in st.session_state or st.session_state["perfil_activo_nombre"] not in dict_perfiles:
-        st.session_state["perfil_activo_nombre"] = (
-            perfil_guardado if perfil_guardado in dict_perfiles
-            else (nombres_perfiles[0] if nombres_perfiles else "🏢 Principal (IAC Latam)")
-        )
-
-    idx_activo = (
-        nombres_perfiles.index(st.session_state["perfil_activo_nombre"])
-        if st.session_state["perfil_activo_nombre"] in nombres_perfiles
-        else 0
+    perfil_seleccionado = render_selector_perfil(
+        usuario_actual,
+        on_crear=lambda: render_creador_perfil(usuario_actual),
     )
+    if perfil_seleccionado is None:
+        st.stop()
+    perfil_editado = render_editor_perfil(usuario_actual, perfil_seleccionado)
+    if perfil_editado is not None:
+        perfil_seleccionado = perfil_editado
+    perfil_seleccionado_etiqueta = perfil_seleccionado.nombre
+    profile_id_activo = perfil_seleccionado.id
+    profile_version_activa = perfil_seleccionado.version
+    datos_empresa = dict(perfil_seleccionado.datos)
 
-    perfil_seleccionado_etiqueta = st.selectbox(
-        "Seleccionar Perfil:",
-        options=nombres_perfiles,
-        index=idx_activo,
-        key="sb_selector_perfil_activo",
-        help="Los datos de este perfil se usarán para diligenciar los formularios automáticamente."
-    )
-    if perfil_seleccionado_etiqueta != st.session_state.get("perfil_activo_nombre"):
-        st.session_state["perfil_activo_nombre"] = perfil_seleccionado_etiqueta
-        profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
-
-    ruta_perfil_activo = dict_perfiles[perfil_seleccionado_etiqueta]
-    datos_empresa = profile_manager.cargar_perfil(ruta_perfil_activo)
+    # El editor visual legado queda aislado de la selección por sesión.
+    ruta_perfil_activo = profile_manager.PROFILE_DEFAULT_PATH
 
     # 👤 Fase 3: Operador Fijado a la Cuenta en Sesión (ADR-0007)
     st.markdown("### 👤 **Diligenciado Por (Operador)**")
@@ -824,6 +813,10 @@ with st.sidebar:
     )
     st.markdown(operador_html, unsafe_allow_html=True)
 
+    # El editor heredado permanece sólo como vista deshabilitada durante la transición.
+    # El editor soportado está en page_profile_editor y usa el profile_id de sesión.
+    _es_admin_para_editor_heredado = es_admin_usuario
+    es_admin_usuario = False
     # ✏️ Editor Visual de Datos del Perfil Activo (Taxonomía Semántica)
     slug_perfil = profile_manager._slugify(perfil_seleccionado_etiqueta)
 
@@ -839,9 +832,9 @@ with st.sidebar:
                 nombre_visible=perfil_seleccionado_etiqueta,
             )
 
-    with st.expander("✏️ Editar Datos de Empresa", expanded=False):
+    with st.expander("Datos de referencia del perfil", expanded=False):
         if not es_admin_usuario:
-            st.info("🔒 **Modo Solo Lectura**: Como asesor comercial, puedes consultar la información corporativa pero la modificación de datos fiscales, bancarios o de balance está reservada a los administradores.")
+            st.caption("Vista heredada de solo lectura. Usa “Gestionar perfil seleccionado” para editar los datos fijos.")
         else:
             st.caption("Cada campo se guarda automáticamente en tiempo real al editar.")
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
@@ -1236,10 +1229,11 @@ with st.sidebar:
                 }
                 datos_guardar.update(datos_actualizados)
                 if profile_manager.guardar_perfil(ruta_perfil_activo, datos_guardar, nombre_visible=perfil_seleccionado_etiqueta):
-                    profile_manager.guardar_perfil_activo_seleccionado(perfil_seleccionado_etiqueta)
-                    st.success("✅ ¡Datos guardados permanentemente en SQLite canónico y archivo JSON!")
+                    st.success("✅ Datos guardados en el adaptador heredado.")
                     datos_empresa = datos_guardar
                     _safe_rerun()
+
+    es_admin_usuario = _es_admin_para_editor_heredado
 
     # 👤 Datos del Operador / Diligenciado Por (Fijado a la cuenta en sesión)
     with st.expander("👤 Mis Datos de Operador (Diligenciado Por)", expanded=False):
@@ -1794,6 +1788,9 @@ if uploaded_file is not None:
                         archivo_bytes=archivo_bytes,
                         nombre_archivo=file_name,
                         datos_empresa=datos_empresa_efectivos,
+                        profile_id=profile_id_activo,
+                        profile_nombre=perfil_seleccionado_etiqueta,
+                        profile_version=profile_version_activa,
                     )
 
                     def callback_progreso(msg: str, pct: float):

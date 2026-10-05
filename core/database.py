@@ -12,6 +12,7 @@ import json
 import os
 import re
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -40,6 +41,11 @@ class ConfiguracionInvalidaError(Exception):
 
 class SesionNoAutenticadaError(Exception):
     """Excepción lanzada cuando una operación protegida se ejecuta en producción sin sesión JWT."""
+    pass
+
+
+class ConflictoVersionPerfilError(Exception):
+    """La versión enviada ya no corresponde al perfil persistido."""
     pass
 
 
@@ -329,6 +335,46 @@ def inicializar_db() -> None:
                 datos_json TEXT NOT NULL,
                 es_activo INTEGER DEFAULT 0,
                 actualizado_en TEXT NOT NULL
+            );
+            """
+        )
+
+        # Evolución no destructiva del catálogo compartido de perfiles.
+        # SQLite no soporta ADD COLUMN IF NOT EXISTS, por eso se inspecciona primero.
+        cursor.execute("PRAGMA table_info(perfiles_empresa)")
+        cols_perfil = {row["name"] for row in cursor.fetchall()}
+        for definition in (
+            "tipo_perfil TEXT NOT NULL DEFAULT 'EMPRESA'",
+            "estado TEXT NOT NULL DEFAULT 'ACTIVO'",
+            "version INTEGER NOT NULL DEFAULT 1",
+            "creado_por TEXT",
+            "actualizado_por TEXT",
+        ):
+            column_name = definition.split()[0]
+            if column_name not in cols_perfil:
+                cursor.execute(f"ALTER TABLE perfiles_empresa ADD COLUMN {definition}")
+
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS preferencias_perfil_usuario (
+                usuario_id TEXT PRIMARY KEY,
+                perfil_predeterminado_id TEXT,
+                actualizado_en TEXT NOT NULL,
+                actualizado_por TEXT
+            );
+            """
+        )
+        cursor.execute(
+            """
+            CREATE TABLE IF NOT EXISTS auditoria_perfiles (
+                id TEXT PRIMARY KEY,
+                profile_id TEXT NOT NULL,
+                actor_id TEXT,
+                operacion TEXT NOT NULL,
+                version_anterior INTEGER,
+                version_nueva INTEGER,
+                resumen_cambios TEXT NOT NULL DEFAULT '',
+                creado_en TEXT NOT NULL
             );
             """
         )
@@ -794,7 +840,6 @@ def eliminar_perfil_db(id_perfil: str, client: Optional[Client] = None) -> bool:
             print(f"[AutoForm AI DB] Error eliminando perfil '{id_perfil}' en Supabase: {exc}")
             return False
 
-    # Modo SQLite
     inicializar_db()
     try:
         with obtener_conexion() as conn:
@@ -805,6 +850,282 @@ def eliminar_perfil_db(id_perfil: str, client: Optional[Client] = None) -> bool:
     except Exception as exc:
         print(f"[AutoForm AI DB] Error eliminando perfil '{id_perfil}' en SQLite: {exc}")
         return False
+
+
+# ── CATÁLOGO COMPARTIDO DE PERFILES DE DILIGENCIAMIENTO (ADR-0013) ────────
+
+def _fila_catalogo_perfil(fila: Dict[str, Any]) -> Dict[str, Any]:
+    """Normaliza una fila de cualquiera de los adaptadores al contrato del catálogo."""
+    return {
+        "id": str(fila.get("id", "")),
+        "slug": str(fila.get("slug", fila.get("id", ""))),
+        "nombre": str(fila.get("nombre_empresa", fila.get("nombre", ""))),
+        "datos": fila.get("datos_json", fila.get("datos", {})) or {},
+        "tipo_perfil": str(fila.get("tipo_perfil") or "EMPRESA"),
+        "estado": str(fila.get("estado") or "ACTIVO"),
+        "version": int(fila.get("version") or 1),
+        "creado_por": fila.get("creado_por"),
+        "actualizado_por": fila.get("actualizado_por"),
+        "actualizado_en": str(fila.get("updated_at", fila.get("actualizado_en", ""))),
+    }
+
+
+def _registrar_auditoria_perfil_db(
+    profile_id: str,
+    actor_id: Optional[str],
+    operacion: str,
+    version_anterior: Optional[int],
+    version_nueva: Optional[int],
+    resumen_cambios: str,
+    client: Optional[Client] = None,
+) -> None:
+    """Registra trazabilidad de perfil sin exponer una vía de escritura desde la UI."""
+    ahora = datetime.now(timezone.utc).isoformat()
+    payload = {
+        "id": str(uuid.uuid4()),
+        "profile_id": profile_id,
+        "actor_id": actor_id,
+        "operacion": operacion,
+        "version_anterior": version_anterior,
+        "version_nueva": version_nueva,
+        "resumen_cambios": resumen_cambios,
+        "creado_en": ahora,
+    }
+    if usar_supabase():
+        # En Supabase la auditoría la produce el trigger SECURITY DEFINER de la
+        # migración 007; el cliente no tiene permiso de falsificar eventos.
+        return
+    with obtener_conexion() as conn:
+        conn.execute(
+            """
+            INSERT INTO auditoria_perfiles
+            (id, profile_id, actor_id, operacion, version_anterior, version_nueva, resumen_cambios, creado_en)
+            VALUES (:id, :profile_id, :actor_id, :operacion, :version_anterior, :version_nueva, :resumen_cambios, :creado_en)
+            """,
+            payload,
+        )
+
+
+def listar_catalogo_perfiles_db(
+    client: Optional[Client] = None,
+    incluir_archivados: bool = False,
+) -> List[Dict[str, Any]]:
+    """Lista perfiles del catálogo; por defecto solo los activos."""
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        consulta = cli.table("perfiles_empresa").select(
+            "id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at"
+        )
+        if not incluir_archivados:
+            consulta = consulta.eq("estado", "ACTIVO")
+        res = consulta.order("nombre_empresa").execute()
+        return [_fila_catalogo_perfil(fila) for fila in (res.data or [])]
+
+    inicializar_db()
+    with obtener_conexion() as conn:
+        filas = conn.execute(
+            """
+            SELECT id, id AS slug, nombre, datos_json, tipo_perfil, estado, version,
+                   creado_por, actualizado_por, actualizado_en
+            FROM perfiles_empresa {filtro} ORDER BY nombre
+            """
+            .format(filtro="" if incluir_archivados else "WHERE estado = 'ACTIVO'")
+        ).fetchall()
+    return [_fila_catalogo_perfil({**dict(fila), "datos_json": json.loads(fila["datos_json"] or "{}")}) for fila in filas]
+
+
+def obtener_catalogo_perfil_db(profile_id: str, client: Optional[Client] = None) -> Optional[Dict[str, Any]]:
+    """Obtiene un perfil por su clave canónica, sin usar un perfil global."""
+    if not profile_id:
+        return None
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        res = (
+            cli.table("perfiles_empresa")
+            .select("id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at")
+            .eq("id", profile_id)
+            .limit(1)
+            .execute()
+        )
+        return _fila_catalogo_perfil(res.data[0]) if res.data else None
+
+    inicializar_db()
+    with obtener_conexion() as conn:
+        fila = conn.execute(
+            """
+            SELECT id, id AS slug, nombre, datos_json, tipo_perfil, estado, version,
+                   creado_por, actualizado_por, actualizado_en
+            FROM perfiles_empresa WHERE id = ? LIMIT 1
+            """,
+            (profile_id,),
+        ).fetchone()
+    if not fila:
+        return None
+    data = dict(fila)
+    data["datos_json"] = json.loads(data["datos_json"] or "{}")
+    return _fila_catalogo_perfil(data)
+
+
+def crear_catalogo_perfil_db(
+    slug: str,
+    nombre: str,
+    datos: Dict[str, Any],
+    tipo_perfil: str,
+    actor_id: str,
+    client: Optional[Client] = None,
+) -> Dict[str, Any]:
+    """Crea un perfil compartido y su traza de auditoría."""
+    profile_id = str(uuid.uuid4()) if usar_supabase() else slug
+    ahora = datetime.now(timezone.utc).isoformat()
+    nit = datos.get("empresa", {}).get("identidad", {}).get("nit") or datos.get("nit")
+    registro = {
+        "id": profile_id,
+        "slug": slug,
+        "nombre_empresa": nombre,
+        "nit": str(nit).strip() if nit else None,
+        "datos_json": datos,
+        "tipo_perfil": tipo_perfil,
+        "estado": "ACTIVO",
+        "version": 1,
+        "creado_por": actor_id or None,
+        "actualizado_por": actor_id or None,
+    }
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        res = cli.table("perfiles_empresa").insert(registro).execute()
+        if not res.data:
+            raise ValueError("No fue posible crear el perfil.")
+        resultado = _fila_catalogo_perfil(res.data[0])
+    else:
+        inicializar_db()
+        with obtener_conexion() as conn:
+            conn.execute(
+                """
+                INSERT INTO perfiles_empresa
+                (id, nombre, datos_json, es_activo, actualizado_en, tipo_perfil, estado, version, creado_por, actualizado_por)
+                VALUES (?, ?, ?, 0, ?, ?, 'ACTIVO', 1, ?, ?)
+                """,
+                (profile_id, nombre, json.dumps(datos, ensure_ascii=False), ahora, tipo_perfil, actor_id or None, actor_id or None),
+            )
+        resultado = obtener_catalogo_perfil_db(profile_id)
+        if resultado is None:
+            raise ValueError("No fue posible recuperar el perfil creado.")
+    _registrar_auditoria_perfil_db(profile_id, actor_id, "CREAR", None, 1, "Perfil creado", client)
+    return resultado
+
+
+def actualizar_catalogo_perfil_db(
+    profile_id: str,
+    nombre: str,
+    datos: Dict[str, Any],
+    tipo_perfil: str,
+    version_esperada: int,
+    actor_id: str,
+    client: Optional[Client] = None,
+) -> Dict[str, Any]:
+    """Actualiza un perfil mediante control optimista de versión."""
+    actual = obtener_catalogo_perfil_db(profile_id, client)
+    if actual is None or actual["estado"] != "ACTIVO":
+        raise ValueError("El perfil no existe o está archivado.")
+    if actual["version"] != version_esperada:
+        raise ConflictoVersionPerfilError("El perfil cambió; recarga los datos antes de guardar.")
+    siguiente = version_esperada + 1
+    nit = datos.get("empresa", {}).get("identidad", {}).get("nit") or datos.get("nit")
+    payload = {
+        "nombre_empresa": nombre,
+        "datos_json": datos,
+        "tipo_perfil": tipo_perfil,
+        "nit": str(nit).strip() if nit else None,
+        "version": siguiente,
+        "actualizado_por": actor_id or None,
+    }
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        res = cli.table("perfiles_empresa").update(payload).eq("id", profile_id).eq("version", version_esperada).execute()
+        if not res.data:
+            raise ConflictoVersionPerfilError("El perfil cambió; recarga los datos antes de guardar.")
+        resultado = _fila_catalogo_perfil(res.data[0])
+    else:
+        inicializar_db()
+        with obtener_conexion() as conn:
+            cursor = conn.execute(
+                """
+                UPDATE perfiles_empresa
+                SET nombre = ?, datos_json = ?, tipo_perfil = ?, version = ?, actualizado_por = ?, actualizado_en = ?
+                WHERE id = ? AND version = ? AND estado = 'ACTIVO'
+                """,
+                (nombre, json.dumps(datos, ensure_ascii=False), tipo_perfil, siguiente, actor_id or None,
+                 datetime.now(timezone.utc).isoformat(), profile_id, version_esperada),
+            )
+            if cursor.rowcount != 1:
+                raise ConflictoVersionPerfilError("El perfil cambió; recarga los datos antes de guardar.")
+        resultado = obtener_catalogo_perfil_db(profile_id)
+        if resultado is None:
+            raise ValueError("No fue posible recuperar el perfil actualizado.")
+    _registrar_auditoria_perfil_db(profile_id, actor_id, "ACTUALIZAR", version_esperada, siguiente, "Datos fijos actualizados", client)
+    return resultado
+
+
+def archivar_catalogo_perfil_db(
+    profile_id: str,
+    version_esperada: int,
+    actor_id: str,
+    client: Optional[Client] = None,
+) -> bool:
+    """Archiva de forma reversible un perfil. La autorización se aplica por RLS."""
+    actual = obtener_catalogo_perfil_db(profile_id, client)
+    if actual is None:
+        return False
+    siguiente = version_esperada + 1
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        res = cli.table("perfiles_empresa").update({"estado": "ARCHIVADO", "version": siguiente, "actualizado_por": actor_id or None}).eq("id", profile_id).eq("version", version_esperada).execute()
+        ok = bool(res.data)
+    else:
+        inicializar_db()
+        with obtener_conexion() as conn:
+            cursor = conn.execute(
+                "UPDATE perfiles_empresa SET estado = 'ARCHIVADO', version = ?, actualizado_por = ?, actualizado_en = ? WHERE id = ? AND version = ?",
+                (siguiente, actor_id or None, datetime.now(timezone.utc).isoformat(), profile_id, version_esperada),
+            )
+            ok = cursor.rowcount == 1
+    if ok:
+        _registrar_auditoria_perfil_db(profile_id, actor_id, "ARCHIVAR", version_esperada, siguiente, "Perfil archivado", client)
+    return ok
+
+
+def obtener_preferencia_perfil_usuario_db(usuario_id: str, client: Optional[Client] = None) -> Optional[str]:
+    """Obtiene la preferencia individual de perfil sin modificar el catálogo."""
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        res = cli.table("preferencias_perfil_usuario").select("perfil_predeterminado_id").eq("usuario_id", usuario_id).limit(1).execute()
+        return str(res.data[0]["perfil_predeterminado_id"]) if res.data and res.data[0].get("perfil_predeterminado_id") else None
+    inicializar_db()
+    with obtener_conexion() as conn:
+        row = conn.execute("SELECT perfil_predeterminado_id FROM preferencias_perfil_usuario WHERE usuario_id = ?", (usuario_id,)).fetchone()
+    return str(row["perfil_predeterminado_id"]) if row and row["perfil_predeterminado_id"] else None
+
+
+def guardar_preferencia_perfil_usuario_db(usuario_id: str, profile_id: str, actor_id: str, client: Optional[Client] = None) -> bool:
+    """Guarda el perfil predeterminado de una cuenta corporativa."""
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        cli.table("preferencias_perfil_usuario").upsert({"usuario_id": usuario_id, "perfil_predeterminado_id": profile_id, "actualizado_por": actor_id or None}, on_conflict="usuario_id").execute()
+        return True
+    inicializar_db()
+    with obtener_conexion() as conn:
+        conn.execute(
+            """
+            INSERT INTO preferencias_perfil_usuario (usuario_id, perfil_predeterminado_id, actualizado_en, actualizado_por)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(usuario_id) DO UPDATE SET
+                perfil_predeterminado_id = excluded.perfil_predeterminado_id,
+                actualizado_en = excluded.actualizado_en,
+                actualizado_por = excluded.actualizado_por
+            """,
+            (usuario_id, profile_id, datetime.now(timezone.utc).isoformat(), actor_id or None),
+        )
+    return True
 
 
 # ── GESTIÓN DE OPERADORES Y COMERCIALES (ADR-0007 / ADR-0010) ────────────────────

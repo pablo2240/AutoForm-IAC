@@ -1,6 +1,6 @@
 # Catálogo compartido de perfiles de diligenciamiento
 
-**Estado:** Aprobado para planificación técnica; no implementado.
+**Estado:** Implementado en código; pendiente de aplicar la migración 007 en el entorno que corresponda.
 
 ## Propósito
 

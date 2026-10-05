@@ -7,6 +7,7 @@ las etapas del pipeline (Parser -> Classifier -> LLM Mapper -> Verifier -> Write
 from __future__ import annotations
 
 import time
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -73,6 +74,11 @@ class PipelineContext:
     nombre_archivo: str = ""
     tipo_documento: TipoDocumento = "desconocido"
     datos_empresa: Dict[str, Any] = field(default_factory=dict)
+    # Identidad inmutable del perfil que aportó el snapshot de datos. Estos campos
+    # evitan que el pipeline consulte o dependa de un "perfil activo" global.
+    profile_id: Optional[str] = None
+    profile_nombre: str = ""
+    profile_version: Optional[int] = None
     
     # Etapa 1: Parser & Inspección Estructurada
     elementos_raw: List[Dict[str, Any]] = field(default_factory=list)
@@ -109,6 +115,10 @@ class PipelineContext:
     metadatos: Dict[str, Any] = field(default_factory=dict)
     logs_progreso: List[str] = field(default_factory=list)
     tiempo_inicio: float = field(default_factory=time.time)
+
+    def __post_init__(self) -> None:
+        """Aísla los datos de cada ejecución frente a cambios posteriores de UI."""
+        self.datos_empresa = deepcopy(self.datos_empresa)
 
     def log(self, mensaje: str, mostrar_consola: bool = True) -> None:
         """Registra un mensaje en el historial de progreso del contexto."""
@@ -211,6 +221,9 @@ class PipelineContext:
             })
 
         return {
+            "profile_id": self.profile_id,
+            "profile_nombre": self.profile_nombre,
+            "profile_version": self.profile_version,
             "total_targets": total_targets,
             "filled": filled,
             "skipped": skipped,

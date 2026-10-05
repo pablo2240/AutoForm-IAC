@@ -7,6 +7,8 @@ from ui.page_verify import (
     aplicar_cambios_verificacion,
 )
 from ui.page_download import render_pantalla_descarga
+from ui.page_profile_selector import render_selector_perfil
+from ui.page_profile_editor import render_creador_perfil, render_editor_perfil
 
 __all__ = [
     "render_pantalla_carga",
@@ -14,4 +16,7 @@ __all__ = [
     "preparar_tabla_verificacion",
     "aplicar_cambios_verificacion",
     "render_pantalla_descarga",
+    "render_selector_perfil",
+    "render_creador_perfil",
+    "render_editor_perfil",
 ]

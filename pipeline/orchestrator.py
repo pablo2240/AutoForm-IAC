@@ -106,6 +106,9 @@ def ejecutar_analisis_formulario(
     archivo_bytes: bytes,
     nombre_archivo: str,
     datos_empresa: Dict[str, Any],
+    profile_id: Optional[str] = None,
+    profile_nombre: str = "",
+    profile_version: Optional[int] = None,
     on_progress: Optional[Callable[[str, float], None]] = None,
 ) -> PipelineContext:
     """Función de conveniencia para crear contexto y ejecutar análisis inicial."""
@@ -113,6 +116,9 @@ def ejecutar_analisis_formulario(
         archivo_bytes=archivo_bytes,
         nombre_archivo=nombre_archivo,
         datos_empresa=datos_empresa,
+        profile_id=profile_id,
+        profile_nombre=profile_nombre,
+        profile_version=profile_version,
     )
     return PipelineOrchestrator.analizar_formulario(ctx, on_progress=on_progress)
 
