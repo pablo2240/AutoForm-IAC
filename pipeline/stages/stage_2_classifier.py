@@ -111,7 +111,7 @@ _TERMINOS_CAMPO_CORTO = re.compile(
 
 _PATRON_CABECERAS_TABLA = re.compile(
     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
-    r"nombre\s+socio|nombre\s*/?\s*razon\s*social|identificaci[oó]n\s*/?\s*tipo\s+id|"
+    r"nombre\s+socio|nombre\s+accionista|identificaci[oó]n\s*/?\s*tipo\s+id|"
     r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|"
     r"nombres?|apellidos?|"
     r"porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|participaci[oó]n(?:\s+accionaria)?|valor|parentesco|vinculo)\s*$",
@@ -367,8 +367,15 @@ def clasificar_elementos_formulario(
                 and not derecha_vacia
             )
 
+            ancho_l = int(elem.get("anchoLinea", 1) or 1)
+            col_idx = int(elem.get("columna", 0) or 0)
+            fin_col = int(elem.get("finLineaCol", 0) or 0)
+            tiene_espacio_derecha_amplio = derecha_vacia and (ancho_l > 1 or fin_col >= col_idx + 2)
+
             if tiene_guiones_inline:
                 ubicacion_sugerida = "misma"
+            elif tiene_espacio_derecha_amplio:
+                ubicacion_sugerida = "derecha"
             elif (
                 (not derecha_vacia and abajo_vacia)
                 or tipo_clasif == ClasificacionElemento.TABLA_CABECERA

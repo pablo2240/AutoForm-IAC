@@ -208,6 +208,7 @@ _PATRON_OPCIONES = re.compile(
     r"urbano|rural|propia|arrendada|familiar|otro|otra|n/a|na|"
     r"principal|privada|p[uú]blica|mixta|simplificado|"
     r"com[uú]n|grande|peque[ñn]o|mediano|no\s+aplica|"
+    r"(?:soy\s+)?gran\s+empresa|empresa\s+grande|mediana(?:\s+empresa)?|peque[ñn]a(?:\s+empresa)?|microempresa|micro\s+empresa|"
     r"contado|credito|cr[eé]dito|\d+\s*d[ií]as|cumple|no\s+cumple|aprobado\??|no\s+aprobado)\s*$",
     re.IGNORECASE,
 )
@@ -771,9 +772,13 @@ def construir_ir(
                 ab_vacia = bool(elem.get("abajoVacia", False))
                 ab_es_merge = bool(elem.get("abajoEsMerge", False))
                 der_es_merge = bool(elem.get("derechaEsMerge", False))
+                ancho = int(elem.get("anchoLinea", 1) or 1)
+                es_casilla = bool(elem.get("esCasillaVerificacion", False))
+                tiene_espacio_derecha_amplio = der_vacia and (ancho > 1 or int(elem.get("finLineaCol", 0) or 0) >= col + 2)
+
                 es_cabecera_tabla = bool(re.search(
                     r"^\s*(?:banco|sucursal|n[o°\.]?\s*cuenta|tipo\s+de\s+cuenta|tipo\s+cuenta|"
-                    r"nombre\s+socio|nombre\s*/?\s*razon\s*social|identificaci[oó]n\s*/?\s*tipo\s+id|"
+                    r"nombre\s+socio|nombre\s+accionista|identificaci[oó]n\s*/?\s*tipo\s+id|"
                     r"tipo\s+id|tipo\s+doc(?:umento)?|n[uú]mero\s*id|n[uú]mero|nro|"
                     r"nombres?|apellidos?|nombres?\s+y\s+apellidos?|"
                     r"porcentaje|%\s*participaci[oó]n|porcentaje\s+participaci[oó]n(?:\s+accionaria)?|participaci[oó]n(?:\s+accionaria)?|valor|parentesco|vinculo)\s*$",
@@ -782,6 +787,8 @@ def construir_ir(
                 ))
                 if re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "misma"
+                elif tiene_espacio_derecha_amplio:
+                    dir_esc = "derecha"
                 elif es_cabecera_tabla:
                     dir_esc = "abajo"
                 elif ab_vacia and (not der_vacia or (ab_es_merge and not der_es_merge)):
@@ -792,10 +799,6 @@ def construir_ir(
                         dir_esc = "derecha"
                 if color and dir_esc == "misma" and not re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "derecha"
-
-                # Ancho de línea de captura y casilla
-                ancho = int(elem.get("anchoLinea", 1) or 1)
-                es_casilla = bool(elem.get("esCasillaVerificacion", False))
 
                 # Textos de vecinos
                 # El vecino derecha está a (fila, col + ancho) o (fila, col + 1)

@@ -835,7 +835,8 @@ def _rellenar_plan_estricto(
             reporte.append(_log_item("NULL", item, None, fila_i, columna_i, "Valor ausente en el perfil"))
             continue
 
-        celda = _obtener_celda_escribible(workbook[hoja], fila_i, columna_i)
+        ws = workbook[hoja]
+        celda = _obtener_celda_escribible(ws, fila_i, columna_i)
         actual = celda.value
         actual_txt = str(actual or "").strip()
         esperado_txt = str(valor).strip()
@@ -851,7 +852,81 @@ def _rellenar_plan_estricto(
                 celda.value = valor / 100.0
             else:
                 celda.value = valor
-        ocupadas.add(clave)
+
+        # Merge horizontal seguro para campos con ancho mayor a 1 columna
+        cant_cols_merge = int(item.get("celdasAMergear") or item.get("anchoLinea") or 1)
+        rango_combinado: Optional[Tuple[int, int, int, int]] = None
+        max_col = ws.max_column or 100
+        ub_item = str(item.get("ubicacion") or "derecha").lower()
+
+        if cant_cols_merge > 1 and ub_item == "derecha":
+            rango_preexistente = _celda_en_merge(ws, fila_i, columna_i)
+            if rango_preexistente is None:
+                max_libres = 1
+                for c_chk in range(columna_i + 1, min(columna_i + cant_cols_merge, max_col + 1)):
+                    v_chk = ws.cell(row=fila_i, column=c_chk).value
+                    r_chk = _celda_en_merge(ws, fila_i, c_chk)
+                    if (v_chk is not None and str(v_chk).strip() != "") or (r_chk is not None and r_chk.min_col == c_chk):
+                        break
+                    max_libres += 1
+                if max_libres > 1:
+                    col_final = columna_i + max_libres - 1
+                    rango_combinado = (fila_i, columna_i, fila_i, col_final)
+                    try:
+                        ws.merge_cells(
+                            start_row=fila_i, start_column=columna_i,
+                            end_row=fila_i,   end_column=col_final,
+                        )
+                    except Exception as exc_merge:
+                        print(f"[AutoForm Writer Warning] No se pudo combinar celdas: {exc_merge}")
+
+        # Marcar celdas ocupadas para evitar colisiones
+        if rango_combinado:
+            for c_col in range(rango_combinado[1], rango_combinado[3] + 1):
+                ocupadas.add((hoja, fila_i, c_col))
+        else:
+            ocupadas.add(clave)
+
+        # Preservar estilos, fuentes y bordes originales
+        fila_orig = int(item.get("fila") or fila_i)
+        col_orig = int(item.get("columna") or columna_i)
+        celda_orig = ws.cell(row=fila_orig, column=col_orig)
+        relleno = _obtener_relleno_preservado(celda_orig, celda)
+        fuente = _obtener_fuente_preservada(celda_orig, celda)
+        borde_preservado = _obtener_borde_preservado(celda_orig, celda, es_misma=(fila_orig == fila_i and col_orig == columna_i))
+
+        if rango_combinado is not None:
+            ini_col, fin_col = rango_combinado[1], rango_combinado[3]
+            for col_c in range(ini_col, fin_col + 1):
+                c = ws.cell(row=fila_i, column=col_c)
+                if c.alignment:
+                    c.alignment = copy(c.alignment)
+                else:
+                    c.alignment = Alignment(vertical="center")
+                if relleno:
+                    c.fill = copy(relleno)
+                if fuente:
+                    c.font = copy(fuente)
+                if borde_preservado:
+                    c.border = Border(
+                        top=copy(borde_preservado.top) if borde_preservado.top else None,
+                        bottom=copy(borde_preservado.bottom) if borde_preservado.bottom else None,
+                        left=copy(borde_preservado.left) if col_c == ini_col and borde_preservado.left else None,
+                        right=copy(borde_preservado.right) if col_c == fin_col and borde_preservado.right else None,
+                    )
+        else:
+            if type(celda).__name__ != "MergedCell":
+                if celda.alignment:
+                    celda.alignment = copy(celda.alignment)
+                else:
+                    celda.alignment = Alignment(vertical="center")
+                if relleno:
+                    celda.fill = copy(relleno)
+                if fuente:
+                    celda.font = copy(fuente)
+                if borde_preservado:
+                    celda.border = copy(borde_preservado)
+
         reporte.append(_log_item("OK", item, valor, fila_i, columna_i))
 
     salida = BytesIO()

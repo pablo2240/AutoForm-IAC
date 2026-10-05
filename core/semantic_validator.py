@@ -822,6 +822,15 @@ def validar_item_mapeo(
         resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
         return resultado
 
+    # Safe Passivity: Rótulos de clasificación, tipo de empresa o tamaño no admiten datos de identidad
+    if campo_original in ("razon_social", "empresa", "nombre_empresa", "nit", "representante_legal"):
+        if any(tok in rotulo_norm for tok in ("gran empresa", "mediana", "pequeña", "pequena", "microempresa", "micro empresa", "tamaño", "tamano", "clasificacion")):
+            resultado["estado"] = EstadoMapeo.DESCARTADO
+            resultado["campo_final"] = ""
+            resultado["motivo"] = f"Domain Isolation: Rótulo de clasificación/tamaño '{rotulo}' no admite asignación de datos de identidad ('{campo_original}')."
+            resultado["nivel_confianza"] = NivelConfianza.SIN_COINCIDENCIA
+            return resultado
+
     # Regla de excepción (Usuario): Rótulos tipo 'NIT (Cert Bancaria)' o 'NIT Certificación' corresponden al número de cuenta
     if re.search(r"\bnit\s*(?:\(.*?(?:bancari|cert).*?\)|(?:de\s+la\s+)?certificaci[oó]n(?:\s+bancaria)?)", rotulo_norm):
         campo_original = "numero_cuenta"

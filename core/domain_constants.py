@@ -63,6 +63,8 @@ ROTULOS_GENERICOS_BLOQUEADOS: Set[str] = {
     "comercial", "cartera", "contabilidad", "calidad",
     "seleccionado por", "aprobado por", "evaluado por", "calificado por",
     "concepto comercial", "concepto", "concepto final",
+    "soy gran empresa", "gran empresa", "empresa grande", "mediana", "pequeña", "pequena",
+    "microempresa", "micro empresa", "tamaño de empresa", "tamano de empresa",
 }
 
 # ── Patrón de limpieza de caracteres terminales y espacios ─────────────────────
@@ -469,9 +471,10 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
     ],
     "razon_social": [
         "razon social", "razón social", "nombre de la empresa", "nombre o razon social",
-        "nombre o razón social", "empresa", "denominación social", "denominacion social",
+        "nombre o razón social", "nombre / razon social", "nombre / razón social",
+        "nombre razon social", "denominación social", "denominacion social",
         "nombre comercial", "razon social / nombre comercial", "razon social o nombre comercial",
-        "nombre de la compañia", "nombre de la compania", "proponente", "proveedor",
+        "nombre de la compañia", "nombre de la compania",
     ],
     "direccion": [
         "direccion", "dirección", "domicilio", "dirección principal", "direccion principal",
@@ -510,7 +513,7 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
         "nombres y apellidos del representante legal", "representante",
         "nombre y apellidos", "nombres y apellidos", "nombre y apellido", "nombres y apellido",
         "nombre completo del representante", "nombres y apellidos representante",
-        "nombres y apellidos del representante", "nombre o razon social", "nombre / razon social",
+        "nombres y apellidos del representante",
     ],
     "primer_nombre": [
         "primer nombre", "1er nombre", "primer nombre representante",
@@ -625,6 +628,11 @@ def resolver_campo_por_alias_determinista(texto_rotulo: str, seccion: str = "") 
     
     rotulo_limpio = limpiar_rotulo(texto_rotulo).strip().lower()
     if not rotulo_limpio:
+        return None
+
+    if rotulo_limpio in ROTULOS_GENERICOS_BLOQUEADOS:
+        return None
+    if re.search(r"\b(?:soy\s+)?(?:gran\s+empresa|empresa\s+grande|mediana|peque[ñn]a|microempresa|micro\s+empresa|tama[ñn]o\s+(?:de\s+)?empresa)\b", rotulo_limpio):
         return None
 
     sec_norm = limpiar_rotulo(seccion).strip().lower() if seccion else ""
