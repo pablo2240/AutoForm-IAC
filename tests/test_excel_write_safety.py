@@ -138,3 +138,9 @@ def test_stage_1_rejects_vml_controls_safely() -> None:
     ctx = PipelineContext(archivo_bytes=original, nombre_archivo="formulario.xlsx")
     with pytest.raises(ValueError, match="controles VML"):
         ejecutar_stage_1_parser(ctx)
+
+
+def test_writer_rejects_vml_controls_if_called_without_stage_1() -> None:
+    original = _agregar_parte_zip(_libro_base(), "xl/ctrlProps/ctrlProp1.xml", b"<ctrlProp/>")
+    with pytest.raises(ValueError, match="controles VML"):
+        rellenar_formulario_excel(original, [], {})
