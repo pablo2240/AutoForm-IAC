@@ -32,6 +32,7 @@ config/embedding_cache.json
 scratch/
 audio/
 
-# Biblioteca de referencias: los formularios de referencia SÍ se versionan (ver reference_library/)
-!docs/referencias/**/*.xlsx
-!docs/referencias/**/*.xlsm
+# Biblioteca de referencias: los formularios de referencia contienen datos reales y el repositorio
+# es público, por lo que NO se versionan (ya los cubre *.xlsx; se deja explícito).
+docs/referencias/**/*.xlsx
+docs/referencias/**/*.xlsm

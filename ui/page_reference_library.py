@@ -73,8 +73,8 @@ def render_biblioteca_referencias(es_admin: bool, datos_empresa: Dict[str, Any])
             return
 
         st.warning(
-            "En Streamlit Cloud los archivos agregados desde aquí se pierden al reiniciar la app. "
-            "Para conservarlos, súbelos al repositorio dentro de `docs/referencias`."
+            "Los formularios de referencia no se guardan en el repositorio (contienen datos reales). "
+            "En Streamlit Cloud los archivos agregados desde aquí se pierden al reiniciar la app."
         )
         with st.form("form_agregar_referencia", clear_on_submit=True):
             archivo = st.file_uploader("Agregar formulario de referencia", type=["xlsx", "xlsm"])

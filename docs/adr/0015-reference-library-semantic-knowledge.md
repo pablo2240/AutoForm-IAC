@@ -23,11 +23,13 @@ docs/referencias/**/*.xlsx  ->  extractor (stage 1-2 + IR existentes, sin LLM)
    -> consultar_llm_seccion_instructor (existente) -> validación determinista (sin cambios)
 ```
 
-- **Fuente de verdad = la carpeta** `docs/referencias` (versionada en el repositorio; la primera
+- **Fuente de verdad = la carpeta** `docs/referencias` (NO se versiona: el repositorio es público y los
+  formularios traen datos reales; ver Consecuencias). La primera
   subcarpeta es la *familia*; `referencias.json` opcional fija familia/fuente/confianza). La base SQLite
   es derivada y se reconstruye sola: `sincronizar()` compara el hash de cada archivo y solo reprocesa lo
   que cambió, retira lo borrado y reprocesa si cambian los datos de la empresa o la versión del extractor.
-  El disco de Streamlit Cloud es efímero; por eso la carpeta, no la base, es lo persistente.
+  El disco de Streamlit Cloud es efímero, así que en la nube las referencias deben cargarse desde el panel
+  o desde un almacenamiento persistente (ver Consecuencias).
 - **Extracción** (`extractor.py`): por cada rótulo guarda hoja, coordenada, sección, contexto de fila,
   vecinos, ubicación de escritura, ejemplo de valor y campo maestro con su **procedencia y confianza**:
   `plantilla_verificada` (0.95, plan guardado por usuarios), `valor_ejemplo` (valor diligenciado que
@@ -70,8 +72,11 @@ docs/referencias/**/*.xlsx  ->  extractor (stage 1-2 + IR existentes, sin LLM)
 - El conocimiento crece agregando archivos a `docs/referencias`, sin tocar código.
 - Reconstruir la base al arrancar cuesta tiempo proporcional al número de referencias nuevas (el escáner
   existente tarda unos segundos por formulario grande); por eso corre en segundo plano y es incremental.
-- Los formularios de referencia contienen datos reales de la empresa: deben versionarse solo en
-  repositorios privados y sin información personal de terceros.
+- Los formularios de referencia contienen datos reales de la empresa y el repositorio es público: están
+  en `.gitignore` y viven solo en la máquina de quien los administra. En la nube la biblioteca arranca
+  vacía (el pipeline funciona igual) y se llena desde el panel de administradores, perdiéndose al
+  reiniciar. Para persistirla sin exponer datos, el siguiente paso es guardar los archivos o el
+  conocimiento en Supabase (Storage/tabla con RLS) detrás de la misma interfaz.
 - Limitación conocida: el escáner de celdas descarta rótulos cuyos vecinos derecho y abajo ya están
   llenos, así que en formularios diligenciados parte de los rótulos no se indexa. Un formulario en blanco
   (o una plantilla verificada) rinde más que uno completo.
