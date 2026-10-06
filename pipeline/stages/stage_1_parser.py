@@ -8,6 +8,12 @@ from pathlib import Path
 from pipeline.context import PipelineContext
 from pipeline.handlers import ExcelHandler, detectar_tipo_documento
 
+MENSAJE_CONTROLES_VML = (
+    "El formulario contiene controles de formulario (casillas de verificación o listas desplegables "
+    "insertadas como objetos). Se diligenciaron los campos de texto, pero la copia no conserva esos "
+    "controles: revisa y marca esas opciones manualmente en el archivo final."
+)
+
 
 def ejecutar_stage_1_parser(ctx: PipelineContext) -> PipelineContext:
     """Escanea una plantilla Excel y rechaza formatos no preservables de forma segura."""
@@ -36,18 +42,16 @@ def ejecutar_stage_1_parser(ctx: PipelineContext) -> PipelineContext:
 
         ctx.inspeccion_excel = inspeccionar_libro_excel(ctx.archivo_bytes)
         if ctx.inspeccion_excel.tiene_controles_vml:
-            raise ValueError(
-                "El archivo contiene controles VML no preservables de forma segura; "
-                "no se generará una copia modificada."
-            )
+            # No se bloquea el procesamiento: la copia se genera en OpenXML nativo (apertura limpia en
+            # Excel), que no conserva los controles de formulario. Se avisa para no perderlos en silencio.
+            ctx.metadatos["advertencia_controles_vml"] = MENSAJE_CONTROLES_VML
+            ctx.log(f"[Stage 1 - Parser] Advertencia: {MENSAJE_CONTROLES_VML}")
         ctx.log(
             f"[Stage 1 - Parser] Inspección estructurada: {len(ctx.inspeccion_excel.hojas)} hojas, "
             f"{len(ctx.inspeccion_excel.tablas)} tablas, "
             f"{len(ctx.inspeccion_excel.celdas_con_formula)} fórmulas protegidas, "
             f"{len(ctx.inspeccion_excel.validaciones_por_celda)} celdas con validación."
         )
-    except ValueError:
-        raise
     except Exception as exc_insp:
         ctx.log(f"[Stage 1 - Parser] Advertencia en inspección estructurada: {exc_insp}")
 

@@ -35,8 +35,7 @@ docs/referencias/**/*.xlsx  ->  extractor (stage 1-2 + IR existentes, sin LLM)
   `plantilla_verificada` (0.95, plan guardado por usuarios), `valor_ejemplo` (valor diligenciado que
   coincide con el perfil, solo si el alias lo confirma o el valor identifica una única clave) y `alias`
   (0.85, resolver determinista existente). Se prioriza precisión: un valor ambiguo o que contradice al
-  alias no asigna campo. A diferencia de la etapa 1, una referencia con controles VML se lee igual (no se
-  escribe nunca).
+  alias no asigna campo. Una referencia con controles VML se lee igual (nunca se escribe).
 - **Vectores**: numpy en memoria detrás de `IndiceVectorial`, con metadatos en SQLite. Para decenas de
   miles de vectores un producto matricial exacto responde en milisegundos, sin dependencias nativas ni
   servicios. FAISS/Chroma/Qdrant se descartan por peso o costo a esta escala; pgvector (Supabase) es la

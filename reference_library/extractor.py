@@ -333,8 +333,8 @@ def extraer_conocimiento(
 ) -> ExtraccionDocumento:
     """Analiza un Excel de referencia (solo lectura, sin LLM) y devuelve su conocimiento.
 
-    A diferencia de la etapa 1 del pipeline no rechaza libros con controles VML: una referencia
-    solo se lee, nunca se modifica.
+    Una referencia solo se lee, nunca se modifica: un libro con controles de formulario (VML)
+    se analiza igual.
     """
     libro = openpyxl.load_workbook(filename=BytesIO(archivo_bytes), data_only=False, keep_vba=True)
     elementos = ExcelHandler.escanear(libro)

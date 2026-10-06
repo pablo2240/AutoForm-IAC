@@ -1354,17 +1354,4 @@ def rellenar_formulario_excel(
 ) -> Tuple[bytes, List[Dict[str, Any]]]:
     """Ejecuta el plan resuelto de Fase 1 sin redireccionar ni modificar estructura."""
     del celdas_prellenadas
-    try:
-        with zipfile.ZipFile(BytesIO(bytes_excel), "r") as paquete:
-            tiene_vml = any(
-                nombre.startswith("xl/ctrlProps/") or nombre.startswith("xl/drawings/vmlDrawing")
-                for nombre in paquete.namelist()
-            )
-    except zipfile.BadZipFile:
-        tiene_vml = False
-    if tiene_vml:
-        raise ValueError(
-            "El archivo contiene controles VML no preservables de forma segura; "
-            "no se generará una copia modificada."
-        )
     return _rellenar_plan_estricto(bytes_excel, plan_mapeo, datos_empresa, keep_vba)

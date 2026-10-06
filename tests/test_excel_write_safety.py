@@ -133,14 +133,19 @@ def test_stage_1_rejects_legacy_xls_safely() -> None:
         ejecutar_stage_1_parser(ctx)
 
 
-def test_stage_1_rejects_vml_controls_safely() -> None:
+def test_stage_1_allows_vml_controls_but_warns_that_they_are_not_kept() -> None:
     original = _agregar_parte_zip(_libro_base(), "xl/ctrlProps/ctrlProp1.xml", b"<ctrlProp/>")
     ctx = PipelineContext(archivo_bytes=original, nombre_archivo="formulario.xlsx")
-    with pytest.raises(ValueError, match="controles VML"):
-        ejecutar_stage_1_parser(ctx)
+
+    ctx = ejecutar_stage_1_parser(ctx)
+
+    assert ctx.elementos_raw
+    assert "controles de formulario" in ctx.metadatos["advertencia_controles_vml"]
 
 
-def test_writer_rejects_vml_controls_if_called_without_stage_1() -> None:
+def test_writer_processes_workbooks_with_vml_controls_without_raising() -> None:
     original = _agregar_parte_zip(_libro_base(), "xl/ctrlProps/ctrlProp1.xml", b"<ctrlProp/>")
-    with pytest.raises(ValueError, match="controles VML"):
-        rellenar_formulario_excel(original, [], {})
+
+    salida, _ = rellenar_formulario_excel(original, [], {})
+
+    assert load_workbook(BytesIO(salida)).active.title == "Formulario"

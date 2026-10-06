@@ -37,6 +37,10 @@ def render_pantalla_descarga(ctx: PipelineContext, key_prefix: str = "download_u
                 f"({res_verif.formulas_preservadas} fórmulas intactas) y {res_verif.exitosos} celdas verificadas con éxito en memoria."
             )
 
+    advertencia_vml = (getattr(ctx, "metadatos", None) or {}).get("advertencia_controles_vml")
+    if advertencia_vml:
+        st.warning(f"⚠️ {advertencia_vml}")
+
     # Determinar extensión y MIME type (Excel OpenXML)
     nombre_base = Path(ctx.nombre_archivo).stem if ctx.nombre_archivo else "Formulario_Rellenado"
     nombre_descarga = f"{nombre_base}_AutoForm.xlsx"
