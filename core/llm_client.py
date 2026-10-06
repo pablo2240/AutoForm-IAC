@@ -401,6 +401,9 @@ def consultar_llm_seccion_instructor(
                 model=modelo,
                 response_model=PlanMapeoSemantico,
                 max_retries=2,
+                # Mapeo reproducible: el mismo formulario debe dar el mismo resultado en cada ejecución.
+                temperature=0.0,
+                seed=42,
                 messages=[
                     {"role": "system", "content": prompt_sistema},
                     {"role": "user", "content": prompt_str},

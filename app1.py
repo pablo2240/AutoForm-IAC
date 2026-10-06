@@ -1765,6 +1765,7 @@ if uploaded_file is not None:
                         archivo_bytes=archivo_bytes,
                         nombre_archivo=file_name,
                         datos_empresa=datos_empresa_efectivos,
+                        operadores_conocidos=profile_manager.obtener_operadores_conocidos(usuario_actual),
                         profile_id=profile_id_activo,
                         profile_nombre=perfil_seleccionado_etiqueta,
                         profile_version=profile_version_activa,

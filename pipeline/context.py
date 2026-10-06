@@ -91,6 +91,9 @@ class PipelineContext:
     # Etapa 2b: Representación Intermedia Espacial (IR) — Fase 1 HSP
     documento_ir: Optional[Any] = None  # core.spatial_ir.DocumentoIR (lazy import)
     
+    # Diligenciadores conocidos (para reconocer los datos de un diligenciador anterior ya escritos en el formulario)
+    operadores_conocidos: List[Dict[str, Any]] = field(default_factory=list)
+
     # Etapa 2c: Familia del formulario según la biblioteca de referencias (None = desconocido)
     familia_formulario: Optional[str] = None
 

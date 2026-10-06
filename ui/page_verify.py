@@ -417,6 +417,7 @@ def preparar_tabla_verificacion(
             "_tipo_elemento": tipo_elem,
             "_estado_raw": estado_raw,
             "_confianza_raw": confianza_raw,
+            "_sobrescribir": bool(item.get("sobrescribir_valor_previo", False)),
         })
         coordenadas_mapeadas.add((hoja, fila, col))
 
@@ -601,6 +602,8 @@ def aplicar_cambios_verificacion(
         confianza_score = float(row.get("_confianza_score", 1.0) or 1.0)
         bloqueante = bool(row.get("_bloqueante", False))
         adv_val = str(row.get("Advertencias", ""))
+        sobrescribir = row.get("_sobrescribir", False)
+        sobrescribir = sobrescribir is True or str(sobrescribir) == "True"  # una fila sin la columna llega como NaN
 
         item_final = {
             "hoja": hoja,
@@ -622,6 +625,8 @@ def aplicar_cambios_verificacion(
             "anchoLinea": ancho_l,
             "seccion": seccion,
         }
+        if sobrescribir:
+            item_final["sobrescribir_valor_previo"] = True
 
         plan_resultado.append(item_final)
 

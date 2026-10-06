@@ -983,6 +983,26 @@ def guardar_operador(
     )
 
 
+def obtener_operadores_conocidos(usuario: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
+    """Todas las personas que pueden figurar como diligenciador: catálogo, cuentas visibles y la propia.
+
+    Sirve para reconocer, en un formulario ya diligenciado antes, los datos de un diligenciador anterior.
+    Las fuentes que la sesión no puede leer (RLS) simplemente no aportan.
+    """
+    conocidos: List[Dict[str, Any]] = []
+    try:
+        conocidos.extend(database.listar_operadores_db())
+    except Exception as exc:
+        print(f"[AutoForm AI] No se pudo leer el catálogo de diligenciadores: {exc}")
+    try:
+        conocidos.extend(database.listar_usuarios_db())
+    except Exception as exc:
+        print(f"[AutoForm AI] No se pudo leer el listado de cuentas: {exc}")
+    if usuario:
+        conocidos.append(dict(usuario))
+    return [c for c in conocidos if isinstance(c, dict)]
+
+
 def eliminar_operador(operador_id: str) -> bool:
     """Elimina un operador no activo de SQLite."""
     return database.eliminar_operador_db(operador_id)

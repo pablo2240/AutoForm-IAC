@@ -17,6 +17,7 @@ from pipeline.context import PipelineContext
 from pipeline.stages.stage_1_parser import ejecutar_stage_1_parser
 from pipeline.stages.stage_2_classifier import clasificar_elementos_formulario
 from pipeline.stages.stage_3_llm_mapper import ejecutar_stage_3_mapper
+from pipeline.stages.stage_3d_diligenciador_previo import ejecutar_stage_3d_diligenciador_previo
 from pipeline.stages.stage_5_writer import ejecutar_stage_5_writer
 
 
@@ -78,6 +79,9 @@ class PipelineOrchestrator:
         if on_progress:
             on_progress("Emparejando datos con el perfil empresarial...", 0.75)
         ctx = ejecutar_stage_3_mapper(ctx)
+
+        # Etapa 3d: datos de un diligenciador anterior ya escritos en el formulario -> perfil activo
+        ctx = ejecutar_stage_3d_diligenciador_previo(ctx)
 
         if on_progress:
             on_progress("¡Análisis completado! Listo para verificación.", 1.0)

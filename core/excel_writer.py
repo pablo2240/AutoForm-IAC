@@ -840,6 +840,9 @@ def _rellenar_plan_estricto(
         actual = celda.value
         actual_txt = str(actual or "").strip()
         esperado_txt = str(valor).strip()
+        # Datos de un diligenciador anterior: son variables del perfil activo, no información fija de la
+        # plantilla. Solo aplica a campos responsable_* marcados por la etapa 3d (nunca a datos de la empresa).
+        sobrescribe_previo = bool(item.get("sobrescribir_valor_previo")) and str(item.get("campo") or "").startswith("responsable_")
         rot_orig = str(item.get("rotulo_original") or item.get("rotulo") or "").strip()
         if rot_orig and esperado_txt.lower() == rot_orig.lower():
             reporte.append(_log_item("NULL", item, None, fila_i, columna_i, "El valor es idéntico al rótulo; no se inyecta título como dato"))
@@ -857,11 +860,14 @@ def _rellenar_plan_estricto(
             except Exception:
                 pass
 
-        if actual_txt and not es_mismo_valor and not re.fullmatch(r"[\s_.:-]+", actual_txt):
+        if actual_txt and not es_mismo_valor and not sobrescribe_previo and not re.fullmatch(r"[\s_.:-]+", actual_txt):
             reporte.append(_log_item("BLOCKED", item, valor, fila_i, columna_i, "La celda destino ya contiene información"))
             continue
 
-        if not es_mismo_valor:
+        if sobrescribe_previo and not esperado_txt:
+            # El perfil activo no tiene este dato: se retira el del diligenciador anterior.
+            celda.value = None
+        elif not es_mismo_valor:
             es_porcentaje = "%" in str(celda.number_format or "")
             try:
                 num_v = float(str(valor).replace(",", ".").replace("%", "").strip())

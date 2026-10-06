@@ -83,3 +83,4 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0014: Fixed Company Data & Diligenciador Selector`](docs/adr/0014-fixed-company-and-diligenciador-selector.md)
 * [`ADR-0015: Reference Library, Semantic Search, Families & Dynamic Few-Shot`](docs/adr/0015-reference-library-semantic-knowledge.md)
 * [`ADR-0016: Reference Library Persistence in Supabase`](docs/adr/0016-reference-library-supabase-persistence.md)
+* [`ADR-0017: Previous Operator Data Replacement & Reproducible Mapping`](docs/adr/0017-previous-operator-data-replacement.md)
