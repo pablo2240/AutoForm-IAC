@@ -35,6 +35,7 @@ _ESQUEMA = (
         confianza REAL NOT NULL DEFAULT 0.75,
         estado TEXT NOT NULL DEFAULT 'ok',
         error TEXT NOT NULL DEFAULT '',
+        origen TEXT NOT NULL DEFAULT 'local',
         version_extractor TEXT NOT NULL DEFAULT '',
         plantilla_id TEXT,
         estructura_json TEXT NOT NULL DEFAULT '{}',
@@ -98,6 +99,7 @@ class DocumentoReferencia:
     confianza: float
     estado: str
     error: str
+    origen: str
     version_extractor: str
     plantilla_id: Optional[str]
     estructura: Dict[str, Any]
@@ -119,6 +121,7 @@ def _a_documento(fila: sqlite3.Row) -> DocumentoReferencia:
         confianza=float(fila["confianza"]),
         estado=fila["estado"],
         error=fila["error"],
+        origen=fila["origen"],
         version_extractor=fila["version_extractor"],
         plantilla_id=fila["plantilla_id"],
         estructura=json.loads(fila["estructura_json"] or "{}"),
@@ -137,6 +140,9 @@ class ReferenceStore:
         with self._conexion() as conn:
             for sentencia in _ESQUEMA:
                 conn.execute(sentencia)
+            columnas = {f["name"] for f in conn.execute("PRAGMA table_info(ref_documentos)").fetchall()}
+            if "origen" not in columnas:  # bases creadas antes de la persistencia en la nube
+                conn.execute("ALTER TABLE ref_documentos ADD COLUMN origen TEXT NOT NULL DEFAULT 'local'")
 
     @contextmanager
     def _conexion(self) -> Iterator[sqlite3.Connection]:
@@ -165,6 +171,7 @@ class ReferenceStore:
         plantilla_id: Optional[str],
         estructura: Dict[str, Any],
         campos: List[CampoReferencia],
+        origen: str = "local",
     ) -> None:
         """Inserta o reemplaza, en una sola transacción, un documento y todo su conocimiento."""
         ahora = _ahora()
@@ -174,13 +181,13 @@ class ReferenceStore:
             conn.execute(
                 """
                 INSERT INTO ref_documentos (doc_id, ruta, nombre, familia, tipo_documento, hash_contenido,
-                    huella_datos, fuente, confianza, estado, error, version_extractor, plantilla_id,
+                    huella_datos, fuente, confianza, estado, error, origen, version_extractor, plantilla_id,
                     estructura_json, total_campos, creado_en, actualizado_en)
-                VALUES (?, ?, ?, ?, 'excel', ?, ?, ?, ?, 'ok', '', ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, 'excel', ?, ?, ?, ?, 'ok', '', ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     doc_id, ruta, nombre, familia, hash_contenido, huella_datos, fuente, confianza,
-                    version_extractor, plantilla_id, json.dumps(estructura, ensure_ascii=False),
+                    origen, version_extractor, plantilla_id, json.dumps(estructura, ensure_ascii=False),
                     len(campos), previo["creado_en"] if previo else ahora, ahora,
                 ),
             )
@@ -211,6 +218,7 @@ class ReferenceStore:
         huella_datos: str,
         version_extractor: str,
         error: str,
+        origen: str = "local",
     ) -> None:
         """Deja constancia de un documento que no pudo procesarse, sin conocimiento asociado."""
         ahora = _ahora()
@@ -220,10 +228,10 @@ class ReferenceStore:
             conn.execute(
                 """
                 INSERT INTO ref_documentos (doc_id, ruta, nombre, familia, hash_contenido, huella_datos,
-                    estado, error, version_extractor, creado_en, actualizado_en)
-                VALUES (?, ?, ?, ?, ?, ?, 'error', ?, ?, ?, ?)
+                    estado, error, origen, version_extractor, creado_en, actualizado_en)
+                VALUES (?, ?, ?, ?, ?, ?, 'error', ?, ?, ?, ?, ?)
                 """,
-                (doc_id, ruta, nombre, familia, hash_contenido, huella_datos, error[:500], version_extractor,
+                (doc_id, ruta, nombre, familia, hash_contenido, huella_datos, error[:500], origen, version_extractor,
                  previo["creado_en"] if previo else ahora, ahora),
             )
 
@@ -239,9 +247,14 @@ class ReferenceStore:
             fila = conn.execute("SELECT * FROM ref_documentos WHERE doc_id = ?", (doc_id,)).fetchone()
         return _a_documento(fila) if fila else None
 
-    def listar_documentos(self) -> List[DocumentoReferencia]:
+    def listar_documentos(self, origen: Optional[str] = None) -> List[DocumentoReferencia]:
         with self._conexion() as conn:
-            filas = conn.execute("SELECT * FROM ref_documentos ORDER BY familia, nombre").fetchall()
+            if origen:
+                filas = conn.execute(
+                    "SELECT * FROM ref_documentos WHERE origen = ? ORDER BY familia, nombre", (origen,)
+                ).fetchall()
+            else:
+                filas = conn.execute("SELECT * FROM ref_documentos ORDER BY familia, nombre").fetchall()
         return [_a_documento(f) for f in filas]
 
     def listar_campos(

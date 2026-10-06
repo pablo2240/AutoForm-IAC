@@ -12,7 +12,7 @@ import hashlib
 import re
 import unicodedata
 from collections import Counter, defaultdict
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from io import BytesIO
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -357,4 +357,23 @@ def extraer_conocimiento(
         campos=campos,
         estructura=_describir_estructura(archivo_bytes, nombre_archivo, clasificados, campos),
         plantilla_id=plantilla_id,
+    )
+
+
+def extraccion_a_dict(extraccion: ExtraccionDocumento) -> Dict[str, Any]:
+    """Instantánea serializable del conocimiento extraído (para guardarlo fuera del disco local)."""
+    return {
+        "estructura": extraccion.estructura,
+        "plantilla_id": extraccion.plantilla_id,
+        "campos": [asdict(c) for c in extraccion.campos],
+    }
+
+
+def extraccion_desde_dict(datos: Dict[str, Any]) -> ExtraccionDocumento:
+    """Reconstruye una extracción desde su instantánea; ignora claves desconocidas de versiones futuras."""
+    nombres = {f for f in CampoReferencia.__dataclass_fields__}
+    return ExtraccionDocumento(
+        campos=[CampoReferencia(**{k: v for k, v in c.items() if k in nombres}) for c in datos.get("campos", [])],
+        estructura=dict(datos.get("estructura", {})),
+        plantilla_id=datos.get("plantilla_id"),
     )

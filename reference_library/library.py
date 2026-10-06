@@ -57,11 +57,11 @@ class ReporteSincronizacion:
         )
 
 
-def _hash_contenido(contenido: bytes) -> str:
+def calcular_hash(contenido: bytes) -> str:
     return hashlib.sha256(contenido).hexdigest()[:16]
 
 
-def _doc_id(clave: str) -> str:
+def doc_id_para(clave: str) -> str:
     return hashlib.sha256(clave.lower().encode("utf-8")).hexdigest()[:16]
 
 
@@ -110,6 +110,25 @@ class ReferenceLibrary:
             print(f"[ReferenceLibrary] Manifiesto ilegible, se ignora ({exc}).")
             return {}
 
+    def metadatos_de(self, clave: str, nombre: str) -> Tuple[str, str, float]:
+        """Familia, fuente y confianza que corresponden a un archivo (manifiesto > carpeta/nombre)."""
+        return self._metadatos(clave, nombre)
+
+    def datos_empresa_actuales(self) -> Dict[str, Any]:
+        return self._datos()
+
+    def extraer(self, contenido: bytes, nombre: str, datos: Dict[str, Any]) -> ExtraccionDocumento:
+        """Analiza un formulario con el extractor configurado (sin guardarlo)."""
+        return self._extractor(contenido, nombre, datos)
+
+    def archivos_locales(self) -> List[Path]:
+        """Formularios de la carpeta local de referencias."""
+        return self._archivos()
+
+    def clave_de(self, archivo: Path) -> str:
+        """Clave (ruta relativa) de un archivo de la carpeta local."""
+        return self._clave(archivo)
+
     def _metadatos(self, clave: str, nombre: str) -> Tuple[str, str, float]:
         """Familia, fuente y confianza de un archivo (manifiesto > carpeta/nombre)."""
         partes = clave.split("/")
@@ -141,9 +160,9 @@ class ReferenceLibrary:
     def _procesar(self, archivo: Path, forzar: bool, datos: Dict[str, Any]) -> str:
         """Devuelve 'agregado', 'actualizado', 'sin_cambios' o 'error'."""
         clave = self._clave(archivo)
-        doc_id = _doc_id(clave)
+        doc_id = doc_id_para(clave)
         contenido = archivo.read_bytes()
-        hash_actual = _hash_contenido(contenido)
+        hash_actual = calcular_hash(contenido)
         huella = huella_datos_empresa(datos)
         previo = self.store.obtener_documento(doc_id)
 
@@ -183,20 +202,20 @@ class ReferenceLibrary:
         presentes = set()
         datos = self._datos() if datos_empresa is None else dict(datos_empresa)
         for archivo in self._archivos():
-            presentes.add(_doc_id(self._clave(archivo)))
+            presentes.add(doc_id_para(self._clave(archivo)))
             resultado = self._procesar(archivo, False, datos)
             if resultado == "agregado":
                 reporte.agregados.append(archivo.name)
             elif resultado == "actualizado":
                 reporte.actualizados.append(archivo.name)
             elif resultado == "error":
-                doc = self.store.obtener_documento(_doc_id(self._clave(archivo)))
+                doc = self.store.obtener_documento(doc_id_para(self._clave(archivo)))
                 reporte.errores[archivo.name] = doc.error if doc else "error desconocido"
             else:
                 reporte.sin_cambios.append(archivo.name)
 
         if eliminar_faltantes:
-            for doc in self.store.listar_documentos():
+            for doc in self.store.listar_documentos(origen="local"):
                 if doc.doc_id not in presentes:
                     self.store.eliminar_documento(doc.doc_id)
                     reporte.eliminados.append(doc.nombre)
@@ -226,7 +245,7 @@ class ReferenceLibrary:
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_bytes(contenido)
         resultado = self._procesar(destino, True, self._datos() if datos_empresa is None else dict(datos_empresa))
-        doc_id = _doc_id(self._clave(destino))
+        doc_id = doc_id_para(self._clave(destino))
         if resultado == "error":
             doc = self.store.obtener_documento(doc_id)
             raise ValueError(f"No se pudo procesar '{nombre_final}': {doc.error if doc else 'error desconocido'}")
@@ -237,7 +256,7 @@ class ReferenceLibrary:
         doc = self.store.obtener_documento(doc_id)
         if doc is None:
             return False
-        if borrar_archivo:
+        if borrar_archivo and doc.origen == "local":
             archivo = self.directorio / doc.ruta
             if archivo.exists():
                 archivo.unlink()
@@ -252,11 +271,11 @@ class ReferenceLibrary:
         reporte = ReporteSincronizacion()
         datos = self._datos() if datos_empresa is None else dict(datos_empresa)
         for archivo in self._archivos():
-            if doc_id and _doc_id(self._clave(archivo)) != doc_id:
+            if doc_id and doc_id_para(self._clave(archivo)) != doc_id:
                 continue
             resultado = self._procesar(archivo, True, datos)
             if resultado == "error":
-                doc = self.store.obtener_documento(_doc_id(self._clave(archivo)))
+                doc = self.store.obtener_documento(doc_id_para(self._clave(archivo)))
                 reporte.errores[archivo.name] = doc.error if doc else "error desconocido"
             else:
                 reporte.actualizados.append(archivo.name)

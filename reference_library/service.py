@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import os
 import threading
+import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional, Set
 
 from reference_library.families import ClasificacionFormulario, ClasificadorFamilias
 from reference_library.fewshot import GeneradorFewShot
 from reference_library.library import ReferenceLibrary
+from reference_library.remote import RepositorioRemoto, SincronizadorNube
 from reference_library.search import BuscadorSemantico
 from reference_library.store import ReferenceStore
 
@@ -29,6 +31,10 @@ class ServicioReferencias:
     clasificador: ClasificadorFamilias
     fewshot: GeneradorFewShot
 
+    def sincronizador_nube(self, repositorio: RepositorioRemoto, es_admin: bool = False) -> SincronizadorNube:
+        """Sincronizador con el repositorio remoto de la sesión actual (el servicio es compartido)."""
+        return SincronizadorNube(self.biblioteca, repositorio, puede_escribir=es_admin)
+
     @property
     def listo(self) -> bool:
         """True si hay al menos un documento indexado correctamente."""
@@ -40,6 +46,7 @@ _BLOQUEO = threading.Lock()
 _BLOQUEO_REGISTRO = threading.Lock()
 _servicio: Optional[ServicioReferencias] = None
 _hilo_sincronizacion: Optional[threading.Thread] = None
+_ultima_sincronizacion: float = 0.0
 
 
 def referencias_habilitadas() -> bool:
@@ -78,27 +85,42 @@ def obtener_servicio() -> Optional[ServicioReferencias]:
 
 def reiniciar_servicio(servicio: Optional[ServicioReferencias] = None) -> None:
     """Reemplaza (o limpia) el servicio compartido; útil en pruebas y tras cambios de configuración."""
-    global _servicio, _hilo_sincronizacion
+    global _servicio, _hilo_sincronizacion, _ultima_sincronizacion
     with _BLOQUEO:
         _servicio = servicio
         _hilo_sincronizacion = None
+        _ultima_sincronizacion = 0.0
 
 
-def sincronizar_en_segundo_plano(datos_empresa: Optional[Dict[str, Any]] = None) -> Optional[threading.Thread]:
-    """Alinea la base con la carpeta de referencias sin bloquear el arranque de la aplicación.
+def _intervalo_sincronizacion() -> float:
+    """Segundos mínimos entre sincronizaciones automáticas (``AUTOFORM_REFERENCES_SYNC_TTL_S``, 600)."""
+    try:
+        return max(float(os.getenv("AUTOFORM_REFERENCES_SYNC_TTL_S", "600")), 0.0)
+    except ValueError:
+        return 600.0
 
-    ``datos_empresa`` debe leerse en el hilo de la sesión (un hilo aparte no tiene sesión de
-    Supabase) y se usa para reconocer los valores ya diligenciados en las referencias.
 
-    Mientras no termine, el pipeline usa lo ya indexado (o nada) y sigue funcionando igual.
-    Es idempotente: llamarla varias veces no lanza hilos duplicados.
+def sincronizar_en_segundo_plano(
+    datos_empresa: Optional[Dict[str, Any]] = None,
+    repositorio: Optional[RepositorioRemoto] = None,
+    es_admin: bool = False,
+) -> Optional[threading.Thread]:
+    """Alinea la base con la carpeta local y, si hay, con el repositorio remoto, sin bloquear la app.
+
+    ``datos_empresa`` y ``repositorio`` deben crearse en el hilo de la sesión (un hilo aparte no tiene
+    sesión de Supabase). Mientras no termine, el pipeline usa lo ya indexado (o nada) y sigue igual.
+    Es idempotente: no lanza hilos duplicados y no repite la sincronización antes del intervalo
+    configurado, de modo que una sesión nueva recoge lo que un administrador publicó entre tanto.
     """
-    global _hilo_sincronizacion
+    global _hilo_sincronizacion, _ultima_sincronizacion
     if not referencias_habilitadas():
         return None
     with _BLOQUEO:
         if _hilo_sincronizacion is not None and _hilo_sincronizacion.is_alive():
             return _hilo_sincronizacion
+        if _hilo_sincronizacion is not None and time.time() - _ultima_sincronizacion < _intervalo_sincronizacion():
+            return _hilo_sincronizacion
+        _ultima_sincronizacion = time.time()
 
         def _trabajo() -> None:
             try:
@@ -106,8 +128,11 @@ def sincronizar_en_segundo_plano(datos_empresa: Optional[Dict[str, Any]] = None)
                 if servicio is None:
                     return
                 reporte = servicio.biblioteca.sincronizar(datos_empresa=datos_empresa)
+                print(f"[ReferenceLibrary] Sincronización local: {reporte.resumen()}.")
+                if repositorio is not None:
+                    reporte_nube = servicio.sincronizador_nube(repositorio, es_admin).sincronizar(datos_empresa)
+                    print(f"[ReferenceLibrary] Sincronización con la nube: {reporte_nube.resumen()}.")
                 servicio.buscador.reindexar()
-                print(f"[ReferenceLibrary] Sincronización completada: {reporte.resumen()}.")
             except Exception as exc:
                 print(f"[ReferenceLibrary] La sincronización en segundo plano falló: {exc}")
 

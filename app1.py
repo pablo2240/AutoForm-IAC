@@ -764,9 +764,12 @@ with st.sidebar:
     datos_empresa = dict(empresa_fija.datos)
 
     # 📚 Biblioteca de referencias: se alinea en segundo plano (opcional; sin ella el flujo no cambia).
+    repositorio_referencias = None
     try:
+        from reference_library.repositorio_supabase import RepositorioSupabase
         from reference_library.service import sincronizar_en_segundo_plano
-        sincronizar_en_segundo_plano(datos_empresa)
+        repositorio_referencias = RepositorioSupabase.desde_sesion()
+        sincronizar_en_segundo_plano(datos_empresa, repositorio_referencias, es_admin_usuario)
     except Exception as exc_ref:
         print(f"[AutoForm AI] Biblioteca de referencias no iniciada: {exc_ref}")
     st.markdown("### 🏢 **Empresa**")
@@ -1239,7 +1242,7 @@ with st.sidebar:
             else:
                 st.warning("Se aplican en esta sesión, pero no se pudieron guardar de forma permanente.")
 
-    render_biblioteca_referencias(es_admin_usuario, datos_empresa)
+    render_biblioteca_referencias(es_admin_usuario, datos_empresa, repositorio_referencias)
 
     if es_admin_usuario:
         _ses_actual = st.session_state.get("supabase_session", {})

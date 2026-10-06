@@ -75,8 +75,7 @@ docs/referencias/**/*.xlsx  ->  extractor (stage 1-2 + IR existentes, sin LLM)
 - Los formularios de referencia contienen datos reales de la empresa y el repositorio es público: están
   en `.gitignore` y viven solo en la máquina de quien los administra. En la nube la biblioteca arranca
   vacía (el pipeline funciona igual) y se llena desde el panel de administradores, perdiéndose al
-  reiniciar. Para persistirla sin exponer datos, el siguiente paso es guardar los archivos o el
-  conocimiento en Supabase (Storage/tabla con RLS) detrás de la misma interfaz.
+  reiniciar. La persistencia en Supabase se resolvió en el ADR-0016.
 - Limitación conocida: el escáner de celdas descarta rótulos cuyos vecinos derecho y abajo ya están
   llenos, así que en formularios diligenciados parte de los rótulos no se indexa. Un formulario en blanco
   (o una plantilla verificada) rinde más que uno completo.
