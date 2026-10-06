@@ -870,6 +870,29 @@ def _fila_catalogo_perfil(fila: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _listar_catalogo_perfiles_pre_007(client: Client) -> List[Dict[str, Any]]:
+    """Adaptador de lectura temporal para entornos que aún no aplican migración 007.
+
+    Solo habilita selección de perfiles ya existentes. No habilita escrituras ni
+    sustituye la migración, que sigue siendo obligatoria para el catálogo nuevo.
+    """
+    res = (
+        client.table("perfiles_empresa")
+        .select("id, slug, nombre_empresa, datos_json, es_activa, updated_at")
+        .order("nombre_empresa")
+        .execute()
+    )
+    return [
+        _fila_catalogo_perfil({
+            **fila,
+            "tipo_perfil": "EMPRESA",
+            "estado": "ACTIVO",
+            "version": 1,
+        })
+        for fila in (res.data or [])
+    ]
+
+
 def _registrar_auditoria_perfil_db(
     profile_id: str,
     actor_id: Optional[str],
@@ -913,13 +936,19 @@ def listar_catalogo_perfiles_db(
     """Lista perfiles del catálogo; por defecto solo los activos."""
     if usar_supabase():
         cli = _obtener_cliente_activo(client)
-        consulta = cli.table("perfiles_empresa").select(
-            "id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at"
-        )
-        if not incluir_archivados:
-            consulta = consulta.eq("estado", "ACTIVO")
-        res = consulta.order("nombre_empresa").execute()
-        return [_fila_catalogo_perfil(fila) for fila in (res.data or [])]
+        try:
+            consulta = cli.table("perfiles_empresa").select(
+                "id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at"
+            )
+            if not incluir_archivados:
+                consulta = consulta.eq("estado", "ACTIVO")
+            res = consulta.order("nombre_empresa").execute()
+            return [_fila_catalogo_perfil(fila) for fila in (res.data or [])]
+        except Exception as exc:
+            # El único fallback permitido es de lectura sobre la tabla remota
+            # existente; nunca se cambia a SQLite en producción/staging.
+            print(f"[AutoForm AI DB] Catálogo 007 no disponible ({type(exc).__name__}); modo de selección compatible.")
+            return _listar_catalogo_perfiles_pre_007(cli)
 
     inicializar_db()
     with obtener_conexion() as conn:
@@ -940,14 +969,29 @@ def obtener_catalogo_perfil_db(profile_id: str, client: Optional[Client] = None)
         return None
     if usar_supabase():
         cli = _obtener_cliente_activo(client)
-        res = (
-            cli.table("perfiles_empresa")
-            .select("id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at")
-            .eq("id", profile_id)
-            .limit(1)
-            .execute()
-        )
-        return _fila_catalogo_perfil(res.data[0]) if res.data else None
+        try:
+            res = (
+                cli.table("perfiles_empresa")
+                .select("id, slug, nombre_empresa, datos_json, tipo_perfil, estado, version, creado_por, actualizado_por, updated_at")
+                .eq("id", profile_id)
+                .limit(1)
+                .execute()
+            )
+            return _fila_catalogo_perfil(res.data[0]) if res.data else None
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Perfil 007 no disponible ({type(exc).__name__}); lectura compatible.")
+            res = (
+                cli.table("perfiles_empresa")
+                .select("id, slug, nombre_empresa, datos_json, es_activa, updated_at")
+                .eq("id", profile_id)
+                .limit(1)
+                .execute()
+            )
+            if not res.data:
+                return None
+            return _fila_catalogo_perfil({
+                **res.data[0], "tipo_perfil": "EMPRESA", "estado": "ACTIVO", "version": 1,
+            })
 
     inicializar_db()
     with obtener_conexion() as conn:
@@ -1098,8 +1142,12 @@ def obtener_preferencia_perfil_usuario_db(usuario_id: str, client: Optional[Clie
     """Obtiene la preferencia individual de perfil sin modificar el catálogo."""
     if usar_supabase():
         cli = _obtener_cliente_activo(client)
-        res = cli.table("preferencias_perfil_usuario").select("perfil_predeterminado_id").eq("usuario_id", usuario_id).limit(1).execute()
-        return str(res.data[0]["perfil_predeterminado_id"]) if res.data and res.data[0].get("perfil_predeterminado_id") else None
+        try:
+            res = cli.table("preferencias_perfil_usuario").select("perfil_predeterminado_id").eq("usuario_id", usuario_id).limit(1).execute()
+            return str(res.data[0]["perfil_predeterminado_id"]) if res.data and res.data[0].get("perfil_predeterminado_id") else None
+        except Exception as exc:
+            print(f"[AutoForm AI DB] Preferencias 007 no disponibles ({type(exc).__name__}); se usará la selección de sesión.")
+            return None
     inicializar_db()
     with obtener_conexion() as conn:
         row = conn.execute("SELECT perfil_predeterminado_id FROM preferencias_perfil_usuario WHERE usuario_id = ?", (usuario_id,)).fetchone()
@@ -1110,8 +1158,12 @@ def guardar_preferencia_perfil_usuario_db(usuario_id: str, profile_id: str, acto
     """Guarda el perfil predeterminado de una cuenta corporativa."""
     if usar_supabase():
         cli = _obtener_cliente_activo(client)
-        cli.table("preferencias_perfil_usuario").upsert({"usuario_id": usuario_id, "perfil_predeterminado_id": profile_id, "actualizado_por": actor_id or None}, on_conflict="usuario_id").execute()
-        return True
+        try:
+            cli.table("preferencias_perfil_usuario").upsert({"usuario_id": usuario_id, "perfil_predeterminado_id": profile_id, "actualizado_por": actor_id or None}, on_conflict="usuario_id").execute()
+            return True
+        except Exception as exc:
+            print(f"[AutoForm AI DB] No se pudo guardar preferencia 007 ({type(exc).__name__}).")
+            return False
     inicializar_db()
     with obtener_conexion() as conn:
         conn.execute(

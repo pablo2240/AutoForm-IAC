@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -123,3 +124,40 @@ def test_migracion_declara_catalogo_preferencias_y_sin_perfil_global() -> None:
     assert "DROP INDEX IF EXISTS public.idx_un_perfil_activo" in migration
     assert "estado IN ('ACTIVO', 'ARCHIVADO')" in migration
     assert "Solo un administrador puede archivar" in migration
+
+
+def test_catalogo_remoto_pre_migracion_permite_seleccionar_perfiles_existentes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """La UI no debe caer mientras el entorno remoto aún aplica la migración 007."""
+    class TablaPerfilesPre007:
+        def select(self, columnas: str):
+            if "tipo_perfil" in columnas:
+                raise AttributeError("columna tipo_perfil no disponible")
+            return self
+
+        def order(self, _campo: str):
+            return self
+
+        def execute(self):
+            return SimpleNamespace(data=[{
+                "id": "uuid-principal",
+                "slug": "principal",
+                "nombre_empresa": "IAC Latam",
+                "datos_json": {"razon_social": "IAC Latam", "nit": "900000001"},
+                "es_activa": True,
+                "updated_at": "2026-10-05T00:00:00Z",
+            }])
+
+    class ClientePre007:
+        def table(self, nombre: str):
+            assert nombre == "perfiles_empresa"
+            return TablaPerfilesPre007()
+
+    monkeypatch.setattr(database, "usar_supabase", lambda: True)
+    monkeypatch.setattr(database, "_obtener_cliente_activo", lambda _client=None: ClientePre007())
+    perfiles = profile_manager.listar_perfiles_diligenciamiento()
+
+    assert [(perfil.id, perfil.nombre, perfil.tipo, perfil.version) for perfil in perfiles] == [
+        ("uuid-principal", "IAC Latam", profile_manager.TipoPerfil.EMPRESA, 1)
+    ]

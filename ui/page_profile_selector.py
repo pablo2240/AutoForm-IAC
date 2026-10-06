@@ -94,6 +94,8 @@ def render_selector_perfil(
     if perfil.id == preferido:
         st.caption("Perfil predeterminado de esta cuenta.")
     elif st.button("Usar como mi perfil predeterminado", key="guardar_preferencia_perfil"):
-        profile_manager.guardar_preferencia_perfil(str(usuario["id"]), perfil.id, str(usuario["id"]))
-        st.success("Perfil predeterminado actualizado para tu cuenta.")
+        if profile_manager.guardar_preferencia_perfil(str(usuario["id"]), perfil.id, str(usuario["id"])):
+            st.success("Perfil predeterminado actualizado para tu cuenta.")
+        else:
+            st.warning("La preferencia se mantiene solo en esta sesión hasta que se aplique la migración del catálogo.")
     return perfil

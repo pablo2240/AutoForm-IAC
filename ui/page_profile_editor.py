@@ -47,6 +47,9 @@ def render_creador_perfil(usuario: Dict[str, Any]) -> Optional[profile_manager.P
             except (ValueError, database.ConflictoVersionPerfilError) as exc:
                 st.error(str(exc))
                 return None
+            except Exception:
+                st.error("No se pudo crear el perfil. El catálogo requiere la migración 007 en este entorno.")
+                return None
             st.success(f"Perfil «{perfil.nombre}» creado.")
             if guardar_y_usar:
                 st.session_state["active_profile_id"] = perfil.id
@@ -80,6 +83,9 @@ def render_editor_perfil(usuario: Dict[str, Any], perfil: profile_manager.Perfil
             except ValueError as exc:
                 st.error(str(exc))
                 return None
+            except Exception:
+                st.error("No se pudo actualizar el perfil. El catálogo requiere la migración 007 en este entorno.")
+                return None
             st.session_state["active_profile_version"] = actualizado.version
             st.session_state["active_profile_name"] = actualizado.nombre
             st.success("Datos del perfil actualizados.")
@@ -95,6 +101,9 @@ def render_editor_perfil(usuario: Dict[str, Any], perfil: profile_manager.Perfil
                     )
                 except (PermissionError, database.ConflictoVersionPerfilError) as exc:
                     st.error(str(exc))
+                    return None
+                except Exception:
+                    st.error("No se pudo archivar el perfil. El catálogo requiere la migración 007 en este entorno.")
                     return None
                 if ok:
                     st.session_state.pop("active_profile_id", None)
