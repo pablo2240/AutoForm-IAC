@@ -91,6 +91,9 @@ class PipelineContext:
     # Etapa 2b: Representación Intermedia Espacial (IR) — Fase 1 HSP
     documento_ir: Optional[Any] = None  # core.spatial_ir.DocumentoIR (lazy import)
     
+    # Etapa 2c: Familia del formulario según la biblioteca de referencias (None = desconocido)
+    familia_formulario: Optional[str] = None
+
     # Etapa 3: LLM Mapper / Template Match
     plan_mapeo: List[Dict[str, Any]] = field(default_factory=list)
     

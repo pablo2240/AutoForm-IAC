@@ -621,6 +621,28 @@ def _expandir_listas_societarias(plan: List[Dict[str, Any]], ctx: PipelineContex
 # FUNCIÓN PRINCIPAL: ejecutar_stage_3_mapper
 # ──────────────────────────────────────────────────────────────────────────────
 
+def _ejemplos_referencia(
+    ctx: PipelineContext,
+    campos_lote: List[Dict[str, Any]],
+    titulo_lote: str,
+) -> List[Dict[str, Any]]:
+    """Few-shot dinámico: ejemplos de formularios de referencia para los rótulos de un lote.
+
+    Es una ayuda opcional: ante cualquier problema devuelve [] y el mapeo continúa como siempre.
+    Solo se permiten campos que la empresa realmente tiene en su perfil.
+    """
+    try:
+        from core.profile_manager import aplanar_perfil
+        from reference_library.service import ejemplos_fewshot_para_lote
+
+        perfil_plano = aplanar_perfil(ctx.datos_empresa)
+        campos_validos = {k for k, v in perfil_plano.items() if "." not in k and v not in (None, "")}
+        return ejemplos_fewshot_para_lote(ctx, campos_lote, titulo_lote, campos_validos=campos_validos)
+    except Exception as exc:
+        ctx.log(f"[Stage 3 - Few-shot] Omitido para '{titulo_lote}': {exc}")
+        return []
+
+
 def ejecutar_stage_3_mapper(
     ctx: PipelineContext,
     umbral_similitud: float = 90.0,
@@ -726,7 +748,8 @@ def ejecutar_stage_3_mapper(
                     f"[Stage 3 - Chunking] Lote ({idx}/{total_macro}) '{titulo_lote}': "
                     f"{len(asignaciones_determ)} por alias determinista, enviando {len(campos_llm)} a IA..."
                 )
-                mapeos_ia = consultar_llm_seccion_instructor(campos_llm, taxonomia_d, titulo_lote)
+                ejemplos = _ejemplos_referencia(ctx, campos_llm, titulo_lote)
+                mapeos_ia = consultar_llm_seccion_instructor(campos_llm, taxonomia_d, titulo_lote, ejemplos=ejemplos)
                 mapeos_ia = _ejecutar_diff_loop_seccion(campos_llm, mapeos_ia, ctx.datos_empresa, titulo_lote, ctx)
                 return asignaciones_determ + mapeos_ia
             else:
@@ -786,7 +809,8 @@ def ejecutar_stage_3_mapper(
         CHUNK_SIZE = 15
         for i in range(0, len(campos_viables), CHUNK_SIZE):
             chunk = campos_viables[i:i + CHUNK_SIZE]
-            mapeos_chunk = consultar_llm_seccion_instructor(chunk, taxonomia_d, "GENERAL")
+            ejemplos_chunk = _ejemplos_referencia(ctx, chunk, "GENERAL")
+            mapeos_chunk = consultar_llm_seccion_instructor(chunk, taxonomia_d, "GENERAL", ejemplos=ejemplos_chunk)
             mapeos_chunk = _ejecutar_diff_loop_seccion(chunk, mapeos_chunk, ctx.datos_empresa, "GENERAL", ctx)
             asignaciones_raw.extend(mapeos_chunk)
 

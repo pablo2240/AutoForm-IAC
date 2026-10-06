@@ -66,6 +66,14 @@ class PipelineOrchestrator:
             ctx.log(f"[Stage 2b - IR] Advertencia: no se pudo construir la IR ({e}). "
                     f"El pipeline continuará sin ella.")
 
+        # Etapa 2c: Clasificación de la familia del formulario (biblioteca de referencias).
+        # Es opcional: si la biblioteca no está disponible el pipeline continúa sin cambios.
+        try:
+            from reference_library.service import clasificar_formulario_ctx
+            clasificar_formulario_ctx(ctx)
+        except Exception as e:
+            ctx.log(f"[Stage 2c - Familia] Advertencia: no se pudo clasificar el formulario ({e}).")
+
         # Etapa 3: LLM Mapper / Template Store (66% -> 100%)
         if on_progress:
             on_progress("Emparejando datos con el perfil empresarial...", 0.75)

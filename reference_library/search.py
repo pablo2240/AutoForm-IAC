@@ -8,6 +8,8 @@ en significado. El resultado es una señal para decidir, nunca la única fuente 
 
 from __future__ import annotations
 
+import functools
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
@@ -27,6 +29,7 @@ except ImportError:  # pragma: no cover - rapidfuzz forma parte de requirements.
 FUENTES_VALIDADAS = (FUENTE_VALOR, FUENTE_PLANTILLA)
 
 PESO_EMBEDDING_POR_DEFECTO = 0.5
+PESO_CONTEXTO = 0.15  # peso de la sección cuando la consulta la informa
 LOTE_EMBEDDINGS = 128
 
 
@@ -45,6 +48,7 @@ class ResultadoBusqueda:
     similitud: float
     sim_embedding: float
     sim_lexica: float
+    sim_contexto: Optional[float]
     hoja: str
     coordenada: str
     seccion: str
@@ -65,12 +69,35 @@ def texto_para_embedding(etiqueta: str, seccion: str = "") -> str:
     return str(etiqueta).strip()
 
 
+def _jaccard(a: str, b: str) -> float:
+    ta, tb = set(a.split()), set(b.split())
+    return len(ta & tb) / len(ta | tb) if ta and tb else 0.0
+
+
 def _sim_lexica(a: str, b: str) -> float:
+    """Similitud léxica estricta entre rótulos normalizados (1.0 solo si tienen los mismos tokens).
+
+    No se usa ``token_set_ratio``: da 100 cuando un rótulo contiene al otro, y "Nombre" quedaría
+    idéntico a "Nombre legal de la empresa". Jaccard de tokens + orden de tokens exige que
+    coincidan las palabras, no solo que una esté incluida.
+    """
     if not a or not b:
         return 0.0
-    if a == b:
+    if set(a.split()) == set(b.split()):
         return 1.0
-    return float(_fuzz.token_set_ratio(a, b)) / 100.0 if _fuzz is not None else 0.0
+    orden = float(_fuzz.token_sort_ratio(a, b)) / 100.0 if _fuzz is not None else 0.0
+    return min(0.6 * _jaccard(a, b) + 0.4 * orden, 0.99)
+
+
+def _sincronizado(metodo):
+    """Serializa el acceso al índice en memoria entre hilos."""
+
+    @functools.wraps(metodo)
+    def envoltura(self, *args, **kwargs):
+        with self._lock:
+            return metodo(self, *args, **kwargs)
+
+    return envoltura
 
 
 class BuscadorSemantico:
@@ -83,15 +110,26 @@ class BuscadorSemantico:
         peso_embedding: float = PESO_EMBEDDING_POR_DEFECTO,
     ) -> None:
         self.store = store
-        self.proveedor = proveedor or obtener_proveedor()
+        self._proveedor = proveedor
         self.peso_embedding = peso_embedding
         self._indice: IndiceNumpy = IndiceNumpy.vacio()
         self._meta: Dict[int, Dict[str, Any]] = {}
         self._huella_cargada: Optional[str] = None
         self._cache_consultas: Dict[str, np.ndarray] = {}
+        # El pipeline consulta desde varios hilos (lotes concurrentes): el índice y la caché se protegen.
+        self._lock = threading.RLock()
+
+    @property
+    def proveedor(self) -> ProveedorEmbeddings:
+        """Proveedor de embeddings; se elige al primer uso para no cargar el modelo al arrancar."""
+        with self._lock:
+            if self._proveedor is None:
+                self._proveedor = obtener_proveedor()
+            return self._proveedor
 
     # ── Indexación ───────────────────────────────────────────────────────
 
+    @_sincronizado
     def reindexar(self, forzar: bool = False) -> int:
         """Genera los embeddings que faltan y recarga el índice. Devuelve cuántos vectores creó."""
         pendientes = self.store.campos_sin_vector(self.proveedor.nombre)
@@ -117,11 +155,54 @@ class BuscadorSemantico:
             self._huella_cargada = huella
         return creados
 
-    def _asegurar_indice(self) -> None:
+    @_sincronizado
+    def asegurar_indice(self) -> None:
+        """Reindexa solo si la base cambió desde la última carga."""
         if self._huella_cargada != self.store.huella_conocimiento():
             self.reindexar()
 
     # ── Consulta ─────────────────────────────────────────────────────────
+
+    @_sincronizado
+    def mejor_similitud_por_familia(
+        self,
+        consultas: Sequence[str],
+        excluir_doc_ids: Iterable[str] = (),
+    ) -> Dict[str, np.ndarray]:
+        """Para cada consulta, su mejor similitud (coseno; 1.0 si el rótulo existe igual) en cada familia.
+
+        Es la base de la clasificación: mide qué tan bien cubre el conocimiento de una familia
+        los rótulos de un formulario nuevo.
+        """
+        self.asegurar_indice()
+        if not consultas or len(self._indice) == 0:
+            return {}
+        excluidos = set(excluir_doc_ids)
+        ids = [int(i) for i in self._indice.ids]
+        familias = np.array([self._meta[i]["familia"] for i in ids])
+        vigentes = np.array([self._meta[i]["doc_id"] not in excluidos for i in ids], dtype=bool)
+        normas = [normalizar_etiqueta(c) for c in consultas]
+        consulta_vectores = np.vstack(self._vectores_consulta(consultas))
+
+        resultado: Dict[str, np.ndarray] = {}
+        for familia in sorted({f for f in familias if f}):
+            columnas = (familias == familia) & vigentes
+            if not columnas.any():
+                continue
+            matriz = self._indice.matriz[columnas]
+            mejores = np.zeros(len(consultas), dtype=np.float32)
+            for inicio in range(0, len(consultas), 64):
+                bloque = consulta_vectores[inicio:inicio + 64] @ matriz.T
+                mejores[inicio:inicio + 64] = bloque.max(axis=1)
+            exactas = {
+                self._meta[i]["etiqueta_norm"]
+                for i, ok in zip(ids, columnas) if ok
+            }
+            for posicion, norma in enumerate(normas):
+                if norma in exactas:
+                    mejores[posicion] = 1.0
+            resultado[familia] = np.clip(mejores, 0.0, 1.0)
+        return resultado
 
     def _vectores_consulta(self, consultas: Sequence[str]) -> List[np.ndarray]:
         textos = [texto_para_embedding(c) for c in consultas]
@@ -140,12 +221,17 @@ class BuscadorSemantico:
         familia: Optional[str] = None,
         excluir_doc_ids: Iterable[str] = (),
         umbral: float = 0.0,
+        contexto: str = "",
     ) -> List[ResultadoBusqueda]:
-        """Los ``top_k`` conocimientos más parecidos a ``consulta``, sin repetir rótulos iguales."""
+        """Los ``top_k`` conocimientos más parecidos a ``consulta``, sin repetir rótulos iguales.
+
+        ``contexto`` (p. ej. el título de la sección) ayuda a desambiguar rótulos genéricos.
+        """
         return self.buscar_lote(
-            [consulta], top_k, solo_con_campo_maestro, solo_validados, familia, excluir_doc_ids, umbral
+            [consulta], top_k, solo_con_campo_maestro, solo_validados, familia, excluir_doc_ids, umbral, [contexto]
         )[0]
 
+    @_sincronizado
     def buscar_lote(
         self,
         consultas: Sequence[str],
@@ -155,9 +241,10 @@ class BuscadorSemantico:
         familia: Optional[str] = None,
         excluir_doc_ids: Iterable[str] = (),
         umbral: float = 0.0,
+        contextos: Optional[Sequence[str]] = None,
     ) -> List[List[ResultadoBusqueda]]:
         """Igual que ``buscar`` pero vectoriza todas las consultas juntas (mucho más rápido)."""
-        self._asegurar_indice()
+        self.asegurar_indice()
         if not consultas or len(self._indice) == 0:
             return [[] for _ in consultas]
 
@@ -174,16 +261,23 @@ class BuscadorSemantico:
 
         resultados: List[List[ResultadoBusqueda]] = []
         pool = max(top_k * 12, 60)
-        for texto, vector in zip(consultas, self._vectores_consulta(consultas)):
+        contextos = list(contextos) if contextos is not None else [""] * len(consultas)
+        for texto, contexto, vector in zip(consultas, contextos, self._vectores_consulta(consultas)):
             consulta_norm = normalizar_etiqueta(texto)
+            contexto_norm = normalizar_etiqueta(contexto)
             candidatos = self._indice.buscar(vector, pool, permitidos)
-            puntuados: List[Tuple[float, float, float, int]] = []
+            puntuados: List[Tuple[float, float, float, Optional[float], int]] = []
             for campo_id, sim_emb in candidatos:
-                sim_lex = _sim_lexica(consulta_norm, self._meta[campo_id]["etiqueta_norm"])
+                meta = self._meta[campo_id]
+                sim_lex = _sim_lexica(consulta_norm, meta["etiqueta_norm"])
                 similitud = self.peso_embedding * max(sim_emb, 0.0) + (1.0 - self.peso_embedding) * sim_lex
                 if sim_lex == 1.0:
                     similitud = max(similitud, 1.0)
-                puntuados.append((similitud, sim_emb, sim_lex, campo_id))
+                sim_ctx: Optional[float] = None
+                if contexto_norm:
+                    sim_ctx = _jaccard(contexto_norm, normalizar_etiqueta(meta["seccion"]))
+                    similitud = (1.0 - PESO_CONTEXTO) * similitud + PESO_CONTEXTO * sim_ctx
+                puntuados.append((similitud, sim_emb, sim_lex, sim_ctx, campo_id))
             puntuados.sort(key=lambda t: t[0], reverse=True)
             resultados.append(self._agrupar(puntuados, top_k, umbral))
         return resultados
@@ -206,15 +300,15 @@ class BuscadorSemantico:
 
     def _agrupar(
         self,
-        puntuados: List[Tuple[float, float, float, int]],
+        puntuados: List[Tuple[float, float, float, Optional[float], int]],
         top_k: int,
         umbral: float,
     ) -> List[ResultadoBusqueda]:
         """Une los rótulos idénticos (mismo texto y campo) de distintos documentos en un resultado."""
-        grupos: Dict[Tuple[str, Optional[str]], List[Tuple[float, float, float, int]]] = {}
+        grupos: Dict[Tuple[str, Optional[str]], List[Tuple[float, float, float, Optional[float], int]]] = {}
         orden: List[Tuple[str, Optional[str]]] = []
         for item in puntuados:
-            meta = self._meta[item[3]]
+            meta = self._meta[item[4]]
             clave = (meta["etiqueta_norm"], meta["campo_maestro"])
             if clave not in grupos:
                 if len(grupos) >= top_k:
@@ -223,14 +317,14 @@ class BuscadorSemantico:
                 orden.append(clave)
             grupos[clave].append(item)
 
-        detalles = self.store.obtener_campos([grupos[c][0][3] for c in orden])
+        detalles = self.store.obtener_campos([grupos[c][0][4] for c in orden])
         resultado: List[ResultadoBusqueda] = []
         for clave in orden:
-            similitud, sim_emb, sim_lex, campo_id = grupos[clave][0]
+            similitud, sim_emb, sim_lex, sim_ctx, campo_id = grupos[clave][0]
             if similitud < umbral:
                 continue
             registro = detalles[campo_id]
-            documentos = sorted({self._meta[i[3]]["documento"] for i in grupos[clave]})
+            documentos = sorted({self._meta[i[4]]["documento"] for i in grupos[clave]})
             resultado.append(
                 ResultadoBusqueda(
                     campo_id=campo_id,
@@ -244,6 +338,7 @@ class BuscadorSemantico:
                     similitud=round(float(similitud), 4),
                     sim_embedding=round(float(sim_emb), 4),
                     sim_lexica=round(float(sim_lex), 4),
+                    sim_contexto=None if sim_ctx is None else round(float(sim_ctx), 4),
                     hoja=registro["hoja"],
                     coordenada=registro["coordenada"],
                     seccion=registro["seccion"],

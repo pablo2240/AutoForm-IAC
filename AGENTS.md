@@ -17,6 +17,7 @@ Guía compacta para trabajar en **AutoForm AI** (IAC Latam): llenado automático
 - `llm_client.py`: cliente LLM y `STRICT_SYSTEM_PROMPT`. Salidas validadas con Pydantic V2 en `schema_models.py` (`instructor`).
 - `database.py`: motor SQLite canónico (`config/empresa.db`) con transacciones ACID para perfiles empresariales.
 - `profile_manager.py`: orquestador de perfiles empresariales (lectura/escritura canónica en SQLite con espejo resiliente en JSON).
+- `reference_library/` (paquete, ADR-0015): biblioteca de formularios de referencia en `docs/referencias/` (subcarpeta = familia) → conocimiento SQLite con procedencia, búsqueda semántica, clasificación de familia y few-shot dinámico. Es opcional: el pipeline funciona igual sin ella (`AUTOFORM_REFERENCES_ENABLED=0`). Administración: `python -m reference_library --help`.
 
 ## Variables de entorno (¡clave!)
 

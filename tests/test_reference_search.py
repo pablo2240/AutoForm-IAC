@@ -165,3 +165,12 @@ def test_busqueda_sobre_base_vacia_devuelve_listas_vacias(tmp_path: Path) -> Non
 
     assert buscador.buscar("nit") == []
     assert buscador.buscar_lote(["a", "b"]) == [[], []]
+
+
+def test_un_rotulo_corto_no_es_identico_a_uno_largo_que_lo_contiene() -> None:
+    from reference_library.search import _sim_lexica
+
+    assert _sim_lexica("nombre", "nombre legal de la empresa") < 0.5
+    assert _sim_lexica("razon social", "social razon") == 1.0
+    assert _sim_lexica("nit", "nit") == 1.0
+    assert _sim_lexica("", "nit") == 0.0

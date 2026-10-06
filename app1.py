@@ -54,6 +54,7 @@ from pipeline.orchestrator import PipelineOrchestrator
 from ui.page_verify import render_pantalla_verificacion
 from ui.page_download import render_pantalla_descarga
 from ui.page_diligenciador_selector import render_selector_diligenciador
+from ui.page_reference_library import render_biblioteca_referencias, render_resumen_referencias
 
 # ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
 try:
@@ -761,6 +762,13 @@ with st.sidebar:
     profile_id_activo = empresa_fija.id
     profile_version_activa = empresa_fija.version
     datos_empresa = dict(empresa_fija.datos)
+
+    # 📚 Biblioteca de referencias: se alinea en segundo plano (opcional; sin ella el flujo no cambia).
+    try:
+        from reference_library.service import sincronizar_en_segundo_plano
+        sincronizar_en_segundo_plano(datos_empresa)
+    except Exception as exc_ref:
+        print(f"[AutoForm AI] Biblioteca de referencias no iniciada: {exc_ref}")
     st.markdown("### 🏢 **Empresa**")
     st.caption(f"{empresa_fija.nombre} · datos fijos por defecto")
 
@@ -1230,6 +1238,8 @@ with st.sidebar:
                 _safe_rerun()
             else:
                 st.warning("Se aplican en esta sesión, pero no se pudieron guardar de forma permanente.")
+
+    render_biblioteca_referencias(es_admin_usuario, datos_empresa)
 
     if es_admin_usuario:
         _ses_actual = st.session_state.get("supabase_session", {})
@@ -1788,6 +1798,7 @@ if uploaded_file is not None:
     # ── Renderizado del Pipeline Modular (Descarga Directa + Auditoría Opcional / Revisión) ──
     if st.session_state.get("pipeline_ctx") is not None and st.session_state.get("processed_file_id") == current_file_id:
         pipeline_context: PipelineContext = st.session_state["pipeline_ctx"]
+        render_resumen_referencias(pipeline_context)
 
         if pipeline_context.archivo_resultado:
             st.markdown("---")
@@ -1826,7 +1837,7 @@ else:
             <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">📄⚡</div>
             <h3 style="margin-bottom: 0.5rem;">Carga tu Formulario Oficial para Comenzar</h3>
             <p style="color: #64748B; font-size: 0.95rem; max-width: 550px; margin: 0 auto 1.5rem auto;">
-                Selecciona tu perfil empresarial en el panel izquierdo y arrastra una plantilla de Excel (.xlsx, .xls) para el diligenciamiento cognitivo automático.
+                Elige quién diligencia en el panel izquierdo y arrastra una plantilla de Excel (.xlsx, .xls) para el diligenciamiento cognitivo automático.
             </p>
             <div style="display: flex; justify-content: center; gap: 1.5rem; flex-wrap: wrap; font-size: 0.85rem; color: #475569; font-weight: 600;">
                 <div>1️⃣ Carga de Plantilla</div>

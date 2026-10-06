@@ -138,13 +138,12 @@ class ReferenceLibrary:
 
     # ── Procesamiento ────────────────────────────────────────────────────
 
-    def _procesar(self, archivo: Path, forzar: bool = False) -> str:
+    def _procesar(self, archivo: Path, forzar: bool, datos: Dict[str, Any]) -> str:
         """Devuelve 'agregado', 'actualizado', 'sin_cambios' o 'error'."""
         clave = self._clave(archivo)
         doc_id = _doc_id(clave)
         contenido = archivo.read_bytes()
         hash_actual = _hash_contenido(contenido)
-        datos = self._datos()
         huella = huella_datos_empresa(datos)
         previo = self.store.obtener_documento(doc_id)
 
@@ -171,13 +170,21 @@ class ReferenceLibrary:
 
     # ── API pública ──────────────────────────────────────────────────────
 
-    def sincronizar(self, eliminar_faltantes: bool = True) -> ReporteSincronizacion:
-        """Alinea la base con la carpeta: agrega nuevos, actualiza cambiados y retira los borrados."""
+    def sincronizar(
+        self,
+        eliminar_faltantes: bool = True,
+        datos_empresa: Optional[Dict[str, Any]] = None,
+    ) -> ReporteSincronizacion:
+        """Alinea la base con la carpeta: agrega nuevos, actualiza cambiados y retira los borrados.
+
+        ``datos_empresa`` permite entregar los datos ya leídos (p. ej. desde un hilo sin sesión).
+        """
         reporte = ReporteSincronizacion()
         presentes = set()
+        datos = self._datos() if datos_empresa is None else dict(datos_empresa)
         for archivo in self._archivos():
             presentes.add(_doc_id(self._clave(archivo)))
-            resultado = self._procesar(archivo)
+            resultado = self._procesar(archivo, False, datos)
             if resultado == "agregado":
                 reporte.agregados.append(archivo.name)
             elif resultado == "actualizado":
@@ -200,6 +207,7 @@ class ReferenceLibrary:
         origen: Union[Path, str, bytes],
         nombre: Optional[str] = None,
         familia: str = "",
+        datos_empresa: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Copia un formulario a la carpeta de referencias, lo procesa y devuelve su ``doc_id``."""
         if isinstance(origen, bytes):
@@ -217,7 +225,7 @@ class ReferenceLibrary:
         destino = self.directorio / familia_limpia / nombre_final if familia_limpia else self.directorio / nombre_final
         destino.parent.mkdir(parents=True, exist_ok=True)
         destino.write_bytes(contenido)
-        resultado = self._procesar(destino, forzar=True)
+        resultado = self._procesar(destino, True, self._datos() if datos_empresa is None else dict(datos_empresa))
         doc_id = _doc_id(self._clave(destino))
         if resultado == "error":
             doc = self.store.obtener_documento(doc_id)
@@ -235,13 +243,18 @@ class ReferenceLibrary:
                 archivo.unlink()
         return self.store.eliminar_documento(doc_id)
 
-    def reprocesar(self, doc_id: Optional[str] = None) -> ReporteSincronizacion:
+    def reprocesar(
+        self,
+        doc_id: Optional[str] = None,
+        datos_empresa: Optional[Dict[str, Any]] = None,
+    ) -> ReporteSincronizacion:
         """Vuelve a extraer el conocimiento de un documento, o de todos, ignorando el hash."""
         reporte = ReporteSincronizacion()
+        datos = self._datos() if datos_empresa is None else dict(datos_empresa)
         for archivo in self._archivos():
             if doc_id and _doc_id(self._clave(archivo)) != doc_id:
                 continue
-            resultado = self._procesar(archivo, forzar=True)
+            resultado = self._procesar(archivo, True, datos)
             if resultado == "error":
                 doc = self.store.obtener_documento(_doc_id(self._clave(archivo)))
                 reporte.errores[archivo.name] = doc.error if doc else "error desconocido"

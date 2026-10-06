@@ -345,11 +345,22 @@ def obtener_cliente_instructor():
     return None
 
 
+NOTA_EJEMPLOS_REFERENCIA = """
+
+## EJEMPLOS DE REFERENCIA ("E") — OPCIONALES
+Si el JSON incluye "E", es una lista corta de casos ya verificados en formularios anteriores: cada uno trae un `rotulo_ref`, la `seccion_ref` donde apareció y el `campo` canónico al que correspondió.
+- Úsalos solo como guía para rótulos análogos de "F"; un ejemplo parecido NO obliga a asignar su campo.
+- Si el rótulo de "F" pertenece a otro dominio o sección que el ejemplo, ignora el ejemplo.
+- Los ejemplos nunca anulan las reglas de aislamiento de dominio ni de Safe Passivity, y nunca aportan valores: los datos salen únicamente de "D".
+- Si ningún ejemplo aplica, resuelve el mapeo con las reglas anteriores como de costumbre."""
+
+
 def consultar_llm_seccion_instructor(
     campos_seccion: List[Dict[str, Any]],
     taxonomia_d: Dict[str, Any],
     titulo_seccion: str = "GENERAL",
     timeout: int = 45,
+    ejemplos: Optional[List[Dict[str, Any]]] = None,
 ) -> List[Dict[str, Any]]:
     """Capa 1: Inferencia estructurada por sección usando Instructor + Pydantic V2.
     
@@ -375,7 +386,12 @@ def consultar_llm_seccion_instructor(
         "D": taxonomia_d,
         "seccion_actual": titulo_seccion,
     }
-    
+    prompt_sistema = STRICT_SYSTEM_PROMPT
+    if ejemplos:
+        # Few-shot dinámico: solo los ejemplos seleccionados para este lote, nunca documentos completos.
+        payload["E"] = ejemplos
+        prompt_sistema = STRICT_SYSTEM_PROMPT + NOTA_EJEMPLOS_REFERENCIA
+
     prompt_str = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     
     if client is not None:
@@ -386,7 +402,7 @@ def consultar_llm_seccion_instructor(
                 response_model=PlanMapeoSemantico,
                 max_retries=2,
                 messages=[
-                    {"role": "system", "content": STRICT_SYSTEM_PROMPT},
+                    {"role": "system", "content": prompt_sistema},
                     {"role": "user", "content": prompt_str},
                 ],
             )
@@ -399,7 +415,8 @@ def consultar_llm_seccion_instructor(
             print(f"[AutoForm AI Instructor] Aviso: reintentando vía JSON mode estándar ({exc})")
     
     # Fallback transparente a invocar_llm si instructor no está disponible o falla
-    resp_raw = invocar_llm(prompt_str, timeout=timeout)
+    # invocar_llm antepone `sistema` al prompt estricto; solo se agrega la nota cuando hay ejemplos.
+    resp_raw = invocar_llm(prompt_str, sistema=NOTA_EJEMPLOS_REFERENCIA.strip() if ejemplos else "", timeout=timeout)
     
     try:
         import re

@@ -64,6 +64,7 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 | **`PublicAnonClient`** | Supabase client instantiated with `SUPABASE_ANON_KEY` without session tokens, restricted strictly to public authentication operations. | "Cliente de consultas", "Conexión general" |
 | **`PreferenciaPerfilUsuario`** | Per-user default profile; it affects only that user's next session and never modifies the shared catalogue. | "Perfil activo global" |
 
+| **`BibliotecaReferencias` (Reference Library)** | Knowledge base built from example forms in `docs/referencias` (subfolder = family): per-label knowledge with provenance, semantic search, family classification and dynamic few-shot examples for the LLM. Optional layer: it never replaces `TemplateStore` or the deterministic validators (ADR-0015). | "Entrenamiento", "Memoria del modelo" |
 ---
 
 ## 3. Architecture Decision Records (ADR) Index
@@ -78,3 +79,6 @@ AutoForm AI executes a deterministic 5-stage pipeline orchestrated by `PipelineO
 * [`ADR-0008: User Authentication, Gatekeeper Shield & Role-Based Access Control`](docs/adr/0008-user-authentication-gatekeeper-and-role-based-access.md)
 * [`ADR-0009: Commercial Contact Section Detection, Grids Safe Passivity and Deterministic HSP Remapping`](docs/adr/0009-commercial-contact-detection-and-hsp-remapping.md)
 * [`ADR-0010: Supabase PostgreSQL, Authentication and Row Level Security Architecture`](docs/adr/0010-supabase-postgresql-auth-and-rls-architecture.md)
+* [`ADR-0013: Shared Diligence Profile Catalog`](docs/adr/0013-shared-diligence-profile-catalog.md)
+* [`ADR-0014: Fixed Company Data & Diligenciador Selector`](docs/adr/0014-fixed-company-and-diligenciador-selector.md)
+* [`ADR-0015: Reference Library, Semantic Search, Families & Dynamic Few-Shot`](docs/adr/0015-reference-library-semantic-knowledge.md)
