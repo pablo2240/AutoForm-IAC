@@ -799,6 +799,9 @@ def construir_ir(
                         dir_esc = "derecha"
                 if color and dir_esc == "misma" and not re.search(r"_{2,}|\.{3,}", texto):
                     dir_esc = "derecha"
+                # Árbitro de dirección (etapa 1): evidencia visual de que la captura está debajo del encabezado.
+                if elem.get("direccionArbitrada") == "abajo" and dir_esc != "misma":
+                    dir_esc = "abajo"
 
                 # Textos de vecinos
                 # El vecino derecha está a (fila, col + ancho) o (fila, col + 1)

@@ -149,3 +149,21 @@ def test_writer_processes_workbooks_with_vml_controls_without_raising() -> None:
     salida, _ = rellenar_formulario_excel(original, [], {})
 
     assert load_workbook(BytesIO(salida)).active.title == "Formulario"
+
+
+def test_writer_keeps_leading_zeros_in_identifiers_as_text() -> None:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Formulario"
+    ws["A1"] = "Número de Cuenta"
+    salida = BytesIO()
+    wb.save(salida)
+    plan = [{
+        "hoja": "Formulario", "fila": 1, "columna": 1, "fila_destino": 1, "columna_destino": 2,
+        "ubicacion": "derecha", "campo": "numero_cuenta", "valor_a_escribir": "00300833888",
+    }]
+
+    resultado, _ = rellenar_formulario_excel(salida.getvalue(), plan, {})
+
+    celda = load_workbook(BytesIO(resultado)).active["B1"]
+    assert celda.value == "00300833888" and celda.data_type == "s" and celda.number_format == "@"

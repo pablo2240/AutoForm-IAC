@@ -19,6 +19,7 @@ except ImportError:
     fuzz = None
 
 from openpyxl.utils import get_column_letter
+from core.plausibilidad import evaluar_plausibilidad
 from pipeline.context import PipelineContext
 from template_store.store import guardar_plantilla, calcular_hash_formulario
 
@@ -466,6 +467,9 @@ def preparar_tabla_verificacion(
 
             else:
                 sugerido = _sugerir_campo_para_rotulo(rot_e, claves_disponibles, seccion_padre=sec_e)
+                veredicto_e = evaluar_plausibilidad(rot_e, None, str(tipo_clasif))
+                if sugerido and not veredicto_e.plausible:
+                    sugerido = None
                 if sugerido:
                     campo_final = sugerido
                     valor_final = _resolver_valor_campo(datos_empresa, campo_final)
@@ -478,6 +482,9 @@ def preparar_tabla_verificacion(
                     badge = "0.00 ⚪ Sin asignar"
                     motivo_desc = "No se encontró dato correspondiente en el perfil"
                     conf_val = 0.0
+                    if not veredicto_e.plausible:
+                        motivo_desc = f"Descartado: {veredicto_e.motivo}"
+                        badge = "0.00 ⚫ No es campo"
 
             ancho_l = int(elem.get("anchoLinea", 1) or 1)
             ubic = str(elem.get("tipoEspacioEscritura", "derecha")).lower()

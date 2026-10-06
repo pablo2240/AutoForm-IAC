@@ -701,6 +701,8 @@ def ejecutar_pase_cobertura_exhaustiva(
             item_validado = validar_item_mapeo(nuevo_item, datos_empresa, datos_planos=datos_planos)
 
             if item_validado.get("estado") == EstadoMapeo.APROBADO:
+                item_validado.setdefault("fuente", "cobertura_patron")  # regla determinista, no inferencia del LLM
+                item_validado.setdefault("fuente_mapeo", "cobertura_patron")
                 nuevos_mapeos.append(item_validado)
                 coords_origen_ocupadas.add(coord_orig)
                 coords_destino_ocupadas.add(coord_dest)

@@ -37,6 +37,21 @@ def ejecutar_stage_1_parser(ctx: PipelineContext) -> PipelineContext:
         )
 
     elementos = ExcelHandler.escanear(ctx.archivo_bytes)
+
+    # Arbitraje de dirección: corrige "derecha" por "abajo" solo en casos ambiguos con evidencia visual clara.
+    try:
+        from core.arbitro_direccion import arbitrar_direcciones
+
+        cambios = arbitrar_direcciones(elementos, ctx.archivo_bytes)
+        if cambios:
+            ctx.metadatos["arbitro_direccion"] = [
+                {"hoja": c.hoja, "fila": c.fila, "columna": c.columna, "rotulo": c.rotulo,
+                 "abajo": c.puntaje_abajo, "derecha": c.puntaje_derecha, "motivos": list(c.motivos)}
+                for c in cambios
+            ]
+            ctx.log(f"[Stage 1 - Árbitro de dirección] {len(cambios)} rótulos de encabezado escriben hacia abajo.")
+    except Exception as exc_arbitro:
+        ctx.log(f"[Stage 1 - Árbitro de dirección] Omitido: {type(exc_arbitro).__name__}: {exc_arbitro}")
     try:
         from core.excel_inspector import inspeccionar_libro_excel
 

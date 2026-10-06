@@ -879,6 +879,10 @@ def _rellenar_plan_estricto(
                     celda.value = valor
             except Exception:
                 celda.value = valor
+        # Identificadores con ceros a la izquierda (cuentas, códigos): se fuerzan como texto para que
+        # Excel y los visores no los conviertan a número y los pierdan.
+        if isinstance(celda.value, str) and re.fullmatch(r"0\d+", celda.value.strip()):
+            celda.number_format = "@"
 
         # Merge horizontal seguro para campos con ancho mayor a 1 columna
         cant_cols_merge = int(item.get("celdasAMergear") or item.get("anchoLinea") or 1)

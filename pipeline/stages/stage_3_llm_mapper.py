@@ -23,6 +23,7 @@ import time
 from typing import Any, Dict, List, Optional, Tuple
 
 from core.llm_client import consultar_llm_seccion_instructor, invocar_llm
+from pipeline.stages.stage_3c_plausibilidad import refinar_plan
 from pipeline.context import (
     DestinoExcel,
     DirectivaEscrituraExcel,
@@ -343,6 +344,7 @@ def _ejecutar_diff_loop_seccion(
                         "id": id_omitido,
                         "campo": campo_dest,
                         "ubicacion": c_info.get("tipoEspacioEscritura", dir_fall),
+                        "fuente": "rescate_patron",
                     })
                     campos_asignados.add(campo_dest)
                     rescates_count += 1
@@ -411,6 +413,7 @@ def _ejecutar_diff_loop_seccion(
                         "id": id_pend,
                         "campo": campo_res,
                         "ubicacion": c_info.get("tipoEspacioEscritura", "derecha"),
+                        "fuente": "rescate_vectorial",
                     })
                     campos_asignados.add(campo_res)
                     if campo_res in candidatos_base:
@@ -673,6 +676,7 @@ def ejecutar_stage_3_mapper(
                 )
             except ImportError:
                 pass
+            ctx.plan_mapeo = refinar_plan(ctx, ctx.plan_mapeo, es_plantilla=True)
             return ctx
 
         # 1B. Coincidencia Difusa (Fuzzy Matching)
@@ -695,6 +699,7 @@ def ejecutar_stage_3_mapper(
                     )
                 except ImportError:
                     pass
+                ctx.plan_mapeo = refinar_plan(ctx, ctx.plan_mapeo, es_plantilla=True)
                 return ctx
 
     # ── RUTA 2: Inferencia con IA (OpenAI + Instructor) ──
@@ -870,6 +875,7 @@ def ejecutar_stage_3_mapper(
                 "seccion": c_info.get("_seccion_titulo") or c_info.get("seccion", ""),
                 "tipo_elemento": c_info.get("tipo_elemento", "FIELD"),
                 "contexto_fila": c_info.get("contexto_fila", ""),
+                "fuente_mapeo": str(item.get("fuente") or "inferencia_ia"),
             }
             propuesta = (elem_orig.get("destinosPropuestos") or {}).get(ubic)
             if propuesta:
@@ -905,6 +911,9 @@ def ejecutar_stage_3_mapper(
     # Re-validar todo el plan resultante de cobertura para garantizar
     # Domain Isolation, PEP Safe Passivity y Unicidad de Sección
     plan_final = _aplicar_validacion_deterministica(plan_final, ctx)
+
+    # ── Stage 3c: plausibilidad (A1) y confianza con evidencia (A2) ──
+    plan_final = refinar_plan(ctx, plan_final)
 
     # Filtrar activamente elementos descartados para que no lleguen al Writer
     plan_final = [

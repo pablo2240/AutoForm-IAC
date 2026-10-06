@@ -391,6 +391,10 @@ def clasificar_elementos_formulario(
             else:
                 ubicacion_sugerida = "derecha"
 
+            # Árbitro de dirección (etapa 1): evidencia visual de que la captura está debajo del encabezado.
+            if elem.get("direccionArbitrada") == "abajo" and not tiene_guiones_inline:
+                ubicacion_sugerida = "abajo"
+
             elem_clasificado = {
                 **elem,
                 "tipo_clasificacion": tipo_clasif.value,
