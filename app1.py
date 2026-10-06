@@ -53,8 +53,7 @@ from pipeline.context import PipelineContext
 from pipeline.orchestrator import PipelineOrchestrator
 from ui.page_verify import render_pantalla_verificacion
 from ui.page_download import render_pantalla_descarga
-from ui.page_profile_selector import render_selector_perfil
-from ui.page_profile_editor import render_creador_perfil, render_editor_perfil
+from ui.page_diligenciador_selector import render_selector_diligenciador
 
 # ── IMPORTS DE LIBRERÍAS DE UI AVANZADA (NIVEL 3) ──────────────────────────
 try:
@@ -756,62 +755,30 @@ with st.sidebar:
     st.caption("Ingeniería Asistida en Computadora")
     st.markdown("---")
 
-    # 🏢 Fase 2: Gestión de Perfiles Empresariales (Multi-Perfil)
-    st.markdown("### 🪪 **Perfil Empresarial Activo**")
-    perfil_seleccionado = render_selector_perfil(
-        usuario_actual,
-        on_crear=lambda: render_creador_perfil(usuario_actual),
-    )
-    if perfil_seleccionado is None:
-        st.stop()
-    perfil_editado = render_editor_perfil(usuario_actual, perfil_seleccionado)
-    if perfil_editado is not None:
-        perfil_seleccionado = perfil_editado
-    perfil_seleccionado_etiqueta = perfil_seleccionado.nombre
-    profile_id_activo = perfil_seleccionado.id
-    profile_version_activa = perfil_seleccionado.version
-    datos_empresa = dict(perfil_seleccionado.datos)
+    # 🏢 Empresa fija: los datos corporativos son siempre los del perfil principal.
+    empresa_fija = profile_manager.obtener_empresa_fija()
+    perfil_seleccionado_etiqueta = empresa_fija.nombre
+    profile_id_activo = empresa_fija.id
+    profile_version_activa = empresa_fija.version
+    datos_empresa = dict(empresa_fija.datos)
+    st.markdown("### 🏢 **Empresa**")
+    st.caption(f"{empresa_fija.nombre} · datos fijos por defecto")
 
-    # El editor visual legado queda aislado de la selección por sesión.
+    # El editor visual legado queda aislado: es solo lectura.
     ruta_perfil_activo = profile_manager.PROFILE_DEFAULT_PATH
 
-    # 👤 Fase 3: Operador Fijado a la Cuenta en Sesión (ADR-0007)
-    st.markdown("### 👤 **Diligenciado Por (Operador)**")
-    operador_activo = {
-        "id": usuario_actual["id"],
-        "nombre": usuario_actual["nombre"],
-        "cargo": usuario_actual.get("cargo", ""),
-        "cedula": usuario_actual.get("cedula", ""),
-        "telefono": usuario_actual.get("telefono", ""),
-        "correo": usuario_actual["correo"],
-        "direccion": usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
-        "ciudad": usuario_actual.get("ciudad", "Bogotá"),
-    }
-    try:
-        profile_manager.guardar_operador(
-            operador_id=usuario_actual["id"],
-            nombre=usuario_actual["nombre"],
-            cargo=usuario_actual.get("cargo", ""),
-            cedula=usuario_actual.get("cedula", ""),
-            telefono=usuario_actual.get("telefono", ""),
-            correo=usuario_actual["correo"],
-            direccion=usuario_actual.get("direccion", "Carrera 63 B # 32 E -25 OFC 206"),
-            ciudad=usuario_actual.get("ciudad", "Bogotá"),
-            es_activo=True,
-        )
-    except Exception:
-        pass
-
-    operador_html = (
+    # 👤 Diligenciado Por: selector exclusivo de quien tramita el formulario (ADR-0007 / ADR-0014)
+    st.markdown("### 👤 **Diligenciado Por**")
+    operador_activo = render_selector_diligenciador(usuario_actual)
+    st.markdown(
         f'<div style="background: #F8FAFC; border: 1px solid #E2E8F0; border-left: 3px solid #059669; '
         f'border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.5rem;">'
-        f'<div style="font-size: 0.7rem; color: #64748B; font-weight: 700; text-transform: uppercase;">Operador de la Cuenta</div>'
-        f'<div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {usuario_actual["nombre"]}</div>'
-        f'<div style="font-size: 0.75rem; color: #475569;">{usuario_actual.get("cargo") or "Asesor Comercial"}</div>'
-        f'<div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{usuario_actual["correo"]}</div>'
-        f'</div>'
+        f'<div style="font-size: 0.88rem; color: #0F172A; font-weight: 700;">👤 {operador_activo["nombre"]}</div>'
+        f'<div style="font-size: 0.75rem; color: #475569;">{operador_activo.get("cargo") or "Asesor Comercial"}</div>'
+        f'<div style="font-size: 0.72rem; color: #94A3B8; font-family: monospace;">{operador_activo.get("correo", "")}</div>'
+        f'</div>',
+        unsafe_allow_html=True,
     )
-    st.markdown(operador_html, unsafe_allow_html=True)
 
     # El editor heredado permanece sólo como vista deshabilitada durante la transición.
     # El editor soportado está en page_profile_editor y usa el profile_id de sesión.
@@ -834,7 +801,7 @@ with st.sidebar:
 
     with st.expander("Datos de referencia del perfil", expanded=False):
         if not es_admin_usuario:
-            st.caption("Vista heredada de solo lectura. Usa “Gestionar perfil seleccionado” para editar los datos fijos.")
+            st.caption("Datos fijos de la empresa (solo lectura).")
         else:
             st.caption("Cada campo se guarda automáticamente en tiempo real al editar.")
         tab_emp, tab_rep, tab_fin = st.tabs(["🏢 Empresa", "👤 Representante", "🏦 Financiero"])
@@ -1247,7 +1214,7 @@ with st.sidebar:
         st.text_input("Correo Corporativo", value=usuario_actual.get("correo", ""), disabled=True, key="mi_op_cor")
 
         if st.button("💾 Guardar Mis Datos", key="btn_guardar_mis_datos", use_container_width=True):
-            profile_manager.guardar_operador(
+            guardado = profile_manager.guardar_operador(
                 operador_id=usuario_actual["id"],
                 nombre=mi_nom,
                 cargo=mi_car,
@@ -1256,16 +1223,14 @@ with st.sidebar:
                 correo=usuario_actual["correo"],
                 direccion=mi_dir,
                 ciudad=mi_ciu,
-                es_activo=True,
             )
-            st.session_state["usuario_activo"]["nombre"] = mi_nom
-            st.session_state["usuario_activo"]["cargo"] = mi_car
-            st.session_state["usuario_activo"]["cedula"] = mi_ced
-            st.session_state["usuario_activo"]["telefono"] = mi_tel
-            st.session_state["usuario_activo"]["direccion"] = mi_dir
-            st.session_state["usuario_activo"]["ciudad"] = mi_ciu
-            st.success("✅ Tus datos se han actualizado permanentemente en SQLite y sesión.")
-            _safe_rerun()
+            for campo, valor in (("nombre", mi_nom), ("cargo", mi_car), ("cedula", mi_ced),
+                                 ("telefono", mi_tel), ("direccion", mi_dir), ("ciudad", mi_ciu)):
+                st.session_state["usuario_activo"][campo] = valor
+            if guardado:
+                _safe_rerun()
+            else:
+                st.warning("Se aplican en esta sesión, pero no se pudieron guardar de forma permanente.")
 
     if es_admin_usuario:
         _ses_actual = st.session_state.get("supabase_session", {})
@@ -1691,7 +1656,7 @@ col_ctx1, col_ctx2 = st.columns([1, 1])
 with col_ctx1:
     st.markdown(f"""
         <div style="background: #FFFFFF; border: 1px solid #E2E8F0; border-left: 4px solid #1E3A8A; border-radius: 8px; padding: 0.65rem 0.9rem; margin-bottom: 1rem; box-shadow: 0 1px 4px rgba(0,0,0,0.03);">
-            <div style="font-size: 0.72rem; color: #64748B; font-weight: 700; text-transform: uppercase;">🏢 Perfil Empresarial</div>
+            <div style="font-size: 0.72rem; color: #64748B; font-weight: 700; text-transform: uppercase;">🏢 Empresa</div>
             <div style="font-size: 0.95rem; color: #0F172A; font-weight: 700;">{perfil_seleccionado_etiqueta}</div>
         </div>
     """, unsafe_allow_html=True)

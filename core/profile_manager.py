@@ -825,6 +825,92 @@ def listar_operadores() -> List[Dict[str, Any]]:
     return database.listar_operadores_db()
 
 
+def _slug_diligenciador_unico(nombre: str, existentes: set) -> str:
+    """Construye un id legible para un diligenciador sin colisionar con los existentes."""
+    base = _slugify(nombre) or "diligenciador"
+    candidato = base
+    contador = 2
+    while candidato in existentes:
+        candidato = f"{base}_{contador}"
+        contador += 1
+    return candidato
+
+
+def crear_diligenciador(
+    nombre: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    correo: str = "",
+    direccion: str = "",
+    ciudad: str = "",
+) -> Dict[str, Any]:
+    """Crea un diligenciador guardado (ej. 'José - Comercial') y lo devuelve.
+
+    Solo el nombre es obligatorio; los campos vacíos se dejan en blanco en el formulario.
+    Lanza ``ValueError`` ante datos inválidos o duplicados.
+    """
+    nombre_limpio = nombre.strip()
+    if not nombre_limpio:
+        raise ValueError("El nombre del diligenciador es obligatorio.")
+    correo_limpio = correo.strip().lower()
+    if correo_limpio and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", correo_limpio):
+        raise ValueError("El correo no tiene un formato válido.")
+
+    existentes = database.listar_operadores_db()
+    if correo_limpio and any(str(o.get("correo") or "").lower() == correo_limpio for o in existentes):
+        raise ValueError("Ya existe un diligenciador con ese correo.")
+
+    id_operador = _slug_diligenciador_unico(nombre_limpio, {str(o["id"]) for o in existentes})
+    creado = database.crear_diligenciador_db(
+        id_operador=id_operador,
+        nombre=nombre_limpio,
+        cargo=cargo,
+        cedula=cedula,
+        telefono=telefono,
+        correo=correo_limpio,
+        direccion=direccion,
+        ciudad=ciudad,
+    )
+    if not creado:
+        raise ValueError(
+            "No se pudo guardar el diligenciador. Verifica que la migración 008 esté aplicada en este entorno."
+        )
+    return database.obtener_operador_db(id_operador) or {
+        "id": id_operador, "nombre": nombre_limpio, "cargo": cargo.strip(), "cedula": cedula.strip(),
+        "telefono": telefono.strip(), "correo": correo_limpio, "direccion": direccion.strip(),
+        "ciudad": ciudad.strip(), "es_activo": False,
+    }
+
+
+EMPRESA_FIJA_ID = "principal"
+EMPRESA_FIJA_NOMBRE = "Principal (IAC Latam)"
+
+
+def obtener_empresa_fija() -> PerfilDiligenciamiento:
+    """Devuelve los datos fijos de la empresa; no dependen de ningún selector ni de la migración 007.
+
+    Fuente: perfil ``principal`` de la base activa; si no existe, ``config/datos_empresa.json``.
+    """
+    sincronizar_db_con_archivos()
+    datos: Any = database.obtener_perfil_db(EMPRESA_FIJA_ID)
+    if not datos and PROFILE_DEFAULT_PATH.exists():
+        try:
+            with PROFILE_DEFAULT_PATH.open("r", encoding="utf-8-sig") as f:
+                datos = json.load(f)
+        except (OSError, ValueError) as exc:
+            print(f"[AutoForm AI] No se pudo leer {PROFILE_DEFAULT_PATH}: {exc}")
+            datos = {}
+    return PerfilDiligenciamiento(
+        id=EMPRESA_FIJA_ID,
+        nombre=EMPRESA_FIJA_NOMBRE,
+        tipo=TipoPerfil.EMPRESA,
+        datos=aplanar_perfil(datos or {}),
+        version=1,
+        estado=EstadoPerfil.ACTIVO,
+    )
+
+
 def obtener_operador_activo() -> Optional[Dict[str, Any]]:
     """Devuelve el operador activo actual o None."""
     return database.obtener_operador_activo_db()
@@ -886,8 +972,6 @@ def fusionar_operador_en_datos_empresa(
         copia["responsable_cargo"] = str(operador.get("cargo") or "").strip()
         copia["responsable_cedula"] = str(operador.get("cedula") or "").strip()
         tel_op = str(operador.get("telefono") or "").strip()
-        if not tel_op and "antonio" in str(operador.get("nombre") or "").lower():
-            tel_op = "3001122334"
         copia["responsable_telefono"] = tel_op
         copia["responsable_celular"] = tel_op
         copia["responsable_correo"] = str(operador.get("correo") or "").strip()

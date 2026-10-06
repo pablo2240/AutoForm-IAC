@@ -1312,6 +1312,68 @@ def guardar_operador_db(
         return False
 
 
+def crear_diligenciador_db(
+    id_operador: str,
+    nombre: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    correo: str = "",
+    direccion: str = "",
+    ciudad: str = "",
+    client: Optional[Client] = None,
+) -> bool:
+    """Inserta un diligenciador nuevo sin tocar cuentas de usuario ni marcas globales.
+
+    A diferencia de ``guardar_operador_db``, nunca actualiza ``usuarios`` /
+    ``perfiles_usuario`` ni cambia ``es_activo``: es solo un registro del catálogo.
+    Lanza ``ValueError`` si el id o el correo ya existen.
+    """
+    id_limpio = id_operador.strip().lower()
+    registro: Dict[str, Any] = {
+        "id": id_limpio,
+        "nombre": nombre.strip(),
+        "cargo": cargo.strip(),
+        "cedula": cedula.strip(),
+        "telefono": telefono.strip(),
+        "correo": correo.strip().lower(),
+        "direccion": direccion.strip(),
+        "ciudad": ciudad.strip(),
+    }
+
+    if usar_supabase():
+        cli = _obtener_cliente_activo(client)
+        try:
+            cli.table("operadores").insert({**registro, "es_activo": False}).execute()
+            return True
+        except SesionNoAutenticadaError:
+            raise
+        except Exception as exc:
+            texto = str(exc).lower()
+            if "23505" in texto or "duplicate" in texto:
+                raise ValueError("Ya existe un diligenciador con ese nombre o correo.") from exc
+            print(f"[AutoForm AI DB] Error creando diligenciador '{id_limpio}' en Supabase: {exc}")
+            return False
+
+    inicializar_db()
+    try:
+        with obtener_conexion() as conn:
+            conn.execute(
+                """
+                INSERT INTO operadores (id, nombre, cargo, cedula, telefono, correo, direccion, ciudad, es_activo, actualizado_en)
+                VALUES (:id, :nombre, :cargo, :cedula, :telefono, :correo, :direccion, :ciudad, 0, :ahora)
+                """,
+                {**registro, "ahora": datetime.now(timezone.utc).isoformat()},
+            )
+            conn.commit()
+            return True
+    except sqlite3.IntegrityError as exc:
+        raise ValueError("Ya existe un diligenciador con ese nombre o correo.") from exc
+    except Exception as exc:
+        print(f"[AutoForm AI DB] Error creando diligenciador '{id_limpio}' en SQLite: {exc}")
+        return False
+
+
 def listar_operadores_db(client: Optional[Client] = None) -> List[Dict[str, Any]]:
     """Devuelve la lista de operadores registrados."""
     if usar_supabase():
