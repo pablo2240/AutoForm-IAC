@@ -32,4 +32,6 @@ config/embedding_cache.json
 scratch/
 audio/
 
-
+# Biblioteca de referencias: los formularios de referencia SÍ se versionan (ver reference_library/)
+!docs/referencias/**/*.xlsx
+!docs/referencias/**/*.xlsm
