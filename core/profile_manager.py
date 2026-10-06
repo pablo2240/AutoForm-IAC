@@ -883,6 +883,43 @@ def crear_diligenciador(
     }
 
 
+def guardar_operador_propio(
+    usuario: Dict[str, Any],
+    nombre: str,
+    cargo: str = "",
+    cedula: str = "",
+    telefono: str = "",
+    direccion: str = "",
+    ciudad: str = "",
+) -> bool:
+    """Guarda los datos de la propia cuenta reutilizando su fila de operador si ya existe.
+
+    Una cuenta puede tener su fila en ``operadores`` con otro id (p. ej. un slug) pero el
+    mismo correo; insertar con el id de la cuenta violaría el índice único de correo.
+    """
+    usuario_id = str(usuario.get("id") or "")
+    correo = str(usuario.get("correo") or "").strip().lower()
+    existente = next(
+        (
+            o for o in database.listar_operadores_db()
+            if str(o["id"]).lower() == usuario_id.lower()
+            or (correo and str(o.get("correo") or "").lower() == correo)
+        ),
+        None,
+    )
+    return database.guardar_operador_db(
+        id_operador=str(existente["id"]) if existente else usuario_id,
+        nombre=nombre,
+        cargo=cargo,
+        cedula=cedula,
+        telefono=telefono,
+        correo=correo,
+        direccion=direccion,
+        ciudad=ciudad,
+        usuario_id=usuario_id or None,
+    )
+
+
 EMPRESA_FIJA_ID = "principal"
 EMPRESA_FIJA_NOMBRE = "Principal (IAC Latam)"
 

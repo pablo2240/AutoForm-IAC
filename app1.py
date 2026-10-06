@@ -1214,13 +1214,12 @@ with st.sidebar:
         st.text_input("Correo Corporativo", value=usuario_actual.get("correo", ""), disabled=True, key="mi_op_cor")
 
         if st.button("💾 Guardar Mis Datos", key="btn_guardar_mis_datos", use_container_width=True):
-            guardado = profile_manager.guardar_operador(
-                operador_id=usuario_actual["id"],
+            guardado = profile_manager.guardar_operador_propio(
+                usuario_actual,
                 nombre=mi_nom,
                 cargo=mi_car,
                 cedula=mi_ced,
                 telefono=mi_tel,
-                correo=usuario_actual["correo"],
                 direccion=mi_dir,
                 ciudad=mi_ciu,
             )

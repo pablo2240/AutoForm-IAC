@@ -108,3 +108,15 @@ def test_empresa_fija_no_depende_del_catalogo_007() -> None:
     assert empresa.id == profile_manager.EMPRESA_FIJA_ID
     assert empresa.tipo is profile_manager.TipoPerfil.EMPRESA
     assert empresa.datos
+
+
+def test_guardar_operador_propio_reutiliza_la_fila_existente_por_correo() -> None:
+    database.guardar_operador_db("pablo_reyes", "Pablo Reyes", correo="pablo@iac.com.co")
+    usuario = {"id": "e3e64650-uuid", "correo": "pablo@iac.com.co"}
+
+    assert profile_manager.guardar_operador_propio(usuario, "Pablo R.", cargo="Líder", telefono="3000000000")
+
+    filas = [o for o in profile_manager.listar_operadores() if o["correo"] == "pablo@iac.com.co"]
+    assert len(filas) == 1
+    assert filas[0]["id"] == "pablo_reyes"
+    assert filas[0]["cargo"] == "Líder"
