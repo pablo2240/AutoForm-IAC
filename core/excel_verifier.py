@@ -81,6 +81,17 @@ def _son_valores_equivalentes(val_esperado: Any, val_encontrado: Any) -> bool:
     return False
 
 
+def _celda_ancla(hoja: Any, fila: int, columna: int) -> Any:
+    """Celda donde vive realmente el valor: dentro de un rango combinado es la superior izquierda.
+
+    Las demás celdas del rango devuelven siempre ``None``, aunque el valor se haya escrito bien.
+    """
+    for rango in hoja.merged_cells.ranges:
+        if rango.min_row <= fila <= rango.max_row and rango.min_col <= columna <= rango.max_col:
+            return hoja.cell(row=rango.min_row, column=rango.min_col)
+    return hoja.cell(row=fila, column=columna)
+
+
 def verificar_integridad_excel(
     archivo_original_bytes: bytes,
     archivo_generado_bytes: bytes,
@@ -207,7 +218,7 @@ def verificar_integridad_excel(
 
 
         ws_it = wb_generado[hoja_it]
-        celda_actual = ws_it.cell(row=int(fila_it), column=int(col_it))
+        celda_actual = _celda_ancla(ws_it, int(fila_it), int(col_it))
         val_actual = celda_actual.value
 
         res.total_verificados += 1

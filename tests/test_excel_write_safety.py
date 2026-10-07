@@ -167,3 +167,47 @@ def test_writer_keeps_leading_zeros_in_identifiers_as_text() -> None:
 
     celda = load_workbook(BytesIO(resultado)).active["B1"]
     assert celda.value == "00300833888" and celda.data_type == "s" and celda.number_format == "@"
+
+
+def _libro_con_rango_combinado() -> bytes:
+    """Fila 37 con rótulos sueltos y fila 38 con una celda de captura combinada C38:H38 (como en DE-GCS-038)."""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "FORMATO"
+    ws["F37"] = "Rut"
+    ws.merge_cells("C38:H38")
+    salida = BytesIO()
+    wb.save(salida)
+    return salida.getvalue()
+
+
+def test_un_destino_dentro_de_un_rango_combinado_se_escribe_en_el_ancla_y_se_verifica_alli() -> None:
+    original = _libro_con_rango_combinado()
+    plan = [{
+        "hoja": "FORMATO", "fila": 37, "columna": 6, "fila_destino": 38, "columna_destino": 6,  # F38, dentro de C38:H38
+        "ubicacion": "abajo", "campo": "nit", "valor": "8110047212",
+    }]
+
+    resultado, reporte = rellenar_formulario_excel(original, plan, {})
+    verificacion = verificar_integridad_excel(
+        original, resultado, plan, inspeccionar_libro_excel(original), reporte
+    )
+
+    hoja = load_workbook(BytesIO(resultado)).active
+    assert hoja["C38"].value == "8110047212"  # el valor vive en el ancla del rango
+    ok = [r for r in reporte if r["estado"] == "OK"]
+    assert (ok[0]["fila_destino"], ok[0]["columna_destino"]) == (38, 3)  # se informa la celda realmente escrita
+    assert verificacion.es_valido and not verificacion.errores_bloqueantes
+
+
+def test_el_verificador_resuelve_el_ancla_aunque_el_reporte_traiga_otra_celda_del_rango() -> None:
+    original = _libro_con_rango_combinado()
+    escrito = load_workbook(BytesIO(original))
+    escrito.active["C38"] = "8110047212"
+    salida = BytesIO()
+    escrito.save(salida)
+    plan = [{"hoja": "FORMATO", "fila_destino": 38, "columna_destino": 6, "valor": "8110047212", "campo": "nit"}]
+
+    verificacion = verificar_integridad_excel(original, salida.getvalue(), plan, inspeccionar_libro_excel(original))
+
+    assert verificacion.es_valido and verificacion.exitosos == 1

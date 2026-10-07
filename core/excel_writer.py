@@ -958,7 +958,9 @@ def _rellenar_plan_estricto(
                 if borde_preservado:
                     celda.border = copy(borde_preservado)
 
-        reporte.append(_log_item("OK", item, valor, fila_i, columna_i))
+        # Se informa la celda realmente escrita: si el destino cae dentro de un rango combinado, el valor
+        # vive en su celda superior izquierda y es ahí donde debe verificarse.
+        reporte.append(_log_item("OK", item, valor, int(celda.row), int(celda.column)))
 
     salida = BytesIO()
     workbook.save(salida)
