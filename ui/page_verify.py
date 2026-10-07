@@ -291,6 +291,12 @@ def _formatear_badge_estado(
     return f"{score:.2f} ✅ Sugerido por IA"
 
 
+def tiene_valor_existente(valor_anterior: Any) -> bool:
+    """True si el destino ya trae contenido (la tabla muestra "-" cuando está vacío)."""
+    texto = str(valor_anterior if valor_anterior is not None else "").strip()
+    return texto not in ("", "-", "None", "nan")
+
+
 def preparar_tabla_verificacion(
     plan_mapeo: List[Dict[str, Any]],
     datos_empresa: Dict[str, Any],
@@ -420,6 +426,7 @@ def preparar_tabla_verificacion(
             "_estado_raw": estado_raw,
             "_confianza_raw": confianza_raw,
             "_sobrescribir": bool(item.get("sobrescribir_valor_previo", False)),
+            "Reemplazar existente": bool(item.get("sobrescribir_confirmado_por_usuario", False)),
         })
         coordenadas_mapeadas.add((hoja, fila, col))
 
@@ -506,6 +513,14 @@ def preparar_tabla_verificacion(
                     bloqueante_e = False
                     advs_e.append(f"ℹ️ PROTEGIDA: Celda {celda_str_e} protegida.")
             val_ant_e_str = "-" if v_ant_e is None or str(v_ant_e).strip() == "" else str(v_ant_e)
+            # Una celda destino con marca de casilla ("X") no es un campo de captura (compuerta A1, regla R5).
+            veredicto_destino = evaluar_plausibilidad(rot_e, v_ant_e, str(tipo_clasif))
+            if campo_final != OPCION_OMITIR and not veredicto_destino.plausible:
+                campo_final = OPCION_OMITIR
+                valor_final = ""
+                badge = "0.00 ⚫ No es campo"
+                motivo_desc = f"Descartado: {veredicto_destino.motivo}"
+                conf_val = 0.0
 
             adv_e_str = " | ".join(advs_e) if advs_e else (motivo_desc if "Descartado" in motivo_desc else "Ninguna")
 
@@ -538,6 +553,7 @@ def preparar_tabla_verificacion(
                 "_tipo_elemento": tipo_clasif,
                 "_estado_raw": "EXTRA",
                 "_confianza_raw": "SIN_COINCIDENCIA",
+                "Reemplazar existente": False,
             }
             filas.append(fila_dict)
             coordenadas_mapeadas.add((hoja_e, fila_e, col_e))
@@ -573,6 +589,7 @@ def preparar_tabla_verificacion(
         df["_tipo_elemento"] = df["_tipo_elemento"].fillna("FIELD").astype(str)
         df["_estado_raw"] = df["_estado_raw"].fillna("").astype(str)
         df["_confianza_raw"] = df["_confianza_raw"].fillna("").astype(str)
+        df["Reemplazar existente"] = df["Reemplazar existente"].fillna(False).astype(bool)
     return df
 
 
@@ -635,6 +652,9 @@ def aplicar_cambios_verificacion(
         }
         if sobrescribir:
             item_final["sobrescribir_valor_previo"] = True
+        reemplazar = row.get("Reemplazar existente", False)
+        if reemplazar is True or str(reemplazar) == "True":
+            item_final["sobrescribir_confirmado_por_usuario"] = True
 
         plan_resultado.append(item_final)
 
@@ -678,6 +698,8 @@ def render_pantalla_verificacion(
         )
 
     master_df: pd.DataFrame = st.session_state[master_key]
+    if "Reemplazar existente" not in master_df.columns:  # tabla creada por una versión anterior de la app
+        master_df["Reemplazar existente"] = False
 
     # Conteo de métricas cuantitativas
     total_detectados = len(master_df)
@@ -799,6 +821,13 @@ def render_pantalla_verificacion(
             options=["derecha", "abajo", "misma"],
             required=True,
         ),
+        "Reemplazar existente": st.column_config.CheckboxColumn(
+            "Reemplazar existente",
+            help="Marca esta casilla para que el valor nuevo sobrescriba lo que la celda ya contiene. "
+                 "Se marca sola al editar una fila cuya celda tiene un valor anterior. Las fórmulas nunca se sobrescriben.",
+            width="small",
+            default=False,
+        ),
         "Sección": st.column_config.TextColumn("Sección", width="medium", disabled=True),
         # Columnas internas ocultas
         "Ubicación": None,
@@ -844,6 +873,13 @@ def render_pantalla_verificacion(
                 campo_antiguo = str(master_df.at[idx, "Campo Asignado"]).strip()
                 dir_antigua = str(master_df.at[idx, "Dirección"]).lower()
 
+                reemplazar_nuevo = bool(edit_row.get("Reemplazar existente", False))
+                reemplazar_antiguo = bool(master_df.at[idx, "Reemplazar existente"])
+                if reemplazar_nuevo != reemplazar_antiguo:
+                    hubo_cambios = True
+                    master_df.at[idx, "Reemplazar existente"] = reemplazar_nuevo
+                    reemplazar_antiguo = reemplazar_nuevo
+
                 if campo_nuevo != campo_antiguo or dir_nueva != dir_antigua:
                     hubo_cambios = True
                     master_df.at[idx, "Campo Asignado"] = campo_nuevo
@@ -860,6 +896,9 @@ def render_pantalla_verificacion(
                     if insp:
                         v_ant = insp.obtener_valor_anterior(hoja_act, f_dest, c_dest)
                         master_df.at[idx, "Valor Anterior"] = "-" if v_ant is None or str(v_ant).strip() == "" else str(v_ant)
+                    # Editar una fila cuya celda ya trae un valor es pedir el reemplazo: se marca sola y se puede desmarcar.
+                    if campo_nuevo and campo_nuevo != OPCION_OMITIR and reemplazar_nuevo == reemplazar_antiguo:
+                        master_df.at[idx, "Reemplazar existente"] = tiene_valor_existente(master_df.at[idx, "Valor Anterior"])
 
                     if campo_nuevo and campo_nuevo != OPCION_OMITIR:
                         val_res = _resolver_valor_campo(ctx.datos_empresa, campo_nuevo)
@@ -887,6 +926,8 @@ def render_pantalla_verificacion(
                         if not ok_fmt:
                             advs.append(f"⚠️ {msg_fmt}")
 
+                        if master_df.at[idx, "Reemplazar existente"] and tiene_valor_existente(master_df.at[idx, "Valor Anterior"]):
+                            advs.append(f"⚠️ Reemplazará el valor existente: '{str(master_df.at[idx, 'Valor Anterior'])[:40]}'.")
                         master_df.at[idx, "Advertencias"] = " | ".join(advs) if advs else "Ninguna"
                         master_df.at[idx, "_bloqueante"] = bloquea
                     else:

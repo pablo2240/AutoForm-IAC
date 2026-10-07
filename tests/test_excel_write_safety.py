@@ -211,3 +211,47 @@ def test_el_verificador_resuelve_el_ancla_aunque_el_reporte_traiga_otra_celda_de
     verificacion = verificar_integridad_excel(original, salida.getvalue(), plan, inspeccionar_libro_excel(original))
 
     assert verificacion.es_valido and verificacion.exitosos == 1
+
+
+def _libro_con_valor_existente() -> bytes:
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Formulario"
+    ws["A1"] = "Total activos"
+    ws["B1"] = 20980260950
+    ws["A2"] = "Observación"
+    ws["B2"] = "=B1*2"
+    salida = BytesIO()
+    wb.save(salida)
+    return salida.getvalue()
+
+
+def _plan_para(fila: int, valor: str, **extra) -> list:
+    return [{
+        "hoja": "Formulario", "fila": fila, "columna": 1, "fila_destino": fila, "columna_destino": 2,
+        "ubicacion": "derecha", "campo": "total_activos", "valor_a_escribir": valor, **extra,
+    }]
+
+
+def test_un_valor_existente_solo_se_reemplaza_si_el_usuario_lo_pide_de_forma_explicita() -> None:
+    original = _libro_con_valor_existente()
+
+    sin_marca, reporte = rellenar_formulario_excel(original, _plan_para(1, "16151175009"), {})
+    con_marca, _ = rellenar_formulario_excel(
+        original, _plan_para(1, "16151175009", sobrescribir_confirmado_por_usuario=True), {}
+    )
+
+    assert load_workbook(BytesIO(sin_marca)).active["B1"].value == 20980260950
+    assert reporte[0]["estado"] == "BLOCKED"
+    assert load_workbook(BytesIO(con_marca)).active["B1"].value == "16151175009"
+
+
+def test_el_reemplazo_explicito_nunca_sobrescribe_una_formula() -> None:
+    original = _libro_con_valor_existente()
+
+    salida, reporte = rellenar_formulario_excel(
+        original, _plan_para(2, "123", sobrescribir_confirmado_por_usuario=True), {}
+    )
+
+    assert load_workbook(BytesIO(salida)).active["B2"].value == "=B1*2"
+    assert reporte[0]["estado"] == "BLOCKED" and "fórmula" in reporte[0].get("motivo", "").lower()
