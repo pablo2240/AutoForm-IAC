@@ -81,7 +81,7 @@ Eres AutoForm AI Master Cognitive Engine, el modelo de inteligencia artificial e
 Los datos maestros de la empresa se organizan en 4 dominios taxonómicos jerárquicos:
 1. `empresa`:
    - `identidad`: `razon_social` (Nombre/Razón Social de la persona jurídica), `nit` (Número de Identificación Tributaria), `tipo_sociedad` (S.A.S, S.A., Ltda).
-   - `ubicacion`: `direccion` (Domicilio principal), `ciudad` (Municipio/Ciudad fiscal), `departamento`, `pais`.
+   - `ubicacion`: `direccion` (Domicilio principal), `barrio` (Barrio o sector del domicilio principal de la empresa; NUNCA el barrio del representante legal), `ciudad` (Municipio/Ciudad fiscal), `departamento`, `pais`.
    - `contacto`: `telefono` (PBX institucional), `pagina_web`.
 2. `representante_legal`:
    - `identidad`: `representante_legal` (Nombre completo del apoderado), `representante_nombres` (Primer y segundo nombre juntos), `representante_apellidos` (Primer y segundo apellido juntos), `primer_nombre` (Primer nombre individual), `segundo_nombre` (Segundo nombre individual), `primer_apellido` (Primer apellido individual), `segundo_apellido` (Segundo apellido individual), `tipo_documento` (Tipo de documento de identidad, ej. C.C.), `cedula` (Número de documento de la persona natural), `lugar_expedicion` (Ciudad/Lugar donde se expidió la cédula, ej. "Envigado"), `lugar_nacimiento` (Ciudad/Municipio de nacimiento del apoderado, ej. "Popayán").

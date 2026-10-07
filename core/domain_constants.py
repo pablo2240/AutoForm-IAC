@@ -116,7 +116,7 @@ CAMPOS_RESPONSABLE_COMERCIAL: Set[str] = {
 
 CAMPOS_EMPRESA: Set[str] = {
     "razon_social", "nit", "nit_cert_bancaria", "nit_bancario", "nit_titular",
-    "direccion", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
+    "direccion", "barrio", "ciudad", "departamento", "pais", "telefono", "correo", "pagina_web", "tipo_sociedad"
 }
 
 # Campos de Composición Accionaria y Beneficiarios Finales (ADR-0011)
@@ -496,6 +496,9 @@ ALIASES_DETERMINISTICOS_CAMPOS: Dict[str, List[str]] = {
     "ciudad": [
         "ciudad", "municipio", "ciudad domicilio", "ciudad principal", "ciudad sede",
         "municipio / ciudad", "ciudad / municipio",
+    ],
+    "barrio": [
+        "barrio", "barrio domicilio", "barrio principal", "barrio sede", "barrio / sector", "sector",
     ],
     "departamento": [
         "departamento", "departamento domicilio", "estado o departamento", "provincia",

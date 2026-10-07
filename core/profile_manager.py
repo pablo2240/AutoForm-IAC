@@ -496,6 +496,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
             },
             "ubicacion": {
                 "direccion": str(plano.get("direccion", "")),
+                "barrio": str(plano.get("barrio", "")),
                 "ciudad": str(plano.get("ciudad", "")),
                 "departamento": str(plano.get("departamento", "")),
                 "pais": str(plano.get("pais", "Colombia")),
@@ -573,7 +574,7 @@ def estructurar_perfil_taxonomia(datos: Dict[str, Any]) -> Dict[str, Any]:
 
     # Preservar atributos corporativos adicionales (ej. ciiu, actividad_economica, fechas) sin descartarlos
     claves_procesadas = {
-        "razon_social", "nit", "tipo_sociedad", "direccion", "ciudad", "departamento", "pais",
+        "razon_social", "nit", "tipo_sociedad", "direccion", "barrio", "ciudad", "departamento", "pais",
         "telefono", "pagina_web", "representante_legal", "representante_nombres", "representante_apellidos",
         "primer_nombre", "segundo_nombre", "primer_apellido", "segundo_apellido",
         "tipo_documento", "cedula", "lugar_expedicion", "expedicion", "lugar_nacimiento",
@@ -779,6 +780,7 @@ def _obtener_plantilla_vacia() -> Dict[str, Any]:
         "razon_social": "",
         "nit": "",
         "direccion": "",
+        "barrio": "",
         "telefono": "",
         "correo": "",
         "tipo_documento": "C.C.",

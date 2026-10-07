@@ -75,6 +75,7 @@ _SINONIMOS_RAPIDOS = {
     "numero_cuenta": ["numero de cuenta", "no de cuenta", "nro cuenta", "cuenta bancaria"],
     "tipo_cuenta": ["tipo de cuenta", "tipo cuenta", "modalidad de cuenta"],
     "sucursal": ["sucursal", "agencia bancaria", "oficina bancaria", "sucursal bancaria"],
+    "barrio": ["barrio", "barrio de domicilio", "barrio principal"],
     "ciudad": ["ciudad", "municipio", "ciudad fiscal", "ciudad de domicilio"],
     "departamento": ["departamento", "provincia"],
     "ciudad_departamento": [

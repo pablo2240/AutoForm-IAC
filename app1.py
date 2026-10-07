@@ -853,6 +853,14 @@ with st.sidebar:
                 args=(f"pe_{slug_perfil}_dir", "direccion"),
                 disabled=not es_admin_usuario,
             )
+            barrio = st.text_input(
+                "Barrio",
+                value=str(datos_empresa.get("barrio") or ""),
+                key=f"pe_{slug_perfil}_bar",
+                on_change=_al_cambiar_campo,
+                args=(f"pe_{slug_perfil}_bar", "barrio"),
+                disabled=not es_admin_usuario,
+            )
             ciudad = st.text_input(
                 "Ciudad / Municipio",
                 value=str(datos_empresa.get("ciudad") or ""),
@@ -1171,6 +1179,7 @@ with st.sidebar:
                     "nit": nit,
                     "tipo_sociedad": tipo_sociedad,
                     "direccion": direccion,
+                    "barrio": barrio,
                     "ciudad": ciudad,
                     "departamento": departamento,
                     "pais": pais,

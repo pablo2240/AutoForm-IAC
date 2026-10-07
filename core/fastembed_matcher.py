@@ -34,6 +34,7 @@ DESCRIPCIONES_TAXONOMIA: Dict[str, str] = {
     "cedula": "Número de cédula de ciudadanía, número de documento de identidad de la persona natural o representante legal",
     "lugar_expedicion": "Lugar de expedición, ciudad o municipio donde se expidió la cédula o documento de identidad",
     "direccion": "Dirección física, domicilio principal, sede de la empresa, calle, carrera, número, oficina",
+    "barrio": "Barrio, sector o vecindario donde queda el domicilio principal de la empresa",
     "ciudad": "Ciudad, municipio, localidad, domicilio fiscal de la empresa",
     "departamento": "Departamento, provincia, estado, región",
     "pais": "País de constitución o domicilio, Colombia",
